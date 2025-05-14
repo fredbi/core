@@ -1,0 +1,28 @@
+{{/* first comment */}}
+{{ define "docstring" }}
+  {{/* docstring generate comments from a schema's Title and Description */}}
+  {{- if .Title }}
+    {{- comment .Title }}
+    {{- if .Description }}
+//
+// {{ comment .Description }}
+    {{- end }}
+  {{- else if .Description}}
+    {{- comment .Description }}
+  {{- else }}
+    {{- humanize .Name }}
+  {{- end }}
+  {{- if or .MinProperties .MaxProperties }}
+//
+    {{- if .MinProperties }}
+// MinProperties: {{ .MinProperties }}
+    {{- end }}
+    {{- if .MaxProperties }}
+// MaxProperties: {{ .MaxProperties }}
+    {{- end }}
+  {{- end }}
+  {{- if .Example }}
+  {{/* document examples */}}
+// Example: {{ print .Example }}
+  {{- end }}
+{{- end }}
