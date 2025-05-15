@@ -141,9 +141,3 @@ func (b *Builder) Null() *Builder {
 	// TODO
 	return b
 }
-
-/*
-func ToNumber[T conv.Numerical](n T) types.Number {
-	return types.ToNumber(n)
-}
-*/

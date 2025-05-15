@@ -5,6 +5,7 @@ import (
 	"github.com/fredbi/core/json"
 )
 
+// PathFinder resolves JSONPath [Expression] s against a [json.Document].
 type PathFinder struct {
 	*expressionCache
 }
@@ -13,6 +14,7 @@ func New() *PathFinder {
 	return &PathFinder{}
 }
 
+// Expression is a JSONPath expression.
 type Expression string
 
 func (p *PathFinder) Get(expr Expression, doc json.Document) []json.Document {

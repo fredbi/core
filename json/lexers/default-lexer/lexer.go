@@ -26,7 +26,7 @@ import (
 type L struct {
 	r          io.Reader
 	err        error
-	errContext *ErrContext
+	errContext *codes.ErrContext
 
 	buffer         []byte   // determined by bufferSize
 	currentValue   []byte   // capped if maxValueBytes > 0
@@ -100,7 +100,7 @@ func (l *L) Err() error {
 }
 
 // ErrInContext returns any error that happened during lexing, with the error context.
-func (l *L) ErrInContext() *ErrContext {
+func (l *L) ErrInContext() *codes.ErrContext {
 	if l.err == nil {
 		return nil
 	}
@@ -715,7 +715,7 @@ func (l *L) setErrContext() {
 		pos = l.consumed
 	}
 
-	l.errContext = &ErrContext{
+	l.errContext = &codes.ErrContext{
 		Err:      l.err,
 		Offset:   l.offset,
 		Buffer:   window,

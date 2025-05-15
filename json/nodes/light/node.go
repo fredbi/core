@@ -4,24 +4,10 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/fredbi/core/json/lexers"
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/nodes"
 	"github.com/fredbi/core/json/stores"
-	"github.com/fredbi/core/json/writers"
 )
-
-// Context holds the lexer's offset for every decoded token.
-//
-// Context does not apply to a [Node] built programmatically wih a [Builder].
-type Context struct {
-	offset uint64
-}
-
-// Offset of this node in the original JSON stream.
-func (c Context) Offset() uint64 {
-	return c.offset
-}
 
 var nullNode = Node{}
 
@@ -50,16 +36,6 @@ type Node struct {
 	value     stores.Handle
 	kind      nodes.Kind
 	ctx       Context
-}
-
-// ParentContext injects all the dependencies needed to operate with a [Node].
-type ParentContext struct {
-	S  stores.Store
-	L  lexers.Lexer
-	W  writers.Writer
-	DO DecodeOptions
-	EO EncodeOptions
-	C  lexer.Context // TODO : lexer context
 }
 
 func (n Node) Value(s stores.Store) (stores.Value, bool) {

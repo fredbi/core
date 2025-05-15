@@ -7,6 +7,8 @@
 //   - scalars (i.e. string, bool or number)
 //   - null
 //
+// Objects and arrays are containers for any number of nodes.
+//
 // Notice that "null" is considered as a type and not a value: a node of type null may only
 // be represented by the token "null".
 //

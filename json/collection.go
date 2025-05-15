@@ -1,8 +1,10 @@
 package json
 
-// DocumentCollection is a collection of [Document] s.
+import "slices"
+
+// DocumentCollection is a collection of [Document] s, that share the same options.
 //
-// It marshals as an array of [Document]s.
+// It marshals as an array of [Document]s (TODO).
 type DocumentCollection struct {
 	options
 
@@ -15,6 +17,10 @@ func NewDocumentCollection(opts ...Option) *DocumentCollection {
 	}
 }
 
-func (c *DocumentCollection) Add(d Document) {
+func (c *DocumentCollection) Append(d Document) {
 	c.documents = append(c.documents, d.document)
+}
+
+func (c *DocumentCollection) Concat(d DocumentCollection) {
+	c.documents = slices.Concat(c.documents, d.documents)
 }

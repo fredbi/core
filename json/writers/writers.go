@@ -8,12 +8,14 @@ import (
 	"github.com/fredbi/core/json/types"
 )
 
+// Writer is the interface for types that know how to write JSON tokens and values.
 type Writer interface {
 	Token(token.T) // write a token
 
 	DataWriter
 }
 
+// Writer is the interface for types that know how to write verbatim JSON tokens and values.
 type VerbatimWriter interface {
 	VerbatimToken(token.VT)             // write a verbatim token
 	VerbatimValue(stores.VerbatimValue) // write a verbatim value
@@ -21,6 +23,9 @@ type VerbatimWriter interface {
 	DataWriter
 }
 
+// DataWriter is the common interface for [Writer] and [VerbatimWriter].
+//
+// It knows how to write JSON data from a [stores.Store], JSON types as well as go values.
 type DataWriter interface {
 	// write data from a [stores.Store]
 	Key(stores.InternedKey)

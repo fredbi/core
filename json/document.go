@@ -1,6 +1,7 @@
 package json
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"iter"
@@ -12,12 +13,15 @@ import (
 	"github.com/fredbi/core/json/writers"
 )
 
+var (
+	_ json.Marshaler   = Document{}
+	_ json.Unmarshaler = &Document{}
+)
+
 // EmptyDocument is the JSON document of the null type.
 //
 // It has no [stores.Store] attached to it.
-var EmptyDocument = Document{
-	options: optionsWithDefaults(nil),
-}
+var EmptyDocument = Make()
 
 // Document represents a JSON document as a hierarchy of JSON data nodes.
 //
@@ -69,8 +73,12 @@ type Document struct {
 	document
 }
 
+// Context of a node, i.e. the offset in the originally parsed JSON input.
+type Context struct {
+	light.Context
+}
+
 type document struct {
-	//context light.ParentContext
 	root light.Node
 }
 
@@ -87,7 +95,6 @@ func (d Document) fromNode(n light.Node) Document {
 	return Document{
 		options: d.options,
 		document: document{
-			//context: d.context,
 			root: n,
 		},
 	}
@@ -102,8 +109,8 @@ func (d Document) Node() light.Node {
 	return d.root
 }
 
-func (d Document) Context() light.Context { // TODO: move location of the returned type
-	return d.root.Context()
+func (d Document) Context() Context {
+	return Context{Context: d.root.Context()}
 }
 
 func (d Document) Value() (stores.Value, bool) {
@@ -211,32 +218,24 @@ func (d Document) MarshalJSON() ([]byte, error) {
 }
 
 func (d *Document) decode(lex lexers.Lexer) error {
-	context := light.ParentContext{ // TODO: pool this
-		L:  lex,
-		S:  d.store,
-		DO: d.DecodeOptions,
-	}
-	d.root.Decode(&context)
+	context := light.BorrowParentContext()
+	context.L = lex
+	context.S = d.store
+	context.DO = d.DecodeOptions
+	d.root.Decode(context)
+	light.RedeemParentContext(context)
 
 	return lex.Err()
 }
 
 func (d Document) encode(jw writers.Writer) error {
-	context := light.ParentContext{ // TODO: pool this
-		W:  jw,
-		S:  d.store,
-		EO: d.EncodeOptions,
-	}
+	context := light.BorrowParentContext()
+	context.W = jw
+	context.S = d.store
+	context.EO = d.EncodeOptions
 
-	d.root.Encode(&context)
+	d.root.Encode(context)
+	light.RedeemParentContext(context)
 
 	return jw.Err()
-}
-
-// VerbatimDocument holds a JSON document verbatim.
-//
-// All original marks kepts, including non-significant white space and
-// escaped unicode points.
-type VerbatimDocument struct {
-	// not implemented
 }

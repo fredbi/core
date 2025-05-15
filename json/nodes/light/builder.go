@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/nodes"
 	"github.com/fredbi/core/json/stores"
 	"github.com/fredbi/core/json/types"
@@ -17,7 +18,7 @@ type Builder struct {
 	n   Node
 }
 
-// TODO: pool
+// NewBuilder yields a fresh [Node] builder.
 func NewBuilder(s stores.Store) *Builder {
 	return &Builder{
 		s: s,
@@ -336,6 +337,7 @@ func (b *Builder) AppendElems(values ...Node) *Builder {
 	return b
 }
 
+// StringValue builds a scalar node of type string.
 func (b *Builder) StringValue(value string) *Builder {
 	if !b.Ok() {
 		return b
@@ -349,6 +351,19 @@ func (b *Builder) StringValue(value string) *Builder {
 	return b
 }
 
+func (b *Builder) BytesValue(value []byte) *Builder {
+	if !b.Ok() {
+		return b
+	}
+
+	b.n.kind = nodes.KindScalar
+	b.resetNode()
+
+	b.n.value = b.s.PutValue(stores.MakeScalarValue(token.MakeWithValue(token.String, value)))
+
+	return b
+}
+
 func (b *Builder) BoolValue(value bool) *Builder {
 	if !b.Ok() {
 		return b
@@ -357,7 +372,7 @@ func (b *Builder) BoolValue(value bool) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutValue(stores.MakeBoolValue(value))
+	b.n.value = b.s.PutBool(value)
 
 	return b
 }
@@ -411,6 +426,7 @@ func (b *Builder) NumericalValue(value any) *Builder {
 	}
 }
 
+// Float64Value builds a number node from a float64 value.
 func (b *Builder) Float64Value(value float64) *Builder {
 	if !b.Ok() {
 		return b
@@ -419,6 +435,7 @@ func (b *Builder) Float64Value(value float64) *Builder {
 	return buildFromFloat(b, value)
 }
 
+// Float32Value builds a number node from a float32 value.
 func (b *Builder) Float32Value(value float32) *Builder {
 	if !b.Ok() {
 		return b
@@ -427,6 +444,7 @@ func (b *Builder) Float32Value(value float32) *Builder {
 	return buildFromFloat(b, value)
 }
 
+// IntegerValue builds a number node from an int64 value.
 func (b *Builder) IntegerValue(value int64) *Builder {
 	if !b.Ok() {
 		return b
@@ -443,6 +461,7 @@ func (b *Builder) UintegerValue(value uint64) *Builder {
 	return buildFromUinteger(b, value)
 }
 
+// Null builds a node with "null".
 func (b *Builder) Null() *Builder {
 	if !b.Ok() {
 		return b

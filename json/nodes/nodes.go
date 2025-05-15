@@ -1,6 +1,8 @@
 package nodes
 
-// Kind describes the kind of node in a JSON document
+// Kind describes the kind of node in a JSON document.
+//
+// A JSON document is organized as a hierarchy of nodes of 4 kinds: null, scalar, object and array.
 type Kind uint8
 
 const (
