@@ -128,6 +128,29 @@ func (m NameMangler) split(str string) *[]string {
 	return result
 }
 
+// Pascalize a sentence (TODO(fred))
+func (m NameMangler) Pascalize(name string) string {
+	return ""
+}
+
+func (m NameMangler) Dasherize(name string) string {
+	return m.ToCommandName(name)
+}
+
+func (m NameMangler) Snakize(name string) string {
+	return m.ToFileName(name)
+}
+
+// ToGoPackagePath builds a legit go package path from a sentence (TODO(fred))
+func (m NameMangler) ToGoPackagePath(name string) string {
+	return ""
+}
+
+// GoPackageName builds a legit go package name from a sentence (TODO(fred))
+func (m NameMangler) ToGoPackageName(name string) string {
+	return ""
+}
+
 // Camelize a single word.
 //
 // Example:

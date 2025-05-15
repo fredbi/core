@@ -112,6 +112,7 @@ func WithAdditionalInitialisms(words ...string) Option {
 //   - '|' -> 'Pipe'
 //   - '$' -> 'Dollar'
 //   - '!' -> 'Bang'
+//   - '*' -> 'Star'
 //
 // Notice that the outcome of a transliteration should always be titleized.
 func WithReplaceFunc(fn ReplaceFunc) Option {
@@ -137,6 +138,8 @@ func defaultReplaceTable(r rune) (string, bool) {
 		return "Dollar ", true
 	case '!':
 		return "Bang ", true
+	case '*':
+		return "Star ", true
 	case '-':
 		return "", true
 	case '_':
