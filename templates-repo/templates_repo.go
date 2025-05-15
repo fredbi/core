@@ -310,7 +310,7 @@ func (r *Repository) loadWithAssetName(assetNameFunc func(path string) (string, 
 func (r *Repository) get(name string) (*template.Template, error) {
 	tpl, found := r.templates[name]
 	if !found {
-		return nil, fmt.Errorf("template doesn't exist %s: %w", name, ErrTemplateRepo)
+		return nil, fmt.Errorf("template doesn't exist %q: %w", name, ErrTemplateRepo)
 	}
 
 	return tpl, nil
@@ -320,14 +320,16 @@ func (r *Repository) addFile(filename string, data []byte) (string, error) {
 	name := r.mangler.ToJSONName(r.trimExtension(filename))
 	tpl, err := template.New(name).Funcs(r.funcs).Parse(string(data))
 	if err != nil {
-		return name, fmt.Errorf("failed to load template %s: %w: %w", name, err, ErrTemplateRepo)
+		return name, fmt.Errorf("failed to load template %q: %w: %w", name, err, ErrTemplateRepo)
 	}
-
+	if r.cover {
+		tpl = r.instrumentTemplate(tpl)
+	}
 	// check if any protected templates are defined
 	if !r.allowOverride {
 		for _, template := range tpl.Templates() {
 			if r.protected[template.Name()] {
-				return name, fmt.Errorf("cannot overwrite protected template %s: %w", template.Name(), ErrTemplateRepo)
+				return name, fmt.Errorf("cannot overwrite protected template %q: %w", template.Name(), ErrTemplateRepo)
 			}
 		}
 	}

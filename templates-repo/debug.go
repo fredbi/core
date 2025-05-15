@@ -58,6 +58,7 @@ type (
 	}
 )
 
+// markdownTemplate is the default layout for [Repository.Dump].
 const markdownTemplate = `
 # Templates
 
