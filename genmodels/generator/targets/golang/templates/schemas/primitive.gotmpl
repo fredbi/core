@@ -1,0 +1,17 @@
+{{- /* 
+  schemasPrimitive generates a type mapped to a primitive go type
+*/ -}}
+type {{ .Identifier }} {{ .GoType }}
+{{- /* */}}
+{{- if .WantsConstructor }}
+
+  {{ template "constructorsPrimitive" . }}
+{{- end
+{{- if .WantsSerializer }}
+
+  {{ template "serializersPrimitive" . }}
+{{- end }}
+{{- if .WantsExtraMethods }}
+
+  {{ template "extrasPrimitive" . }}
+{{- end }}

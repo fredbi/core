@@ -1,0 +1,75 @@
+{{- define "shortDocstring" }}
+  {{- /* shortDocstring documents a generated type, method or field with summarized comments compatible with godoc.
+
+         Input: TargetSchema
+  */ -}}
+  {{- if .Title }}
+    {{- comment .Title }}
+  {{- else }}
+    {{- humanize .Name }}
+  {{- end }}
+{{- end }}
+
+{{- define "docstring" }}
+  {{- /* docstring documents a generated type with comments compatible with godoc.
+
+         Input: TargetSchema
+  */ -}}
+// {{ .Identifier }}{{ pad 1 }}{{/* TODO(fred): add some verb here if missing */}}
+  {{- if .Title }}
+    {{- comment .Title }}
+    {{- if .Description }}
+//
+// {{ comment .Description }}
+    {{- end }}
+  {{- else if .Description}}
+    {{ comment .Description }}
+  {{- else }}
+    {{- humanize .Name }}
+  {{- end }}
+  {{- if and .WantsRelated .Related }}
+//
+// # Related
+//
+    {{- range $index, $element := .Related }}
+      [{{ print . }}]{{ if not last $index,.Related }},{{ end }}
+    {{- end }}
+  {{- end }}
+  {{- if and .WantsOAIExternalDocs .ExternalDoc }}
+//
+// # External documentation
+//
+    {{ template "oaiExternalDocString" }}
+  {{- end }}
+  {{- if and .WantsValidationDocStrings .HasValidations }}
+//
+// # Validations
+//
+    {{ template "validationsDocString" . }}
+  {{- end }}
+  {{- if .Example }}
+//
+// # Examples
+//
+    {{ comment .Example }}
+  {{- elseif .Examples }}
+//
+// # Examples
+//
+    {{- range .Examples }}
+      {{ cat "- " . | comment }}
+    {{- end }}
+  {{- end }}
+  {{- if and .WantsAnnotation .Annotations }}
+//
+// # Annotations
+//
+     {{ template "annotationsDocString" . }}
+  {{- end }}
+  {{- if and .WantsReport .Report }}
+//
+// # Codegen decisions tracking{{/* TODO: move this as a comment inside the definition */}}
+//
+    {{ template "report" . }}
+  {{- end }}
+{{- end }}

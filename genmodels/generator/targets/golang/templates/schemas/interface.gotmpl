@@ -1,0 +1,49 @@
+{{- /* 
+  schemasInterface generates a type as an interface definition
+*/ -}}
+{{- define "interfaceParameters" }}
+  {{- if eq .MethodKind.Selected "MethodKindGetter" }}{{/* TODO: implement selector method */}}
+    {{/* none */}}
+  {{- elseif eq .MethodKind.Selected "MethodKindSetter" }}{{/* TODO: implement selector method */}}
+    {{- .UnderlyingField.Schema.GoType }}
+  {{- else }}
+    {{ assert "unsupported interface method kind", false }}
+  {{- end }}
+{{- end }}
+
+{{- define "interfaceReturns" }}
+  {{- if eq .MethodKind.Selected "MethodKindGetter" }}
+    {{- .UnderlyingField.Schema.GoType }}
+  {{- elseif eq .MethodKind.Selected "MethodKindSetter" }}
+    {{/* none */}}
+  {{- else }}
+    {{ assert "unsupported interface method kind", false }}
+  {{- end }}
+{{- end }}
+{{- /* */}}
+type {{ .Identifier }} interface {
+  {{- if .Fields }}
+    {{- range .Fields }}
+      {{- assert (and .IsEmbedded .IsInterface) "fields in an interface type must be embedded interfaces" }}
+      {{ template "shortDocstring" .Schema }}
+      {{ .Identifier }}
+    {{- end }}
+    {{- blankline }}
+  {{- end }}
+  {{- range .Methods }}
+    {{- if .Schema.WantsDocString }}
+      {{ template "shortDocstring" . }}
+    {{- end }}
+    {{ .Identifier }}({{ template "interfaceParameters" . }}) {{ template "interfaceReturns" . }}
+  {{- end }}
+}
+{{- /* */}}
+{{- if .WantsConstructor }}
+
+  {{ template "constructorsInterface" . }}
+{{- end
+{{- if .WantsSerializer }}{{/* serialization functions, not methods, for this interface */}}
+
+  {{ template "serializersInterface" . }}
+{{- end }}
+{{- /* no extra methods for interface types */}}

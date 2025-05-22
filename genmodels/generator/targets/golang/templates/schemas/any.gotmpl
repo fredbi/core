@@ -1,0 +1,17 @@
+{{- /* 
+  schemasAny generates a type mapped to the "any" go type.
+*/ -}}
+type {{ .Identifier }} {{ .GoType }}
+{{- /* */}}
+{{- if .WantsConstructor }}
+
+  {{ template "constructorsAny" . }}
+{{- end
+{{- if .WantsSerializer }}
+
+  {{ template "serializersAny" . }}
+{{- end }}
+{{- if .WantsExtraMethods }}
+
+  {{ template "extrasAny" . }}
+{{- end }}

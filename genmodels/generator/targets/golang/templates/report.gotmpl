@@ -1,0 +1,17 @@
+{{- /* 
+  report generates a comment that documents the decision process of the generator
+
+  Input: TargetSchema
+*/}}
+// Codegen report:
+//
+{{- range .Report }}
+  // Decision type: {{ .DecisionType }}
+  // Decision: {{ .Decision }}
+  // Originator: {{ .Originator }}
+  // Sources:
+  {{- range .Sources }}
+    {{ comment .}}
+  {{- end }}
+{{- end }}
+

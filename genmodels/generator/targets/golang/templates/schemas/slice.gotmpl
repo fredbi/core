@@ -1,0 +1,20 @@
+{{- /* schemasSlice generates a type mapped to a go slice */}}
+type {{ .Identifier }}{{ pad 1 }}
+{{- if eq .SliceType "[]" }}
+  {{- .SliceType }}{{ .Element.Schema.GoType }}
+{{- else }}
+  {{- .SliceType }}[{{ .Element.Schema.GoType }}]{{/* definition using generic type */}}
+{{- end }}
+{{- /* */}}
+{{- if .WantsConstructor }}
+
+  {{ template "constructorsSlice" . }}
+{{- end
+{{- if .WantsSerializer }}
+
+  {{ template "serializersSlice" . }}
+{{- end }}
+{{- if .WantsExtraMethods }}
+
+  {{ template "extrasSlice" . }}
+{{- end }}

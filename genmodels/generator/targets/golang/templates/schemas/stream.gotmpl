@@ -1,0 +1,21 @@
+{{- /* schemasStream generates a type mapped to io.Reader or io.Writer */}}
+{{/* TODO */}}
+type {{ .Identifier }}{{ pad 1 }}
+{{- if eq .MapType "map"}}
+  {{- .MapType}}[{{ .Key.Schema.GoType }}]{{ .Element.Schema.GoType }}
+{{- else }}
+  {{- .MapType}}[{{ .Key.Schema.GoType }},{{ .Element.Schema.GoType }}]{{/* definition using generic type */}}
+{{- end }}
+{{- /* */}}
+{{- if .WantsConstructor }}
+
+  {{ template "constructorsMap" . }}
+{{- end
+{{- if .WantsSerializer }}
+
+  {{ template "serializersMap" . }}
+{{- end }}
+{{- if .WantsExtraMethods }}
+
+  {{ template "extrasMap" . }}
+{{- end }}

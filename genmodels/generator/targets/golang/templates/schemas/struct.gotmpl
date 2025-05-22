@@ -1,0 +1,22 @@
+{{- /* schemasStruct generates an object type mapped to a go struct */}}
+type {{ .Identifier }} struct{
+  {{- range .Fields }}
+    {{- if .Schema.WantsDocString }}
+      {{ template "docstring" .Schema }}
+    {{- end }}
+    {{ .Identifier }} {{ .Schema.GoType }}{{with .StructTag }} {{ . }}{{ end }}
+  {{- end }}
+}
+{{- /* */}}
+{{- if .WantsConstructor }}
+
+  {{ template "constructorsStruct" . }}
+{{- end
+{{- if .WantsSerializer }}
+
+  {{ template "serializersStruct" . }}
+{{- end }}
+{{- if .WantsExtraMethods }}
+
+  {{ template "extrasStruct" . }}
+{{- end }}

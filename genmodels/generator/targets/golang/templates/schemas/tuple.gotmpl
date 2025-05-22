@@ -1,0 +1,21 @@
+{{- /* schemasTuple generates a tuple type mapped to a go struct */}}
+type {{ .Identifier }} struct{
+  {{- range .Fields }}
+    {{- if .Schema.WantsDocString }}
+      {{ template "docstring" .Schema }}
+    {{- end }}
+    {{ .Identifier }} {{ .Element.GoType }}
+  {{- end }}
+}
+{{- if .WantsConstructor }}
+
+  {{ template "constructorsTuple" . }}
+{{- end
+{{- if .WantsSerializer }}
+
+  {{ template "serializersTuple" . }}
+{{- end }}
+{{- if .WantsExtraMethods }}
+
+  {{ template "extraTuple" . }}
+{{- end }}
