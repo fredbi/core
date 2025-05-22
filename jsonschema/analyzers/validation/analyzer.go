@@ -13,7 +13,14 @@ type Analyzer struct {
 	tree ast.Tree
 }
 
-func New( /* opts ...Option */ ) *Analyzer {
+type AnalyzedSchema struct {
+}
+
+type Option func(*options)
+
+type options struct{}
+
+func New(_ ...Option) *Analyzer {
 	return &Analyzer{}
 }
 
@@ -21,7 +28,11 @@ type CollectionAnalyzer struct {
 	forest ast.Forest
 }
 
-func (a *Analyzer) Analyze(s jsonschema.Schema) error {
+func (a *Analyzer) Analyze(_ jsonschema.Schema) error {
+	return nil
+}
+
+func (a *Analyzer) AnalyzeCollection(_ jsonschema.SchemaCollection) error {
 	return nil
 }
 
@@ -33,9 +44,9 @@ func (a *Analyzer) JSONValidator() JSONValidatorFunc {
 	return nil
 }
 
-func (a *Analyzer) AST() ast.Tree {
+func (a *Analyzer) AST() *ast.Tree {
 	return nil
-(
+}
 
 func (a *Analyzer) CanonicalSchema() jsonschema.Schema {
 	return jsonschema.Schema{}

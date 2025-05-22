@@ -2,16 +2,6 @@ package jsonschema
 
 import "github.com/fredbi/core/json"
 
-type SchemaVersion uint8
-
-const (
-	SchemaVersionDraft4 SchemaVersion = iota
-	SchemaVersionDraft6
-	SchemaVersionDraft7
-	SchemaVersionDraft2019
-	SchemaVersionDraft2020
-)
-
 type Schema struct {
 	json.Document
 

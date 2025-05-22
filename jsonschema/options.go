@@ -3,10 +3,10 @@ package jsonschema
 type Option func(*options)
 
 type options struct {
-	version SchemaVersion
+	version Version
 }
 
-func WithVersion(version SchemaVersion) Option {
+func WithVersion(version Version) Option {
 	return func(o *options) {
 		o.version = version
 	}
