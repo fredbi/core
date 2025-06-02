@@ -3,6 +3,7 @@ package json
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 
@@ -215,6 +216,21 @@ func (d Document) MarshalJSON() ([]byte, error) {
 	}
 
 	return nil, errors.New("not implemented")
+}
+
+func (d Document) String() string {
+	switch d.root.Kind() {
+	case nodes.KindScalar:
+		v, _ := d.root.Value(d.store)
+		return v.String()
+	default:
+		buf, err := d.MarshalJSON()
+		if err != nil {
+			panic(fmt.Errorf("cannot marshal JSON: %w", err))
+		}
+
+		return string(buf)
+	}
 }
 
 func (d *Document) decode(lex lexers.Lexer) error {

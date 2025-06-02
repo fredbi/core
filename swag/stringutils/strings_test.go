@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestContainsStringsCI(t *testing.T) {
@@ -39,4 +40,22 @@ func TestContainsStrings(t *testing.T) {
 	assert.True(t, ContainsStrings(list, "and"))
 	assert.False(t, ContainsStrings(list, "AND"))
 	assert.False(t, ContainsStrings(list, "nuts"))
+}
+
+type mapWrapper map[string]any
+
+func TestMapContains(t *testing.T) {
+	m := make(map[string]any)
+	m["x"] = struct{}{}
+	m["y"] = struct{}{}
+
+	require.True(t, MapContains(m, "x", "y", "z"))
+	require.False(t, MapContains(m, "a", "z"))
+
+	w := make(mapWrapper)
+	w["x"] = struct{}{}
+	w["y"] = struct{}{}
+
+	require.True(t, MapContains(w, "x", "y", "z"))
+	require.False(t, MapContains(w, "a", "z"))
 }

@@ -1,5 +1,7 @@
 package types
 
+import "strconv"
+
 var (
 	// Zero numerical value
 	Zero = Number{Value: []byte{'0'}}
@@ -35,6 +37,10 @@ func (n Number) IsDefined() bool {
 	return len(n.Value) != 0
 }
 
+func (n Number) String() string {
+	return string(n.Value)
+}
+
 func (n Number) Preferred() any {
 	// TODO: returns the preferred native representation of this Number
 	return nil
@@ -66,6 +72,10 @@ func (b Boolean) Bool() bool {
 	return b.Value
 }
 
+func (b Boolean) String() string {
+	return strconv.FormatBool(b.Value)
+}
+
 type NullType struct {
 	defined bool
 }
@@ -80,6 +90,10 @@ func (n *NullType) Set() {
 
 func (n *NullType) Unset() {
 	n.defined = false
+}
+
+func (n NullType) String() string {
+	return "null"
 }
 
 type Definable interface {

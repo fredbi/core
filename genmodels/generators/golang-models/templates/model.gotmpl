@@ -1,0 +1,35 @@
+{{- /*
+  model generates the complete go source file for a model. 
+
+  Depending on the selected model layout options, one or more schemas may reside in the same source file.
+
+  Input: TargetModel
+*/}}
+{{- template "fileHeader" . }}{{/* include copyright, imports */}}
+
+{{- range .Schemas }}
+  {{- if eq .TargetCode "type" }}
+    {{- /* generate the type definition in this file */}}
+    {{- if .WantsDocString }}{{ template "docstring" . }}{{ end }}
+    {{ template "schema" . }}
+    {{- if .NeedsValidation }}
+      {{- /* also generate the Validate method in this file, which may be empty if there is no validation */}}
+
+      {{ template "validationsSchemaValidator" . }}
+    {{- end }}
+  {{- elsif eq .TargetCode "type_test" }}
+    {{- /* generate test code for test definition (constructor, marshal/unmarshal */}}
+    {{ template "schemaTest" . }}
+    {{- if .NeedsValidation }}
+      {{ template "validationsSchemaValidatorTest" . }}
+    {{- end }}
+  {{- elsif eq .TargetCode "validation" }}
+    {{- /* generate only the Validate method in this file */}}
+    {{ template "validationsSchemaValidator" . }}
+  {{- elsif eq .TargetCode "validation_test" }}
+    {{- /* generate only test code for the Validate method */}}
+    {{ template "validationsSchemaValidatorTest" . }}
+  {{- else }}
+    {{ assert "top-level schemas in model must be types, validation-only source file or tests", false }}
+  {{- end }}
+{{- end }}

@@ -11,9 +11,5 @@ func (w *W) JSONNumber(value types.Number) {
 }
 
 func (w *W) JSONBoolean(value types.Boolean) {
-	if value.IsNull() {
-		w.Null()
-		return
-	}
 	w.Bool(value.Value)
 }

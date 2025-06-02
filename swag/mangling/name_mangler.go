@@ -133,6 +133,12 @@ func (m NameMangler) Pascalize(name string) string {
 	return ""
 }
 
+// SpellNumber (TODO(fred))
+// see: https://github.com/daniellowtw/go-spell-number
+func (m NameMangler) SpellNumber(numbers string) string {
+	return ""
+}
+
 func (m NameMangler) Dasherize(name string) string {
 	return m.ToCommandName(name)
 }

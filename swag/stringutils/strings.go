@@ -58,3 +58,20 @@ func SubsetCI(collection []string, subset []string) bool {
 
 	return true
 }
+
+func MapContains[Map ~map[K]V, K comparable, V any](m Map, items ...K) bool {
+	if len(items) == 0 {
+		return true
+	}
+	if len(m) == 0 {
+		return false
+	}
+
+	for _, item := range items {
+		if _, ok := m[item]; ok {
+			return true
+		}
+	}
+
+	return false
+}

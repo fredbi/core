@@ -12,7 +12,7 @@ import (
 //
 // This is intended to produce a documentation for your templates. The default formatting is a markdown document.
 // You may customize how the dump is formatted with the option [WithDumpTemplate] in [New].
-func (r *Repository) Dump(w io.Writer) {
+func (r *Repository) Dump(w io.Writer) error {
 	render, err := template.New("dumpRepository").Funcs(r.funcs).Parse(r.dumpTemplate)
 	if err != nil {
 		panic(fmt.Errorf("%w: %w", err, ErrTemplateRepo))
@@ -41,8 +41,10 @@ func (r *Repository) Dump(w io.Writer) {
 
 	err = render.Execute(w, data)
 	if err != nil {
-		panic(fmt.Errorf("%w: %w", err, ErrTemplateRepo))
+		return fmt.Errorf("%w: %w", err, ErrTemplateRepo)
 	}
+
+	return nil
 }
 
 type (

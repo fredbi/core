@@ -1,0 +1,30 @@
+{{- /*
+    schema generates a go type corresponding to a schema.
+
+    Input: TargetSchema
+    */}}
+{{- if not .NeedsType }}
+  {{ assert "top-level schema must be a type", false }}
+{{- else }}
+  {{- if .IsAliased }}
+    {{ template "schemasAliased" . }}
+  {{- elseif .IsPrimitive }}
+    {{ template "schemasPrimitive" . }}
+  {{- elseif .IsStruct }}
+    {{ template "schemasStruct" . }}
+  {{- elseif .IsSlice }
+    {{ template "schemasSlice" . }}
+  {{- elseif .IsMap }
+    {{ template "schemasMap" . }}
+  {{- elseif .IsInterface }
+    {{ template "schemasInterface" . }}
+  {{- elseif .IsTuple }
+    {{ template "schemasTuple" . }}
+  {{- elseif .IsAny }
+    {{ template "schemasAny" . }}
+  {{- elseif .IsStream }
+    {{ template "schemasStream" . }}
+  {{- else }}
+    {{ assert "schema typing is incorrect or unsupported", false }}
+  {{- end }}
+{{- end }}
