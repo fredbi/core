@@ -4,8 +4,10 @@ package models
 type Error string
 
 const (
+	// ErrModel is a sentinel error that wraps any error that occured during generation
 	ErrModel Error = "error in golang genmodel"
-	ErrInit  Error = "error in initialization options"
+	// ErrInit indicates an error during the initialization stage (config loading, etc)
+	ErrInit Error = "error in initialization options"
 )
 
 func (e Error) Error() string {

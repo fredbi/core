@@ -9,13 +9,13 @@ linters:
     - exhaustruct
     - forcetypeassert
     - funlen
-    - gochecknoglobals
-    - gochecknoinits
+    #- gochecknoglobals
+    #- gochecknoinits
     - gocognit
     - godot
     - godox
     - gomoddirectives
-    - gosmopolitan
+    #- gosmopolitan
     - inamedparam
     - ireturn
     - lll
@@ -28,7 +28,7 @@ linters:
     - testpackage
     - thelper
     - tparallel
-    - unparam
+    #- unparam
     - varnamelen
     - whitespace
     - wrapcheck
@@ -56,6 +56,10 @@ formatters:
   enable:
     - gofmt
     - goimports
+  settings:
+    goimport:
+      local-prefixes:
+        - github.com/fredbi/core
   exclusions:
     generated: lax
     paths:
