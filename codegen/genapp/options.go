@@ -227,7 +227,7 @@ func SetTemplateOptions(templatesOptions ...repo.Option) Option {
 
 // WithFormatter allows for injecting a custom source code formatter.
 //
-// The default uses formatting and imports check from the standard library [imports.Process].
+// The default uses formatting and imports check from the golang.org/x/tools library: [imports.Process].
 func WithFormatter(formatter func(name string, content []byte) ([]byte, error)) Option {
 	return func(o *options) {
 		o.goFormatter = formatter

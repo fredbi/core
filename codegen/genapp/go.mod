@@ -15,6 +15,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fredbi/core/swag/mangling v0.0.0-00010101000000-000000000000 // indirect
 	github.com/fredbi/core/swag/stringutils v0.0.0-20250515102727-3befc1aaa0d7 // indirect
+	github.com/fredbi/core/swag/typeutils v0.0.0-20250515102727-3befc1aaa0d7 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -31,4 +32,5 @@ replace (
 	github.com/fredbi/core/swag/fs => ../../swag/fs
 	github.com/fredbi/core/swag/mangling => ../../swag/mangling
 	github.com/fredbi/core/swag/stringutils => ../../swag/stringutils
+	github.com/fredbi/core/swag/typeutils => ../../swag/typeutils
 )
