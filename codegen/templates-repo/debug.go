@@ -31,11 +31,14 @@ func (r *Repository) Dump(w io.Writer) error {
 	var data dumpRepository
 	for _, name := range sorted {
 		tpl := r.templates[name]
+		dependencies := findDependencies(tpl.Root)
+		sort.Strings(dependencies)
+
 		data.Templates = append(data.Templates, dumpTemplate{
 			Name:         name,
 			SourceAsset:  r.files[name],
 			DocStrings:   r.docstrings[name],
-			Dependencies: findDependencies(tpl.Root),
+			Dependencies: dependencies,
 		})
 	}
 
@@ -64,22 +67,25 @@ type (
 const markdownTemplate = `
 # Templates
 
-{{ range .Templates }}
+{{- range .Templates }}
+
 ## {{ .Name }}
 
 Defined in {{.SourceAsset}}
 
 {{ range .DocStrings }}
   {{ . }}
-{{ end }}
+{{- end }}
 
-{{ if .Dependencies }}
+{{- if .Dependencies }}
+
 #### Requires
 
 {{ range .Dependencies }}
 - {{ . }}
-{{ end }}
+{{- end }}
+
 ---
-{{ end }}
-{{ end }}
+{{- end }}
+{{- end }}
 `

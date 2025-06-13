@@ -18,7 +18,6 @@ func New(opts ...Option) *Repository {
 	repo := Repository{
 		files:     make(map[string]string),             // index of assets, by template name. This is used by [Repository.Dump]
 		templates: make(map[string]*template.Template), // index of templates, by template name
-		protected: make(map[string]bool),               // index of protected templates
 		options:   optionsWithDefaults(opts),
 	}
 
@@ -37,32 +36,42 @@ func New(opts ...Option) *Repository {
 
 // Repository is a cache for golang text templates.
 //
-// A fresh [Repository] is initialized with [New].
+// A fresh [Repository] is initialized with [New]. Default settings may be altered using [Option] s.
 //
-// Default settings may be altered using [Option] s.
+// # Scope
+//
+// [Repository] roles and responsibilities are limited to:
+//
+//   - load and compile text templates assets
+//   - resolve templates dependencies
+//   - cache compiled templates
+//   - provide a unique key for the entire namespace of templates
+//   - documentation: knows how to report its structure and dump metadata from template code
 //
 // # Supported templates
 //
-// The [Repository] supports golang text [template.Template]. html templates are not supported at this moment.
+// The [Repository] only supports golang text [template.Template]. html templates are not supported at this moment.
 //
 // The default file extension for template assets is ".gotmpl".
 //
 // You may change the list of supported extensions using [WithExtensions].
-// Any asset with an extensions that is not in this list is ignored.
+// Any asset with an extension that is not in this list is ignored.
 //
 // # Structure
 //
-// The [Repository] organizes all resolved templates from the source templates directory on [fs.FS] as a flat index
-// of named templates.
+// The [Repository] organizes the namespace of all resolved templates from the source templates directory or [fs.FS]
+// as a flat index of named templates.
+//
+// Inner templates (e.g. declared by "{{ define }}...{{ end }}") are also exposed.
 //
 // Example:
 //
-// The template defined in file "{root}/cli/generate.gotmpl" would be later called as "cliGenerate".
+// The template defined in file "cli/generate.gotmpl" may be later retrieved as "cliGenerate".
 //
 // Templates defined in dfferent folders would therefore never conflict.
-// However, inner templates (using inner "{{ define }}" statements) are resolved at the same level.
+// Inner templates (using inner "{{ define }}" statements) are resolved at the same level.
 //
-// You should therefore make sure that you don't define the same template several times in the same folder.
+// You should therefore make sure that you don't define the same template name several times in the same folder.
 //
 // # Template dependencies
 //
@@ -72,25 +81,15 @@ func New(opts ...Option) *Repository {
 // The [Repository) solves this by checking all inner definitions and dependencies at loading time and ensure
 // that all dependencies are resolved for each dependent template.
 //
-// # All templates defined in the
-//
 // # Overlays
 //
 // You may reload templates from an alternate source and override existing templates.
 //
 // Using [WithOverlays] allows to build a file system based on several sources, e.g. an embedded FS and a local
-// file system with overrides.
+// file system with overrides. This way, you typically load your [Repository] only once.
 //
 // Using [Repository.LoadOverlay] reloads templates from a specific folder and allows to specify the prefix to
 // strip when producing unique template names.
-//
-// # Protected templates
-//
-// Using [Repository.AddFile] or [Repository.LoadOverlay], it is possible to override already loaded templates.
-//
-// Protected templates are a configuration that prevents undesirable overrides to occur.
-//
-// You may define which templates are protected with [Repository.SetProtected].
 //
 // # Concurrency
 //
@@ -98,11 +97,10 @@ func New(opts ...Option) *Repository {
 // a directory or a template asset.
 //
 // Loading may also be carried out concurrently. However, the outcome of dependency resolution may depend on the order
-// in which loading occurs.
+// in which loading occurs, so we don't recommend concurrent loads.
 type Repository struct {
 	files      map[string]string
 	templates  map[string]*template.Template
-	protected  map[string]bool
 	mux        sync.RWMutex
 	docstrings map[string][]string
 	fs         fs.ReadFileFS
@@ -129,42 +127,9 @@ func (r *Repository) Clone(opts ...Option) *Repository {
 	return clone
 }
 
-// SetProtected defines the map of protected templates, by their name.
-//
-// Template names mapped to true are protected, and unprotected from overrides otherwise.
-//
-// Using [Repository.SetProtected](map[string]bool{}) would unprotected all templates.
-//
-// Setting protected templates that are not loaded yet has not effect.
-func (r *Repository) SetProtected(protected map[string]bool) {
-	r.mux.Lock()
-	defer r.mux.Unlock()
-
-	r.protected = protected
-
-	maps.DeleteFunc(r.protected, func(name string, _ bool) bool {
-		// ensure protected settings correspond to already loaded templates
-		_, ok := r.templates[name]
-
-		return !ok
-	})
-}
-
-// AddProtected protects already loaded templates.
-func (r *Repository) AddProtected(protectedTemplates ...string) {
-	r.mux.Lock()
-	defer r.mux.Unlock()
-
-	for _, protected := range protectedTemplates {
-		if _, ok := r.templates[protected]; ok {
-			r.protected[protected] = true
-		}
-	}
-}
-
 // Load will walk the specified path and add to the repository each template asset it finds in this tree.
 //
-// NOTE: when using [Repository.Load] from a rooted file system (e.g. [embed.FS]) use "." as the root: "/" won't work.
+// NOTE: when using [Repository.Load] from a rooted file system (e.g. [embed.FS]), use "." as the root: "/" won't work.
 func (r *Repository) Load(templatePath string) error {
 	r.mux.Lock()
 	defer r.mux.Unlock()
@@ -348,14 +313,6 @@ func (r *Repository) addFile(filename string, data []byte) (string, error) {
 	}
 	if r.cover {
 		tpl = r.instrumentTemplate(tpl)
-	}
-	// check if any protected templates are defined
-	if !r.allowOverride {
-		for _, template := range tpl.Templates() {
-			if r.protected[template.Name()] {
-				return name, fmt.Errorf("cannot overwrite protected template %q: %w", template.Name(), ErrTemplateRepo)
-			}
-		}
 	}
 
 	// add each defined template into the cache

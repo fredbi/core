@@ -1,6 +1,6 @@
 {{/* first comment */}}
 {{ define "docstring" }}
-  {{/* docstring generate comments from a schema's Title and Description */}}
+  {{- /* docstring generate comments from a schema's Title and Description */}}
   {{- if .Title }}
     {{- comment .Title }}
     {{- if .Description }}
@@ -22,7 +22,7 @@
     {{- end }}
   {{- end }}
   {{- if .Example }}
-  {{/* document examples */}}
+  {{- /* document examples */}}
 // Example: {{ print .Example }}
   {{- end }}
 {{- end }}
