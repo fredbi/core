@@ -3,36 +3,93 @@ package structural
 import (
 	"fmt"
 
-	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/jsonschema/analyzers"
 )
 
-// AnalyzedSchema is the outcome of the analysis on a JSON schema.
-type AnalyzedSchema struct {
-	ID analyzers.UniqueID // UUID of the schema
-	// dependencies
-	Index         int64
-	RequiredIndex int64  // -1 if no requirement
-	DollarID      string // "$id"
-	kind          analyzers.SchemaKind
-	polymorphism  analyzers.PolymorphismKind
-	scalarKind    token.Kind
+// TODO: how to mock AnalyzedSchema??
 
-	// layout
+type analyzedObject struct {
+	ID analyzers.UniqueID // UUID of the package
+	// dependencies
+	Index         int64 // current index in the dependency graph
+	RequiredIndex int64 // -1 if no requirement
+	AuditTrail
+
 	//Ref
 	RefLocation string   // $ref path
 	Tags        []string // x-go-tag
 
 	// naming
-	Name string
-	Path string
+	name string
+	path string
+}
+
+func (p analyzedObject) Name() string {
+	return p.name
+}
+
+func (p analyzedObject) Path() string {
+	return p.path
+}
+
+// AnalyzedPackage is the outcome of a package when bundling a JSON schema.
+//
+// Package hierarchy is a tree, not just a DAG.
+type AnalyzedPackage struct {
+	analyzedObject
+
+	schemas        []*AnalyzedSchema // schemas defined in this package
+	parent         *AnalyzedPackage
+	children       []*AnalyzedPackage
+	ultimateParent *AnalyzedPackage
+}
+
+func (p AnalyzedPackage) IsEmpty() bool {
+	return p.ID == ""
+}
+
+func (p AnalyzedPackage) Parent() AnalyzedPackage {
+	if p.parent != nil {
+		return *p.parent
+	}
+
+	return AnalyzedPackage{}
+}
+
+func (p AnalyzedPackage) Children() []AnalyzedPackage {
+	values := make([]AnalyzedPackage, len(p.children))
+	for i, child := range p.children {
+		values[i] = *child
+	}
+
+	return values
+}
+
+func (p AnalyzedPackage) Schemas() []AnalyzedSchema {
+	values := make([]AnalyzedSchema, len(p.schemas))
+	for i, schema := range p.schemas {
+		values[i] = *schema
+	}
+
+	return values
+}
+
+// AnalyzedSchema is the outcome of the analysis of a JSON schema.
+type AnalyzedSchema struct {
+	analyzedObject
+	DollarID string // "$id"
+
+	kind         analyzers.SchemaKind
+	polymorphism analyzers.PolymorphismKind
+	scalarKind   analyzers.ScalarKind
+
+	// layout
 
 	// other extensions
 	extensions Extensions
 	namespace  Namespace
 	properties []*AnalyzedSchema
 
-	audit          AuditTrail
 	parents        []*AnalyzedSchema
 	children       []*AnalyzedSchema
 	parentProperty string
@@ -48,12 +105,22 @@ func (a AnalyzedSchema) Parents() []AnalyzedSchema {
 	return values
 }
 
+// NumProperties counts the number of explicitly defined properties
 func (a AnalyzedSchema) NumProperties() int {
 	if !a.IsObject() {
 		return 0
 	}
 
 	return len(a.properties)
+}
+
+// NumAllProperties counts explicit and implicit properties
+func (a AnalyzedSchema) NumAllProperties() int {
+	if !a.IsObject() {
+		return 0
+	}
+
+	return 0
 }
 
 func (a AnalyzedSchema) UltimateParent() AnalyzedSchema {
@@ -101,6 +168,35 @@ func (a AnalyzedSchema) IsAdditionalProperty() bool {
 	return false // TODO
 }
 
+// IsImplicitAdditionalProperty indicates if the additional property comes from
+// JSON schema defaults (true)
+func (a AnalyzedSchema) IsImplicitAdditionalProperty() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) IsPatternProperty() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) IsItems() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) IsSubType() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) BaseType() AnalyzedSchema {
+	if !a.IsSubType() {
+		panic("yay")
+	}
+	return AnalyzedSchema{} // TODO
+}
+
+func (a AnalyzedSchema) PatternPropertyIndex() int {
+	return 0 // TODO
+}
+
 func (a AnalyzedSchema) ParentProperty() string {
 	if len(a.parents) != 1 || !a.parents[0].IsObject() {
 		return ""
@@ -109,19 +205,35 @@ func (a AnalyzedSchema) ParentProperty() string {
 	return a.parentProperty
 }
 
-func (a AnalyzedSchema) IsAllOfMember() int {
+func (a AnalyzedSchema) IsAllOfMember() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) AllOfMemberIndex() int {
 	return 0 // TODO
 }
 
-func (a AnalyzedSchema) IsOneOfMember() int {
+func (a AnalyzedSchema) IsOneOfMember() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) OneOfMemberIndex() int {
 	return 0 // TODO
 }
 
-func (a AnalyzedSchema) IsAnyOfMember() int {
+func (a AnalyzedSchema) IsAnyOfMember() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) AnyOfMemberIndex() int {
 	return 0 // TODO
 }
 
-func (a AnalyzedSchema) IsTupleMember() int {
+func (a AnalyzedSchema) IsTupleMember() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) TupleMemberIndex() int {
 	return 0 // TODO
 }
 
@@ -155,7 +267,7 @@ func (a AnalyzedSchema) IsScalar() bool {
 	return a.kind == analyzers.SchemaKindScalar
 }
 
-func (a AnalyzedSchema) ScalarKind() token.Kind {
+func (a AnalyzedSchema) ScalarKind() analyzers.ScalarKind {
 	return a.scalarKind
 }
 
@@ -185,15 +297,15 @@ func (a AnalyzedSchema) HasExtension(extension string, aliases ...string) bool {
 }
 
 func (a AnalyzedSchema) IsAnonymous() bool {
-	return a.Name == ""
+	return a.name == ""
 }
 
 func (a AnalyzedSchema) WasAnonymous() bool {
-	return a.audit.OriginalName == ""
+	return a.OriginalName() == ""
 }
 
 func (a AnalyzedSchema) IsNamed() bool {
-	return a.Name != ""
+	return a.name != ""
 }
 
 func (a AnalyzedSchema) IsRoot() bool {
@@ -204,6 +316,19 @@ func (a AnalyzedSchema) HasSingleParent() bool {
 	return len(a.parents) == 1
 }
 
-func (a AnalyzedSchema) HasNameOverride() bool {
-	return a.audit.NameOverride != ""
+func (a AnalyzedSchema) HasEnum() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) HasFormatValidation() bool {
+	return false // TODO
+}
+
+func (a AnalyzedSchema) FormatValidation() string {
+	return "" // TODO
+}
+
+// IsAlwaysInvalid indicate that this schema is never valid.
+func (a AnalyzedSchema) IsAlwaysInvalid() bool {
+	return false // TODO
 }

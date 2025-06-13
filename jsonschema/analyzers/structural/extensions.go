@@ -43,6 +43,6 @@ func (m ExtensionMapper) MapExtension(key string, jazon dynamic.JSON) (any, erro
 	return m(key, jazon)
 }
 
-func passThroughMapper(key string, jazon dynamic.JSON) (any, error) {
-	return jazon.Interface(), nil
+func passThroughMapper(_ string, jazon dynamic.JSON) (any, error) {
+	return jazon, nil
 }

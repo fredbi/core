@@ -4,14 +4,12 @@ package structural
 type Option func(*options)
 
 type options struct {
-	withValidations bool
-	extensionMapper ExtensionMapper
+	withValidations  bool
+	extensionMappers []ExtensionMapper
 }
 
 func applyOptionsWithDefaults(opts []Option) options {
-	o := options{
-		extensionMapper: ExtensionMapper(passThroughMapper),
-	}
+	o := options{}
 
 	for _, apply := range opts {
 		apply(&o)
@@ -27,11 +25,9 @@ func WithValidations(enabled bool) Option {
 	}
 }
 
-// WithExtensionMapper equips the analyzer with a mapper for extensions.
-//
-// The mapper may be used to validate extensions.
-func WithExtensionMapper(mapper ExtensionMapper) Option {
+// WithExtensionMappers adds chained mappers to the analyzer, so that it may validate and convert extensions.
+func WithExtensionMappers(mappers ...ExtensionMapper) Option {
 	return func(o *options) {
-		o.extensionMapper = mapper
+		o.extensionMappers = append(o.extensionMappers, mappers...)
 	}
 }

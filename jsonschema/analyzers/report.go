@@ -36,3 +36,28 @@ const (
 )
 
 type ScalarKind uint8
+
+const (
+	ScalarKindString ScalarKind = iota
+	ScalarKindNumber
+	ScalarKindInteger
+	ScalarKindBool
+	ScalarKindNull
+)
+
+func (s ScalarKind) String() string {
+	switch s {
+	case ScalarKindString:
+		return "string"
+	case ScalarKindNumber:
+		return "number"
+	case ScalarKindInteger:
+		return "integer"
+	case ScalarKindBool:
+		return "bool"
+	case ScalarKindNull:
+		fallthrough
+	default:
+		return "null"
+	}
+}

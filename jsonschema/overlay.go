@@ -3,6 +3,7 @@ package jsonschema
 import (
 	"io"
 	"iter"
+	"slices"
 
 	"github.com/fredbi/core/json"
 )
@@ -16,7 +17,8 @@ func MakeOverlay(...Option) Overlay {
 	return Overlay{} // TODO
 }
 
-func (o *Overlay) ApplyTo(_ Schema) Schema {
+// ApplyTo a [Schema] a JSON schema overlay.
+func (o Overlay) ApplyTo(_ Schema) Schema {
 	return Schema{} // TODO
 }
 
@@ -33,8 +35,8 @@ func (c OverlayCollection) Len() int {
 	return len(c.overlays)
 }
 
-func (c OverlayCollection) Overlays() iter.Seq2[int, Overlay] { // TODO: return iterator
-	return nil
+func (c OverlayCollection) Overlays() iter.Seq[Overlay] {
+	return slices.Values(c.overlays)
 }
 
 func (c OverlayCollection) Overlay(index int) Overlay {
@@ -49,4 +51,9 @@ func (c OverlayCollection) DecodeAppend(reader io.Reader) error {
 	c.overlays = append(c.overlays, overlay)
 
 	return nil
+}
+
+// ApplyTo applies a collection of overlays to a collection of schemas.
+func (o OverlayCollection) ApplyTo(_ Collection) Collection {
+	return Collection{}
 }

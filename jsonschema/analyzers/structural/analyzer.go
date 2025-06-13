@@ -13,12 +13,28 @@ import (
 //
 // It allows consuming packages to build mocks.
 type Analyzer interface {
+	// Analyze a single JSON schema
 	Analyze(jsonschema.Schema) error
+
+	// Analyze an entire collection of JSON schemas
 	AnalyzeCollection(jsonschema.Collection) error
+
+	// AnalyzedSchemas iterates over the analyzed schemas, possibly applying some [Filter]
 	AnalyzedSchemas(...Filter) iter.Seq[AnalyzedSchema]
+
+	// Number of analyzed schemas, with all inner sub-schemas
 	Len() int
+
+	// Bundle the collection of analyzed schemas, reorganizing the namespace.
 	Bundle(...BundleOption) (Analyzer, error)
+
+	// Namespaces iterates over the namespace of bundled package names
 	Namespaces(...Filter) iter.Seq[string]
+
+	// Packages iterates over the namespace of bundled packages
+	Packages(...Filter) iter.Seq[AnalyzedPackage]
+
+	// SchemaByID yields a single schema, given its unique key ID.
 	SchemaByID(analyzers.UniqueID) (AnalyzedSchema, bool)
 }
 
@@ -27,22 +43,29 @@ var _ Analyzer = &SchemaAnalyzer{}
 // SchemaAnalyzer knows how to analyze the structure of a JSON schema specification to generate artifacts.
 type SchemaAnalyzer struct {
 	options
-	index      map[analyzers.UniqueID]AnalyzedSchema
+	index      map[analyzers.UniqueID]*AnalyzedSchema
 	forest     []AnalyzedSchema // TODO: dependency graph
 	namespaces map[string]Namespace
+	packages   []AnalyzedPackage
 }
 
 // NewAnalyzer builds a [SchemaAnalyzer] ready to analyze JSON schemas.
 func NewAnalyzer(opts ...Option) *SchemaAnalyzer {
-	return &SchemaAnalyzer{
+	a := &SchemaAnalyzer{
 		options: applyOptionsWithDefaults(opts),
 	}
+
+	if len(a.extensionMappers) == 0 {
+		a.extensionMappers = []ExtensionMapper{passThroughMapper}
+	}
+
+	return a
 }
 
 func (a *SchemaAnalyzer) SchemaByID(id analyzers.UniqueID) (AnalyzedSchema, bool) {
 	schema, ok := a.index[id]
 
-	return schema, ok
+	return *schema, ok
 }
 
 func (a *SchemaAnalyzer) Namespaces(filters ...Filter) iter.Seq[string] {
@@ -54,6 +77,18 @@ func (a *SchemaAnalyzer) Namespaces(filters ...Filter) iter.Seq[string] {
 			}
 		}
 	}
+}
+
+func (a *SchemaAnalyzer) Packages(filters ...Filter) iter.Seq[AnalyzedPackage] {
+	return func(yield func(AnalyzedPackage) bool) {
+		for _, node := range a.packages {
+			// todo apply filters
+			if !yield(node) {
+				return
+			}
+		}
+	}
+
 }
 
 // Analyze a single JSON schema.
