@@ -23,6 +23,7 @@ func optionsWithDefaults(opts []Option) options {
 	return o
 }
 
+// WithNameManglerOptions defines options to tune the [mangling.NameMangler] used by this [template.FuncMap].
 func WithNameManglerOptions(opts ...mangling.Option) Option {
 	return func(o *options) {
 		o.manglerOptions = opts

@@ -7,29 +7,31 @@ import (
 	"strings"
 	"text/template"
 
-	// "github.com/Masterminds/sprig"
+	"github.com/fredbi/core/codegen/funcmaps"
 	"github.com/fredbi/core/swag/mangling"
 	"github.com/fredbi/core/swag/stringutils"
-	"github.com/fredbi/core/templates-repo/funcmaps"
+
 	"github.com/kr/pretty"
 )
 
 // DefaultFuncMap yields a map with default functions for use in the templates.
-// These are available in every template
+//
+// The available functions are specifically biased toward golang code generation.
+//
+// These are made available to every template.
 func DefaultFuncMap(opts ...Option) template.FuncMap {
 	o := optionsWithDefaults(opts)
 	mangler := mangling.New(o.manglerOptions...)
 
 	return funcmaps.Merge(
-		// sprig.TxtFuncMap(),
 		template.FuncMap{
 			// extra builtins
 			"gt0": gt0,
-			"assert": func(msg string, assertion bool) error {
+			"assert": func(msg string, assertion bool) (string, error) {
 				if !assertion {
-					return fmt.Errorf("%v: %w", msg, ErrGolangFuncMap)
+					return "", fmt.Errorf("%v: %w", msg, ErrTemplateAssertion)
 				}
-				return nil
+				return "", nil
 			},
 			// strings
 			"hasPrefix":      strings.HasPrefix,
