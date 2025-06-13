@@ -6,8 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	repo "github.com/fredbi/core/codegen/templates-repo"
 	fsutils "github.com/fredbi/core/swag/fs"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
@@ -23,11 +25,7 @@ type testData struct {
 	F string
 }
 
-func (d testData) FileName() string {
-	return d.F
-}
-
-func TestGoGenApp(t *testing.T) {
+func TestGoGenAppRender(t *testing.T) {
 	const (
 		folder        = "generated"
 		testGenerated = "output.go"
@@ -39,26 +37,24 @@ func TestGoGenApp(t *testing.T) {
 		require.NoError(t, testFS.MkdirAll(folder, 0750))
 
 		g := New(
-			WithTemplates(templatesFS),
+			templatesFS,
 			WithOutputAferoFS(testFS),
 			WithOutputPath(folder),
 		)
 
-		data := testData{
-			A: 1,
-			B: "test",
-			F: testGenerated,
-		}
+		check := t.Name()
+		data := makeTestData(check)
 
-		require.NoError(t, g.Render("example", data))
-		result, err := afero.ReadFile(testFS, filepath.Join(folder, testGenerated))
-		require.NoError(t, err)
+		t.Run("should render test template", func(t *testing.T) {
+			require.NoError(t, g.Render("example", testGenerated, data))
+		})
 
-		assertExample(t, result)
+		t.Run("a target file should be present", func(t *testing.T) {
+			result, err := afero.ReadFile(testFS, filepath.Join(folder, testGenerated))
+			require.NoError(t, err)
 
-		info, err := testFS.Stat(filepath.Join(folder, testGenerated))
-		require.NoError(t, err)
-		t.Logf("%v", fs.FormatFileInfo(info))
+			assertExample(t, check, result)
+		})
 	})
 
 	t.Run("should generate from local templates", func(t *testing.T) {
@@ -67,29 +63,100 @@ func TestGoGenApp(t *testing.T) {
 		templatesFS, err := fs.Sub(localFS, templatesLocation)
 		require.NoError(t, err)
 
-		tmpDir := t.TempDir()
-		os.MkdirAll(filepath.Join(tmpDir, folder), 0755)
+		tmpDir := makeTestDir(t)
+		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, folder), 0755))
+
 		g := New(
-			WithTemplates(templatesFS),
-			WithOutputPath(folder),
+			templatesFS,
+			WithOutputPath(tmpDir),
 		)
 
-		data := testData{
-			A: 1,
-			B: "test",
-			F: testGenerated,
-		}
+		target := filepath.Join(folder, testGenerated)
+		check := t.Name()
+		data := makeTestData(check)
 
-		require.NoError(t, g.Render("example", data))
-		result, err := os.ReadFile(filepath.Join(folder, testGenerated))
-		require.NoError(t, err)
+		t.Run("should render test template", func(t *testing.T) {
+			require.NoError(t, g.Render("example", target, data))
+		})
 
-		assertExample(t, result)
+		t.Run("a target file should be present", func(t *testing.T) {
+			expectedTarget := filepath.Join(tmpDir, target)
+			require.FileExists(t, expectedTarget)
 
-		info, err := os.Stat(filepath.Join(folder, testGenerated))
-		require.NoError(t, err)
-		t.Logf("%v", fs.FormatFileInfo(info))
+			result, err := os.ReadFile(expectedTarget)
+			require.NoError(t, err)
+
+			assertExample(t, check, result)
+
+			info, err := os.Stat(expectedTarget)
+			require.NoError(t, err)
+
+			perms := info.Mode() & os.ModePerm
+
+			t.Run("permissions on written file should not be too lax", func(t *testing.T) {
+				const (
+					allWritePerms = os.FileMode(0004)
+					allReadPerms  = os.FileMode(0002)
+				)
+				require.Less(t, perms&allWritePerms, perms)
+				require.LessOrEqual(t, perms&allReadPerms, allReadPerms)
+			})
+
+			t.Run("should create go.mod file", func(t *testing.T) {
+				const goVersion = "1.23"
+				require.NoError(t, g.GoMod(WithGoVersion(goVersion)))
+
+				t.Run("a go mod file should be created", func(t *testing.T) {
+					modFile := filepath.Join(tmpDir, "go.mod")
+					require.FileExists(t, modFile)
+
+					t.Run("go mod should require expected go version", func(t *testing.T) {
+						content, err := os.ReadFile(modFile)
+						require.NoError(t, err)
+
+						require.Contains(t, string(content), "go "+goVersion)
+					})
+				})
+			})
+		})
 	})
+
+	t.Run("should apply overlay template", func(t *testing.T) {
+		t.Skip()
+		// TODO
+	})
+}
+
+func TestInvalidOptions(t *testing.T) {
+	t.Run("this invalid setup should panic", func(t *testing.T) {
+		require.Panics(t, func() {
+			_ = New(nil)
+		})
+	})
+	t.Run("but this one is valid and should not panic", func(t *testing.T) {
+		templatesFS := templatesFixture(t)
+		require.Panics(t, func() {
+			_ = New(nil, WithTemplatesRepo(
+				repo.New(repo.WithFS(templatesFS)),
+			))
+		})
+	})
+}
+
+func makeTestData(args ...any) testData {
+	d := testData{
+		A: 1,
+		B: "test",
+	}
+
+	if len(args) > 0 {
+		asString, ok := args[0].(string)
+		if ok {
+			d.F = asString
+		}
+	}
+
+	return d
 }
 
 func templatesFixture(t *testing.T) fs.FS {
@@ -101,7 +168,7 @@ func templatesFixture(t *testing.T) fs.FS {
 
 	t.Run(fmt.Sprintf("embed fixtures in %q should be configured as expected", location), func(t *testing.T) {
 		var found bool
-		require.NoError(t, fs.WalkDir(templatesFS, ".", func(path string, d fs.DirEntry, err error) error {
+		require.NoError(t, fs.WalkDir(templatesFS, ".", func(path string, _ fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -112,6 +179,7 @@ func templatesFixture(t *testing.T) fs.FS {
 			return nil
 		}))
 		require.True(t, found)
+
 		f, err := templatesFS.Open(templateName)
 		require.NoError(t, err)
 		_ = f.Close()
@@ -120,12 +188,43 @@ func templatesFixture(t *testing.T) fs.FS {
 	return templatesFS
 }
 
-func assertExample(t *testing.T, result []byte) {
-	t.Run("generated output should ", func(t *testing.T) {
-		assert.Equal(t, `test:
-a = 1
-b = test
-`, string(result),
-		)
+func assertExample(t *testing.T, check string, result []byte) {
+	t.Run("generated output should match expected content", func(t *testing.T) {
+		expectedCode := strings.TrimLeftFunc(strings.ReplaceAll(`
+// generated file do not edit
+
+// Package generated is a test produced by a generator
+package generated
+
+import (
+	"fmt"
+)
+
+func X() string {
+	a := 1
+	b := test
+
+	f := "<<check>>"
+
+	return fmt.Sprintf("a=%d, b=%d, f=%s", a, b, f) // verify if gofmt
+}
+`, "<<check>>", check), trimCR)
+
+		assert.Equal(t, expectedCode, string(result))
 	})
+}
+
+func trimCR(r rune) bool {
+	return r == '\n' || r == '\r'
+}
+
+func makeTestDir(t *testing.T) string {
+	dir, err := os.MkdirTemp(".", "gentest") //nolint:usetesting  // cannot use t.TempDir() because we want to remain inside the go source tree
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+
+	return dir
 }

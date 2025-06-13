@@ -1,10 +1,6 @@
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/fredbi/core/swag/stringutils v0.0.0-20250515102727-3befc1aaa0d7 h1:5ikKNjVmeXZiy6WY/i9xz5datoB87HDgm9+1HmgywHQ=
-github.com/fredbi/core/swag/stringutils v0.0.0-20250515102727-3befc1aaa0d7/go.mod h1:rR/WPifoH03h2mmEF25k5mfaJSjhlKSMm5gE92GlNEA=
-github.com/fredbi/core/templates-repo v0.0.0-20250515102727-3befc1aaa0d7 h1:eVzx7LYfianXv+nw1t6GzkVk+nTc0T8kBYHKU7NDQBM=
-github.com/fredbi/core/templates-repo v0.0.0-20250515102727-3befc1aaa0d7/go.mod h1:88WTqAebqK7u5zL5sQ94l6/W0NQN0zslRT7ZACjIHkg=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=

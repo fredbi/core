@@ -1,4 +1,18 @@
-{{/* test template */}}
-{{- print "test: " }}
-a={{ .A }}
-b={{ .B }}
+{{/* test template */ -}}
+// generated file do not edit
+
+// Package generated is a test produced by a generator
+package generated
+
+import (
+  "fmt"
+)
+
+func X() string {
+  a := {{ .A }}
+  b := {{ .B }}
+
+  f := {{ printf "%q" .F }}
+
+  return fmt.Sprintf("a=%d, b=%d, f=%s", a,b,f) // verify if gofmt
+}

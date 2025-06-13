@@ -1,5 +1,26 @@
-// Package genapp exposes [GenApp], a general-purpose golang code generation helper.
+// Package genapp exposes [GoGenApp], a general-purpose golang code generation helper.
 //
-// [GenApp] stitches together a  templates [repo.Repository], its associated [template.FuncMap],
-// and knows how to render passed data items into files.
+// [GoGenApp] stitches together a templates [repo.Repository] and knows how to render generated go files.
+//
+// [GoGenApp] may be used to initialize and update a go.mod file for the generated package.
+//
+// # Dependencies
+//
+// This package is exposed as an independent module and imposes few dependencies.
+//
+// It uses internally github.com/spf13/afero as an abstraction of a writable file system.
+//
+// Code formatting relies on golang.org/x/tools/imports
+//
+// Excluding test dependencies, it relies directly on the following github.com/fredbi/core packages:
+//
+//   - github.com/fredbi/core/codegen/funcmaps
+//   - github.com/fredbi/core/codegen/templates-repo
+//
+// And indirectly on:
+//
+//   - github.com/fredbi/core/swag/mangling
+//   - github.com/fredbi/core/swag/stringutils
+//
+// Other dependencies found are test dependencies.
 package genapp
