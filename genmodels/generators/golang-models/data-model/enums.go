@@ -1,4 +1,4 @@
-package models
+package model
 
 // TargetKind describes a kind of go type to be generated.
 //
@@ -209,4 +209,39 @@ func (m MarshalMode) DocString() string {
 		assertValue(m)
 		return ""
 	}
+}
+
+type TargetCode string
+
+func (k TargetCode) String() string {
+	return string(k)
+}
+
+const (
+	TargetCodeTypeDefinition     TargetCode = "type"
+	TargetCodeTypeTest           TargetCode = "type_test"
+	TargetCodeValidationOnly     TargetCode = "validation"
+	TargetCodeValidationTestOnly TargetCode = "validation_test"
+	TargetCodePkgDoc             TargetCode = "pkg_doc"
+	TargetCodePkgReadme          TargetCode = "pkg_readme"
+)
+
+func (f TargetCodeFlags) TargetCode() string {
+	if f.NeedsType {
+		return TargetCodeTypeDefinition.String()
+	}
+
+	if f.NeedsTest {
+		if f.NeedsOnlyValidation {
+			return TargetCodeValidationTestOnly.String()
+		}
+
+		return TargetCodeTypeTest.String()
+	}
+
+	if f.NeedsOnlyValidation {
+		return TargetCodeValidationOnly.String()
+	}
+
+	panic("internal error: unhandled target kind combination")
 }

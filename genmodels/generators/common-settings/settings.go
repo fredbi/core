@@ -85,9 +85,10 @@ type GenCustomOptions struct {
 	DumpTemplateFormat    string
 	BaseTemplatePath      string
 	AlternateTemplatePath string
-	AllowTemplateOverride bool // allow template overlay
-	SkipFmt               bool // skip source formatting (e.g. gofmt for golang target)
-	SkipCheckImport       bool // skip import checking (e.g. goimports for golang target)
+	// AllowTemplateOverride bool // allow template overlay [deprecated]
+	SkipFmt             bool // skip source formatting (e.g. gofmt for golang target)
+	SkipCheckImport     bool // skip import checking (e.g. goimports for golang target)
+	FormatGroupPrefixes []string
 }
 
 // GenLayoutOptions describes top-level layout options.

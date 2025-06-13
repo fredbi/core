@@ -20,7 +20,15 @@ func assertNotInfiniteAttempts(attempts int) {
 }
 
 func assertAnonymousInParentObject(schema structural.AnalyzedSchema) {
-	panic(fmt.Errorf("an anonymous schema found in a parent object must be in a property or additionalProperty"))
+	panic(fmt.Errorf("an anonymous schema found in a parent object must be in a property, additionalProperty, patternProperty or allOf"))
+}
+
+func assertAnonymousInParentArray(schema structural.AnalyzedSchema) {
+	panic(fmt.Errorf("an anonymous schema found in a parent array must be in an items or allOf"))
+}
+
+func assertAllOfInParentArray(schema structural.AnalyzedSchema) {
+	panic(fmt.Errorf("allOf in arrays should have been rewritten by the analyzer"))
 }
 
 func assertAnonymousInParentTuple(schema structural.AnalyzedSchema) {

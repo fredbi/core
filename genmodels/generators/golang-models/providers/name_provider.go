@@ -15,9 +15,10 @@ import (
 	"github.com/fredbi/core/swag/mangling"
 )
 
-// NameProvider provides go names for types and packages created from schemas.
+// NameProvider provides go names for identifiers, files and packages created from schemas.
 //
-// The [NameProvider] is not intended for concurrent use.
+// The [NameProvider] is not intended for concurrent use: internally, data structures are maintained
+// to ensure that no conflicting names are produced.
 type NameProvider struct {
 	options
 
@@ -67,14 +68,16 @@ func (p NameProvider) NameSchema(name string, analyzed structural.AnalyzedSchema
 	}
 
 	if !analyzed.IsAnonymous() {
-		return p.mangler.ToGoName(analyzed.Name), nil
+		return p.mangler.ToGoName(analyzed.Name()), nil
 	}
 
 	if analyzed.IsRoot() {
+		// we don't have any parent, so switch to alternate method to define a name
 		return p.findNameForAnonymousRoot(name, analyzed)
 	}
 
 	if p.dontGenerateTypeFor(analyzed) {
+		// we have a parent, and some types may stay anonymous (e.g. primitive type, ...)
 		return "", nil
 	}
 
@@ -82,7 +85,9 @@ func (p NameProvider) NameSchema(name string, analyzed structural.AnalyzedSchema
 	parent := analyzed.Parent()
 
 	// walk up dependencies until we find a named schema
-	parentName, err := p.NameSchema(parent.Name, parent)
+	//
+	// Attention: chains of anonymous stuff !!!
+	parentName, err := p.NameSchema(parent.Name(), parent)
 	if err != nil {
 		return "", fmt.Errorf("unable to determine a name for this schema: %v", analyzed)
 	}
@@ -94,85 +99,265 @@ func (p NameProvider) NameSchema(name string, analyzed structural.AnalyzedSchema
 	switch {
 	// anonymous schema declared as a property of a parent object (which is not a polymorph)
 	case parent.IsObject():
-		// case with properties
-		//
-		// parent:
-		//   type: object
-		//   properties:
-		//     propertyName: {analyzed}
-		//
-		// Yields: "ParentPropertyName"
-		if analyzed.HasParentProperty() {
+		switch {
+		case analyzed.HasParentProperty():
+			// case with properties
+			//
+			// parent:
+			//   type: object
+			//   properties:
+			//     propertyName: {analyzed}   <- ParentProperty() = "propertyName"
+			//
+			// Yields: "ParentPropertyName"
 			propertyName := analyzed.ParentProperty()
+
 			return p.mangler.ToGoName(parentName + " " + propertyName), nil
-		}
 
-		// case with additional properties
-		//
-		// parent:
-		//   type: object
-		//   additionalProperties: {analyzed}
-		//
-		// Yields: "ParentPropertyName"
-		if analyzed.IsAdditionalProperty() {
-			return p.mangler.ToGoName(parentName + " additional properties"), nil
-		}
+		case analyzed.IsAdditionalProperty():
+			// case with properties and additional properties
+			//
+			// parent:
+			//   type: object
+			//   properties:
+			//     propertyName: {}
+			//   additionalProperties: {analyzed}
+			//
+			// Yields: "ParentAdditionalProperties"
+			if parent.NumAllProperties() > 0 { // also counts implicit properties (i.e. presence of pattern properties, non-explicit required, ...
+				return p.mangler.ToGoName(parentName + " additional properties"), nil
+			}
 
-		assertAnonymousInParentObject(analyzed)
-		return "", errors.ErrUnsupported
+			// case with only additional properties
+			//
+			// parent:
+			//   type: object
+			//   additionalProperties: {analyzed}
+			//
+			// Yields: "ParentProperties"
+			//
+			// Target type would be something like "type Parent map[string]ParentProperties"
+			return p.mangler.ToGoName(parentName + " properties"), nil
+
+			// NOTE:  we don't have this at this stage:
+			// parent:
+			//   type: object
+			//   additionalProperties: { true (analyzed) }
+			//
+			// Because the analyzed schema is selected to remain anonymous (mapped to "any")
+
+		case analyzed.IsPatternProperty():
+			// case with patternProperties
+			//
+			// parent:
+			//   type: object
+			//   patternProperties:
+			//    "regexp1": { analyzed }}
+			//    "regexp2": { ... }}
+			//
+			// Yields: "ParentPatternProperties0"
+			//
+			// TODO: alternatives
+			// - AI-powered regexp summarizer
+			// - name based on analyzed schema type: e.g. ObjectProperties, NumberProperties ...
+			//
+			// NOTE: "propertyNames" do not add structure semantics, only validation
+			return p.mangler.ToGoName(parentName + " pattern properties" + strconv.Itoa(analyzed.PatternPropertyIndex())), nil
+
+		case analyzed.IsAllOfMember():
+			// case with parent object defined with allOf
+			//
+			// parent:
+			//   type: object  <- possibly implicit
+			//   allOf:
+			//     - {...}
+			//     - { analyzed }
+			//     - {...}
+			//
+			// Yields: "ParentsInteger"ParentAllOf1"
+			//
+			// TODO: assertion - after analysis, we don't have stuff like
+			// parent:
+			//   type: object
+			//   allOf: [ { a }, { b } ]
+			//   oneOf: [ { c }, { d } ]
+			//
+			// This would be rewritten by the analyzer as:
+			// parent:
+			//   type: object
+			//   allOf:
+			//     - { a }
+			//     - { b }
+			//     - oneOf: [ { c }, { d } ]
+			//
+			// TODO: assertion - after analysis, we don't have allOf with 1 member only (lifted)
+			//
+			// TODO: assertion - after analysis, anonymous allOf members are lifted whenever possible. TODO
+			// find the cases when this is not possible to lift.
+			// Perhaps edges cases with "additionalPropertie: false" and "unevaluatedProperties"
+			//
+			// Meaning that we only one of "allOf", "oneOf" or "anyOf" to consider at any schema level.
+			if analyzed.IsSubType() {
+				// edge case with an anonymous declaration of a subttype.
+				// TODO: we should be able to find better than "allOf0"
+				return p.mangler.ToGoName(parentName + " allOf" + strconv.Itoa(analyzed.AllOfMemberIndex())), nil
+			}
+			return p.mangler.ToGoName(parentName + " allOf" + strconv.Itoa(analyzed.AllOfMemberIndex())), nil
+
+		default:
+			assertAnonymousInParentObject(analyzed)
+
+			return "", errors.ErrUnsupported
+		}
 
 	// anonymous schema declared as an items schema of a parent array or tuple
 	case parent.IsArray():
+		switch {
+		// Items in an array
 		//
 		// parent:
 		//   type: array
 		//   items: {analyzed}
 		//
 		// Yields: "ParentItems"
-		return p.mangler.ToGoName(parentName + " items"), nil
+		case analyzed.IsItems(): // implicit items don't get there (remain anonymous)
+			return p.mangler.ToGoName(parentName + " items"), nil
+
+		case analyzed.IsAllOfMember():
+			// AllOf in an array: we should not get there.
+			//
+			// parent:
+			//   type: array
+			//   allOf:
+			//     - type: array
+			//       items: {...}
+			//     - type: array   <- { analyzed }
+			//       items: {...}
+			//
+			// Yields: "ParentItems"
+			//
+			// Assertion - the analyzer transforms constructs such as
+			//
+			// parent:
+			//   type: array
+			//   items: { a }
+			//   allOf:
+			//     - { b }
+			//     - { c }
+			//
+			// or:
+			// parent:
+			//   type: array
+			//   allOf:
+			//     - type: array
+			//       items: { a }
+			//     - { b }
+			//     - { c }
+			//
+			// Into:
+			//
+			// parent:
+			//   type: array
+			//   items:
+			//     allOf:
+			//       - { a }
+			//       - { b }
+			//       - { c }
+			//   { merged array validations }
+			assertAllOfInParentArray(analyzed)
+
+			return "", errors.ErrUnsupported
+
+		default:
+			assertAnonymousInParentArray(analyzed)
+
+			return "", errors.ErrUnsupported
+		}
 
 	case parent.IsTuple():
-		//
+		switch {
+		case analyzed.IsTupleMember():
+			// parent:
+			//   type: array
+			//   items: (prefixItems:)
+			//     - {analyzed}
+			//
+			// Yields: "ParentItems0"
+			return p.mangler.ToGoName(parentName + " items" + strconv.Itoa(analyzed.TupleMemberIndex())), nil // TODO: configurable suffix
+
+		case analyzed.IsTupleAdditionalItems():
+			// parent:
+			//   type: array
+			//   items: (prefixItems:)
+			//     - {...}
+			//     - {...}
+			//   additionalItems: {analyzed} (items:)
+			//
+			// Yields: "ParentAdditionalItems"
+			return p.mangler.ToGoName(parentName + " additional items"), nil
+
+		// NOTE: edge case where allOf is rewritten like for arrays (after evaluated not be always false)
 		// parent:
 		//   type: array
-		//   items:
-		//     - {analyzed}
+		//   items: (prefixItems:)
+		//     - {...}
+		//     - {...}
+		//   allOf:
+		//     - items:
+		//         - {...}
+		//         - {...}
+		//   additionalItems: {...} (items:)
 		//
-		// Yields: "ParentItems0"
-		if seq := analyzed.IsTupleMember(); seq > 0 {
-			return p.mangler.ToGoName(parentName + " items" + strconv.Itoa(seq)), nil // TODO: configurable suffix
-		}
-		if analyzed.IsTupleAdditionalItems() {
-			return p.mangler.ToGoName(parentName + " additional items"), nil
-		}
+		// Is either invalid (always evaluate to false) or may be rewritten
 
-		assertAnonymousInParentTuple(analyzed)
-		return "", errors.ErrUnsupported
+		default:
+			assertAnonymousInParentTuple(analyzed)
+
+			return "", errors.ErrUnsupported
+		}
 
 	case parent.IsPolymorphic():
-		// case with allOf, oneOf, anyOf
-		//
-		// parent:
-		//   type: object
-		//   allOf:
-		//     - {analyzed}
-		//
-		// Yields: "ParentAllOf0"
-		if seq := analyzed.IsAllOfMember(); seq > 0 {
-			return p.mangler.ToGoName(parentName + " all of" + strconv.Itoa(seq)), nil
-		}
-		if seq := analyzed.IsOneOfMember(); seq > 0 {
-			return p.mangler.ToGoName(parentName + " one of" + strconv.Itoa(seq)), nil
-		}
-		if seq := analyzed.IsAnyOfMember(); seq > 0 {
-			return p.mangler.ToGoName(parentName + " any of" + strconv.Itoa(seq)), nil
-		}
+		switch {
+		case analyzed.IsOneOfMember():
+			// case with oneOf, anyOf
+			//
+			// parent:
+			//   type: object
+			//   oneOf:
+			//     - {analyzed}
+			//
+			// Yields: "ParentAllOf0"
+			return p.mangler.ToGoName(parentName + " one of" + strconv.Itoa(analyzed.OneOfMemberIndex())), nil
 
-		assertAnonymousInParentPolymorphic(analyzed)
-		return "", errors.ErrUnsupported
+		case analyzed.IsAnyOfMember():
+			return p.mangler.ToGoName(parentName + " any of" + strconv.Itoa(analyzed.AnyOfMemberIndex())), nil
+
+			/*
+				/* TODO: seems invalid
+				case analyzed.IsAllOfMember() && analyzed.IsSubType():
+					// case of an anonymous subtype
+					//
+					// parent:
+					//   type: object
+					//   ...
+					//   anyOf:
+					//     - { ... }
+					//     - type: object   <- { analyzed: subtype }
+					//       properties: { ... }
+					//       allOf:
+					//         - $ref: #/definition/BaseType
+					//         - { ... }
+					// -> anonymous allOf should be lifted
+					return p.mangler.ToGoName(parentName + " all of" + strconv.Itoa(analyzed.AllOfMemberIndex())), nil
+			*/
+		default:
+			assertAnonymousInParentPolymorphic(analyzed)
+
+			return "", errors.ErrUnsupported
+		}
 
 	default:
 		// other cases are invalid JSON schema
+		// TODO: assertion
 		return "", errors.ErrUnsupported
 	}
 }
@@ -229,7 +414,7 @@ func (p NameProvider) NameEnumValue(index int, enumValue json.Document, analyzed
 		parent := analyzed.Parent()
 
 		// walk up dependencies until we find a named schema
-		parentName, err := p.NameSchema(parent.Name, parent)
+		parentName, err := p.NameSchema(parent.Name(), parent)
 		if err != nil {
 			return "", fmt.Errorf("unable to determine a name for this schema: %v", analyzed)
 		}
@@ -269,17 +454,21 @@ func (p NameProvider) NamePackage(path string, analyzed structural.AnalyzedSchem
 
 // PackageShortName provides the package name to be used in the "package" statement.
 //
+// A [structural.analyzedSchema] is provided for context, but is not required.
+//
 // Examples:
 // * generated/models/go-folder -> "folder"
 // * generated/models/go-folder/v2 -> "folder"
-func (p NameProvider) PackageShortName(path string, analyzed structural.AnalyzedSchema) string {
+func (p NameProvider) PackageShortName(path string, analyzed ...structural.AnalyzedSchema) string {
 	return p.mangler.ToGoPackageName(path)
 }
 
 // PackageFullName returns the fully qualified package name, to be used in imports.
 //
+// A [structural.analyzedSchema] is provided for context, but is not required.
+//
 // Example: generated/models/go-folder -> "github.com/fredbi/core/genmodels/generated/models/go-folder"
-func (p NameProvider) PackageFullName(path string, analyzed structural.AnalyzedSchema) string {
+func (p NameProvider) PackageFullName(path string, analyzed ...structural.AnalyzedSchema) string {
 	return "" // TODO
 }
 
@@ -288,8 +477,8 @@ func (p NameProvider) Mark(analyzed structural.AnalyzedSchema) structural.Extens
 	// TODO: this is just an example
 	mark := make(structural.Extensions, 1)
 
-	mark.Add("x-go-original-name", analyzed.Name)
-	mark.Add("x-go-original-path", analyzed.Path)
+	mark.Add("x-go-original-name", analyzed.Name())
+	mark.Add("x-go-original-path", analyzed.Path())
 
 	return mark
 }
@@ -305,24 +494,25 @@ func (p NameProvider) Mark(analyzed structural.AnalyzedSchema) structural.Extens
 // Abc XYZ becomes abc-xyz
 func (p NameProvider) FileName(name string, analyzed structural.AnalyzedSchema) string {
 	const directive = "x-go-file-name"
+	pth := analyzed.Path()
 
 	if ext, isUserDefined := analyzed.GetExtension(directive); isUserDefined {
 		goFile := ext.(string)
 
-		if p.isFileConflict(goFile, analyzed.Path) {
-			return p.deconflictsFile(goFile, analyzed.Path)
+		if p.isFileConflict(goFile, pth) {
+			return p.deconflictsFile(goFile, pth)
 		}
 
-		p.registerFile(goFile, analyzed.Path)
+		p.registerFile(goFile, pth)
 
 		return goFile
 	}
 
 	goFile := p.mangler.ToFileName(name)
-	if p.isFileConflict(goFile, analyzed.Path) {
-		return p.deconflictsFile(goFile, analyzed.Path)
+	if p.isFileConflict(goFile, pth) {
+		return p.deconflictsFile(goFile, pth)
 	}
-	p.registerFile(goFile, analyzed.Path)
+	p.registerFile(goFile, pth)
 
 	return goFile
 }
@@ -334,22 +524,22 @@ func (p NameProvider) FileNameForTest(name string, analyzed structural.AnalyzedS
 		name = withoutTestSuffix
 		suffix = "_test"
 	}
+	pth := analyzed.Path()
 
 	goFile := p.mangler.ToFileName(name) + suffix
-	if p.isFileConflict(goFile, analyzed.Path) {
-		return p.deconflictsFile(goFile, analyzed.Path)
+	if p.isFileConflict(goFile, pth) {
+		return p.deconflictsFile(goFile, pth)
 	}
-	p.registerFile(goFile, analyzed.Path)
+	p.registerFile(goFile, pth)
 
 	return goFile
 }
 
 func (p NameProvider) dontGenerateTypeFor(analyzed structural.AnalyzedSchema) bool {
 	// cases when we don't need to define a name:
-	// * scalar values are mapped as primitive types
+	// * scalar values are mapped as primitive types (or format types)
 	// * unconstrained types (without type-specific validations) are mapped as "any"
-	// * objects without properties and no constraints on additional properties are mapped as "any"
-	return analyzed.IsScalar() || analyzed.IsAnyWithoutValidation() || (analyzed.IsObject() && analyzed.NumProperties() == 0)
+	return analyzed.IsScalar() || analyzed.IsAnyWithoutValidation() || analyzed.IsAlwaysInvalid()
 }
 
 func (p NameProvider) findNameForAnonymousRoot(name string, analyzed structural.AnalyzedSchema) (string, error) {
@@ -433,14 +623,32 @@ func (p NameProvider) deconflictsFile(name, pth string) string {
 	}
 }
 
-// MapExtension maps extensions as directives into known go types.
+// MapExtension maps extensions into known go types.
+//
+// The supported extensions act as directives to hint the [NameProvider].
 //
 // This is enforced by the analyzer, so later processing can rely on a safe typing for known extensions.
+//
+// # Directives that affect naming and layout
+//
+// - x-go-name
+// - x-go-package
+// - x-go-file-name
+// - x-go-enums
+// - x-go-wants-validation (x-go-validation)
+// - x-go-wants-split-validation (x-go-split-validation)
+// - x-go-wants-test (x-go-test)
+//
+// Extra directives generated for audit purpose:
+// - x-go-original-name
+// - x-go-original-path
+// - x-go-namespace-only
+//
+// NOTE: extensions such as x-go-type, x-go-nullable, x-nullable which alter the behavior of type generation but not
+// naming are mapped by a dedicated mapper.
 func (p NameProvider) MapExtension(directive string, jazon dynamic.JSON) (any, error) {
-	// TODO: register aliases
-	// TODO: should separate concerns and wrap another map extension dedicated to directived not related to naming (e.g. x-go-nullable, x-go-type)
 	switch directive {
-	case "x-go-name", "x-go-package", "x-go-file-name":
+	case "x-go-name", "x-go-package", "x-go-file-name", "x-go-original-name", "x-go-original-path", "x-go-tag":
 		ext := jazon.Interface()
 		asString, ok := ext.(string)
 		if !ok {
@@ -448,7 +656,7 @@ func (p NameProvider) MapExtension(directive string, jazon dynamic.JSON) (any, e
 		}
 		return asString, nil
 
-	case "x-go-wants-validation", "x-go-validation", "x-go-wants-split-validation", "x-go-split-validation", "x-go-wants-test", "x-go-test":
+	case "x-go-wants-validation", "x-go-validation", "x-go-wants-split-validation", "x-go-split-validation", "x-go-wants-test", "x-go-test", "x-go-namespace-only":
 		ext := jazon.Interface()
 		asBool, ok := ext.(bool)
 		if !ok {
@@ -470,8 +678,7 @@ func (p NameProvider) MapExtension(directive string, jazon dynamic.JSON) (any, e
 			output = append(output, asString)
 		}
 		return output, nil
-	// TODO: x-go-type, x-go-nullable, x-nullable ...
 	default:
-		return jazon.Interface(), nil // keep directive, but don't perform any check or conversion
+		return jazon, nil // keep directive, but don't perform any check or conversion
 	}
 }

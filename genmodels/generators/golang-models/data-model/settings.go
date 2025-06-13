@@ -1,4 +1,4 @@
-package models
+package model
 
 import (
 	settings "github.com/fredbi/core/genmodels/generators/common-settings"
@@ -46,7 +46,14 @@ type GenTargetOptions struct {
 
 	WantsGoGenerate bool
 	WantsGoMod      bool
+	WantsPkgDoc     bool   // generate a doc.go file for each package
+	WantsPkgReadme  bool   // generate a README.md file for each package
+	MinGoVersion    string // when WantsGoMod is true, generate with a required go version
 	ImportOptions
+}
+
+func (o GenTargetOptions) WantsPkgArtifact() bool {
+	return o.WantsPkgDoc || o.WantsPkgReadme
 }
 
 type ImportOptions struct {

@@ -6,6 +6,8 @@ import (
 	"github.com/fredbi/core/swag/mangling"
 )
 
+// experimental: should be moved to some other internal package
+
 type SettingWithLocation struct {
 	Name   string
 	Type   string

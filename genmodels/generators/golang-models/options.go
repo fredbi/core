@@ -3,13 +3,19 @@ package models
 import (
 	"embed"
 	"fmt"
+	"io"
+	"io/fs"
+	"os"
 
 	"github.com/fredbi/core/codegen/genapp"
 	repo "github.com/fredbi/core/codegen/templates-repo"
+	model "github.com/fredbi/core/genmodels/generators/golang-models/data-model"
 	"github.com/fredbi/core/genmodels/generators/golang-models/providers"
+	"github.com/fredbi/core/genmodels/generators/internal/log"
 	"github.com/fredbi/core/json/stores"
 	store "github.com/fredbi/core/json/stores/default-store"
 	"github.com/fredbi/core/jsonschema"
+	"github.com/fredbi/core/swag/loading"
 	"github.com/spf13/afero"
 )
 
@@ -22,21 +28,23 @@ var embedFS embed.FS
 type Option func(*options)
 
 type options struct {
-	GenOptions
+	model.GenOptions
 
 	store             stores.Store
 	sourceSchemas     []string
 	sourceOverlays    []string
 	inputSchemas      jsonschema.Collection
 	overlaySchemas    jsonschema.OverlayCollection // load optional overlays to merge on top of the load schemas
-	innerOptions      []genapp.Option
-	baseFS            afero.Fs
-	outputPath        string // output folder
+	generatorOptions  []genapp.Option
+	baseFS            afero.Fs // TODO: use fs.FS
+	outputPath        string   // output folder
 	overlayTemplates  []string
 	wantsDumpAnalyzed bool
 	namingOptions     []providers.Option
-
-	// TODO: templates override
+	dumpOutput        io.Writer
+	templateOverlays  []fs.FS
+	loadOptions       []loading.Option
+	l                 log.Logger
 }
 
 func (o options) validateOptions() error {
@@ -53,20 +61,21 @@ func (o options) validateOptions() error {
 func (o options) genappDefaults() []genapp.Option {
 	return []genapp.Option{
 		genapp.WithOutputAferoFS(o.baseFS),
-		genapp.WithOutputPath(o.TargetImportPath),
-		genapp.WithSkipFmt(o.SkipFmt),
-		genapp.WithSkipCheckImport(o.SkipCheckImport),
-		genapp.WithTemplates(
-			embedFS, // TODO: allows overlay templates
-			repo.WithAllowOverride(o.AllowTemplateOverride),
+		genapp.WithOutputPath(o.TargetImportPath),                // the target location
+		genapp.WithSkipFormat(o.SkipFmt),                         // skip go fmt step (e.g. for debug)
+		genapp.WithSkipCheckImport(o.SkipCheckImport),            // skip go import step (e.g. for debug)
+		genapp.WithFormatGroupPrefixes(o.FormatGroupPrefixes...), /// specify imports grouping patterns
+		// configure the templates repo
+		genapp.WithTemplatesRepoOptions(
 			repo.WithDumpTemplate(o.DumpTemplateFormat),
+			repo.WithOverlays(o.templateOverlays...),
 		),
 	}
 }
 
 func (o options) genappOptionsWithDefaults() []genapp.Option {
 	genappOptions := o.genappDefaults()
-	genappOptions = append(genappOptions, o.innerOptions...)
+	genappOptions = append(genappOptions, o.generatorOptions...)
 
 	return genappOptions
 }
@@ -83,7 +92,7 @@ func optionsWithDefaults(opts []Option) options {
 	}
 
 	if o.baseFS == nil {
-		o.baseFS = afero.NewOsFs()
+		o.baseFS = afero.NewOsFs() // TODO: use fs.FS
 	}
 
 	if o.inputSchemas.Len() == 0 {
@@ -94,6 +103,14 @@ func optionsWithDefaults(opts []Option) options {
 		o.overlaySchemas = jsonschema.MakeOverlayCollection(len(o.sourceOverlays), jsonschema.WithStore(o.store))
 	}
 
+	if o.l == nil {
+		o.l = log.NewColoredLogger(log.WithName("golang-models"))
+	}
+
+	if o.dumpOutput == nil {
+		o.dumpOutput = os.Stdout
+	}
+
 	return o
 }
 
@@ -102,6 +119,10 @@ func optionsWithDefaults(opts []Option) options {
 // This is primarily intended for testing purpose.
 //
 // Use this option with care, as the go imports check would need access to the go modules tree when resolving imports.
+//
+// Also since we generate go.mod file using the go command, it is not possible to generate a go module within an [afero.Fs].
+//
+// TODO: this is sufficiently complicated like that, we could remove this option.
 func WithAferoFS(fs afero.Fs) Option {
 	return func(o *options) {
 		if fs != nil {
@@ -121,11 +142,18 @@ func WithOutputPath(path string) Option {
 	}
 }
 
-/*
-func WithOverlayTemplates(overlays fs.FS) Option {
-	// TODO?
+// WithTemplateOverlays allows for overriding the provided embeded templates with
+// a collection of [fs.FS] containing alternate templates.
+//
+// Notice that the templates structure in the provided file systems must match exactly the
+// original structure, as this setting does not allow prefix stripping rules.
+//
+// Defining overlays here automatically sets the option [GenOptions.AllowTemplateOverride].
+func WithTemplateOverlays(overlays ...fs.FS) Option {
+	return func(o *options) {
+		o.templateOverlays = overlays
+	}
 }
-*/
 
 // WithSourceSchemas specifies the locations (URLs or local files) from where to fetch
 // the input schemas.
@@ -165,15 +193,22 @@ func WithOverlayCollection(collection jsonschema.OverlayCollection) Option {
 	}
 }
 
-// WithGenAppOptions allows to customize the inner [genapp.GenApp] helper,
+// WithGenAppOptions allows to customize the generator [genapp.GenApp] helper,
 // so you may customize template funcmaps etc.
 func WithGenAppOptions(opts ...genapp.Option) Option {
 	return func(o *options) {
-		o.innerOptions = append(o.innerOptions, opts...)
+		o.generatorOptions = append(o.generatorOptions, opts...)
 	}
 }
 
-// WithStore allows to customize the inner [stores.Store] used to hold JSON documents.
+// WithGenOptions presets all generation settings defined by [model.GenOptions].
+func WithGenOptions(genOptions model.GenOptions) Option {
+	return func(o *options) {
+		o.GenOptions = genOptions
+	}
+}
+
+// WithStore allows to customize the generator [stores.Store] used to hold JSON documents.
 //
 // By default, the default [store.Store] is used.
 func WithStore(s stores.Store) Option {
@@ -182,9 +217,35 @@ func WithStore(s stores.Store) Option {
 	}
 }
 
-// WithNameProviderOptions sets optional settings for the inner name provider.
+// WithNameProviderOptions sets optional settings for the generator name provider.
 func WithNameProviderOptions(opts ...providers.Option) Option {
 	return func(o *options) {
 		o.namingOptions = opts
+	}
+}
+
+// WithLogger overrides the default logger used during generation.
+func WithLogger(l log.Logger) Option {
+	return func(o *options) {
+		o.l = l
+	}
+}
+
+// WithDumpOutput sets the output for dumping template or analyzed schemas (for debug or documentation).
+//
+// The default is [os.Stdout].
+func WithDumpOutput(w io.Writer) Option {
+	return func(o *options) {
+		o.dumpOutput = w
+	}
+}
+
+// WithLoadOptions defines [loading.Option] s for the schema and overlay loaders from file or HTTP.
+//
+// This setting allows to tune the loader, for instance to support unrecognized file extensions or
+// to load JSON schema assets from a [fs.FS] (e.g. [embed.FS]).
+func WithLoadOptions(loadOptions ...loading.Option) Option {
+	return func(o *options) {
+		o.loadOptions = loadOptions
 	}
 }

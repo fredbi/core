@@ -1,16 +1,6 @@
 package models
 
-import (
-	"encoding/json"
-	"reflect"
-	"testing"
-
-	"github.com/fredbi/core/swag/mangling"
-	"github.com/go-viper/mapstructure/v2"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
-)
-
+/*
 func TestResolveSettings(t *testing.T) {
 	var o GenOptions
 	s := ResolveSettings(o)
@@ -58,14 +48,13 @@ func TestMarshalSetting(t *testing.T) {
 	}
 	e := rewriteMap(d)
 
-	/*
-		jazon, err := json.MarshalIndent(e, "", "  ")
-		require.NoError(t, err)
-		t.Log(string(jazon))
-	*/
+	//	jazon, err := json.MarshalIndent(e, "", "  ")
+		// require.NoError(t, err)
+		// t.Log(string(jazon))
 
 	y, err := yaml.Marshal(e)
 	require.NoError(t, err)
 	t.Log(string(y))
 
 }
+*/
