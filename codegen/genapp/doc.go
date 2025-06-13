@@ -4,6 +4,9 @@
 //
 // [GoGenApp] may be used to initialize and update a go.mod file for the generated package.
 //
+// NOTE: using the imports grouping option affects the global setting [imports.LocalPrefix],
+// and may cause side effects to other components using [imports.Process].
+//
 // # Dependencies
 //
 // This package is exposed as an independent module and imposes few dependencies.

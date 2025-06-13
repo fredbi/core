@@ -15,7 +15,7 @@ import (
 //
 // It it is typically embedded in more complex tools.
 //
-// # Sccope
+// # Scope
 //
 // [GoGenApp] roles and responsibilities are limited to:
 //
