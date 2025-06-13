@@ -9,3 +9,4 @@
 * [] verbatim doesn't alter strings
 * [] stackable error context (store multiple errors from caller)
 * [] recover from errors and may resume parsing
+* [] make strings sanitization optional (sanitizers option). Same may apply to numbers
