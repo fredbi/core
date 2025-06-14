@@ -8,6 +8,7 @@ Features:
 * caches compiled templates from assets on a file system, possibly embedded
 * automatically resolves dependencies
 * supports overlays: templates may be overridden from another source
+* instruments templates to report code coverage on templates
 * generates documentation for your templates from comments in source
 * is safe for a concurrent use
 
@@ -16,6 +17,10 @@ Functionality exposed as separate modules:
 
 * [default functions map for golang code generation](https://github.com/fredbi/core/tree/master/codegen/funcmaps/golang)
 * [golang code generation helper](https://github.com/fredbi/core/tree/master/codegen/genapp)
+
+### Code coverage instrumentation
+
+TODO
 
 ### Credits
 
@@ -42,3 +47,5 @@ There are a few differences though:
 
 * template structure dump and documentation has been improved with docstrings parsed from comments
   in templates and a generated markdown documentation.
+
+* I've added template instrumentation features, to report code coverage or insert watchers for debugging

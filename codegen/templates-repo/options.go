@@ -16,9 +16,7 @@ var defaultOptions = options{
 	mangler:         mangling.Make(),
 	extensions:      []string{".gotmpl"},
 	skipDirectories: []string{"contrib"},
-	parseComments:   false,
 	dumpTemplate:    markdownTemplate,
-	cover:           false,
 }
 
 // Option defines settings for the template repository.
@@ -140,7 +138,8 @@ func WithParseComments(enabled bool) Option {
 //
 // By default, a simple markdown template is provided.
 //
-// If [WithParseComments] is enabled, this template may report comments in templates as docstrings.
+// When [WithParseComments] is enabled, the [Repository] may use comments in templates as docstrings
+// in a dump produced by [Repository.Dump].
 func WithDumpTemplate(text string) Option {
 	return func(o *options) {
 		if text != "" {

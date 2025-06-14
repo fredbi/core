@@ -13,27 +13,6 @@ import (
 	fsutils "github.com/fredbi/core/swag/fs"
 )
 
-// New creates a new template repository.
-func New(opts ...Option) *Repository {
-	repo := Repository{
-		files:     make(map[string]string),             // index of assets, by template name. This is used by [Repository.Dump]
-		templates: make(map[string]*template.Template), // index of templates, by template name
-		options:   optionsWithDefaults(opts),
-	}
-
-	if repo.parseComments { // index of docstrings, when the parseComment option is enabled
-		repo.docstrings = make(map[string][]string)
-	}
-
-	if len(repo.overlays) > 0 {
-		repo.fs = fsutils.NewOverlayFS(repo.baseFS, repo.overlays...)
-	} else {
-		repo.fs = repo.baseFS
-	}
-
-	return &repo
-}
-
 // Repository is a cache for golang text templates.
 //
 // A fresh [Repository] is initialized with [New]. Default settings may be altered using [Option] s.
@@ -46,6 +25,7 @@ func New(opts ...Option) *Repository {
 //   - resolve templates dependencies
 //   - cache compiled templates
 //   - provide a unique key for the entire namespace of templates
+//   - testing: provide means to measure code coverage on templates
 //   - documentation: knows how to report its structure and dump metadata from template code
 //
 // # Supported templates
@@ -99,12 +79,34 @@ func New(opts ...Option) *Repository {
 // Loading may also be carried out concurrently. However, the outcome of dependency resolution may depend on the order
 // in which loading occurs, so we don't recommend concurrent loads.
 type Repository struct {
-	files      map[string]string
-	templates  map[string]*template.Template
-	mux        sync.RWMutex
-	docstrings map[string][]string
-	fs         fs.ReadFileFS
+	files            map[string]string
+	templates        map[string]*template.Template
+	mux              sync.RWMutex
+	docstrings       map[string][]string
+	fs               fs.ReadFileFS
+	coverageHandlers []*coverageHandler
 	options
+}
+
+// New creates a new template repository.
+func New(opts ...Option) *Repository {
+	repo := Repository{
+		files:     make(map[string]string),             // index of assets, by template name. This is used by [Repository.Dump]
+		templates: make(map[string]*template.Template), // index of templates, by template name
+		options:   optionsWithDefaults(opts),
+	}
+
+	if repo.parseComments { // index of docstrings, when the parseComment option is enabled
+		repo.docstrings = make(map[string][]string)
+	}
+
+	if len(repo.overlays) > 0 {
+		repo.fs = fsutils.NewOverlayFS(repo.baseFS, repo.overlays...)
+	} else {
+		repo.fs = repo.baseFS
+	}
+
+	return &repo
 }
 
 // Clone builds a clone of a repository.
@@ -312,7 +314,11 @@ func (r *Repository) addFile(filename string, data []byte) (string, error) {
 		return name, fmt.Errorf("failed to load template %q: %w: %w", name, err, ErrTemplateRepo)
 	}
 	if r.cover {
-		tpl = r.instrumentTemplate(tpl)
+		handler := newCoverageHandler(filename) // this defines a coverage handler for this file
+		instr := newInstrumenter(data, handler.CoverCallbackBuilder)
+		tpl = instr.InstrumentTemplate(tpl)
+
+		r.coverageHandlers = append(r.coverageHandlers, handler)
 	}
 
 	// add each defined template into the cache
