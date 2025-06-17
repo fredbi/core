@@ -3,6 +3,7 @@ package genapp
 import (
 	"embed"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -127,6 +128,16 @@ func TestGoGenAppRender(t *testing.T) {
 	})
 }
 
+func TestTemplates(t *testing.T) {
+	templatesFS := templatesFixture(t)
+	g := New(templatesFS)
+
+	repo := g.Templates()
+	require.NotNil(t, repo)
+
+	require.NoError(t, repo.Dump(io.Discard))
+}
+
 func TestInvalidOptions(t *testing.T) {
 	t.Run("this invalid setup should panic", func(t *testing.T) {
 		require.Panics(t, func() {
@@ -163,10 +174,13 @@ func templatesFixture(t *testing.T) fs.FS {
 	location := filepath.Join("fixtures", "templates")
 	const templateName = "example.gotmpl"
 	require.NotNil(t, fixturesFS)
+
 	templatesFS, err := fs.Sub(fixturesFS, location)
 	require.NoError(t, err)
 
 	t.Run(fmt.Sprintf("embed fixtures in %q should be configured as expected", location), func(t *testing.T) {
+		t.Helper()
+
 		var found bool
 		require.NoError(t, fs.WalkDir(templatesFS, ".", func(path string, _ fs.DirEntry, err error) error {
 			if err != nil {

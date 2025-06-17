@@ -45,7 +45,6 @@ func optionsWithDefaults(templatesFS fs.FS, opts []Option) options {
 	const defaultTabWidth = 2
 
 	o := options{
-		baseFS: afero.NewOsFs(),
 		templatesOptions: []repo.Option{
 			repo.WithFS(templatesFS),
 			repo.WithFuncMap(golangfunc.DefaultFuncMap()),
@@ -95,8 +94,8 @@ func optionsWithDefaults(templatesFS fs.FS, opts []Option) options {
 		globalMx.Lock()
 		if imports.LocalPrefix != prefixes {
 			imports.LocalPrefix = prefixes
-			globalMx.Unlock()
 		}
+		globalMx.Unlock()
 	}
 
 	return o
@@ -160,9 +159,7 @@ func WithOutputAferoFS(fs afero.Fs) Option {
 // All rendered files are relative to that path.
 func WithOutputPath(path string) Option {
 	return func(o *options) {
-		if path != "" {
-			o.outputPath = path
-		}
+		o.outputPath = path
 	}
 }
 

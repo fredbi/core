@@ -24,11 +24,17 @@ import (
 //   - apply the configured code formatting rules
 //   - write the output target file.
 //
-// In addition [GoGenApp.GoMod] may be called to create and fill a "go.mod" file once the generation is complete.
+// # go build helpers
+//
+// In addition [GoGenApp.GoMod] may be called:
+//
+//   - to resolve the target go package name
+//   - to create and fill a "go.mod" file
 //
 // # Concurrency
 //
 // [GoGenApp] may be used to [GoGenApp.Render] files concurrently.
+//
 // However [GoGenApp.GoMod] is not safe for a concurrent use.
 type GoGenApp struct {
 	options
@@ -45,7 +51,6 @@ func New(templateFS fs.FS, opts ...Option) *GoGenApp {
 		options: optionsWithDefaults(templateFS, opts),
 		loaded:  &sync.Once{},
 	}
-
 	g.fs = afero.NewBasePathFs(g.baseFS, g.outputPath)
 
 	return g

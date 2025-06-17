@@ -11,9 +11,17 @@
 //
 // This package is exposed as an independent module and imposes few dependencies.
 //
-// It uses internally github.com/spf13/afero as an abstraction of a writable file system.
+// It uses internally github.com/spf13/afero as an abstraction for a writable file system.
 //
-// Code formatting relies on golang.org/x/tools/imports
+// Code formatting relies on:
+//
+//   - golang.org/x/tools/imports
+//
+// Package resolution relies on:
+//
+//   - golang.org/x/tools/go/packages
+//
+// Go module building relies on the "go mod" command (a go compiler must be installed to use this feature).
 //
 // Excluding test dependencies, it relies directly on the following github.com/fredbi/core packages:
 //
