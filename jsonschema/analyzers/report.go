@@ -23,6 +23,7 @@ const (
 	SchemaKindTuple
 	SchemaKindPolymorphic
 	SchemaKindScalar
+	SchemaKindNull
 )
 
 type PolymorphismKind uint8

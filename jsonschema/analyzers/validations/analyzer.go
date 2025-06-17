@@ -1,4 +1,4 @@
-package analyzer
+package validations
 
 import (
 	"github.com/fredbi/core/json"
@@ -32,7 +32,7 @@ func (a *Analyzer) Analyze(_ jsonschema.Schema) error {
 	return nil
 }
 
-func (a *Analyzer) AnalyzeCollection(_ jsonschema.SchemaCollection) error {
+func (a *Analyzer) AnalyzeCollection(_ jsonschema.Collection) error {
 	return nil
 }
 

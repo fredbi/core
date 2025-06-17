@@ -9,7 +9,7 @@ import (
 // TODO: how to mock AnalyzedSchema??
 
 type analyzedObject struct {
-	ID analyzers.UniqueID // UUID of the package
+	id analyzers.UniqueID // UUID of the package
 	// dependencies
 	Index         int64 // current index in the dependency graph
 	RequiredIndex int64 // -1 if no requirement
@@ -24,54 +24,16 @@ type analyzedObject struct {
 	path string
 }
 
+func (p analyzedObject) ID() analyzers.UniqueID {
+	return p.id
+}
+
 func (p analyzedObject) Name() string {
 	return p.name
 }
 
 func (p analyzedObject) Path() string {
 	return p.path
-}
-
-// AnalyzedPackage is the outcome of a package when bundling a JSON schema.
-//
-// Package hierarchy is a tree, not just a DAG.
-type AnalyzedPackage struct {
-	analyzedObject
-
-	schemas        []*AnalyzedSchema // schemas defined in this package
-	parent         *AnalyzedPackage
-	children       []*AnalyzedPackage
-	ultimateParent *AnalyzedPackage
-}
-
-func (p AnalyzedPackage) IsEmpty() bool {
-	return p.ID == ""
-}
-
-func (p AnalyzedPackage) Parent() AnalyzedPackage {
-	if p.parent != nil {
-		return *p.parent
-	}
-
-	return AnalyzedPackage{}
-}
-
-func (p AnalyzedPackage) Children() []AnalyzedPackage {
-	values := make([]AnalyzedPackage, len(p.children))
-	for i, child := range p.children {
-		values[i] = *child
-	}
-
-	return values
-}
-
-func (p AnalyzedPackage) Schemas() []AnalyzedSchema {
-	values := make([]AnalyzedSchema, len(p.schemas))
-	for i, schema := range p.schemas {
-		values[i] = *schema
-	}
-
-	return values
 }
 
 // AnalyzedSchema is the outcome of the analysis of a JSON schema.
@@ -94,8 +56,21 @@ type AnalyzedSchema struct {
 	children       []*AnalyzedSchema
 	parentProperty string
 	ultimateParent *AnalyzedSchema
+	refactors      []refactoringInfo
 }
 
+// IsRefactored indicates if the schema has been refactored by the analyzer
+func (a AnalyzedSchema) IsRefactored() bool {
+	return len(a.refactors) != 0
+}
+
+func (a AnalyzedSchema) IsCircular() bool {
+	return false
+}
+
+// Parents yields all parent schemas of a given schema.
+//
+// The result is empty if the schema is a root schema.
 func (a AnalyzedSchema) Parents() []AnalyzedSchema {
 	values := make([]AnalyzedSchema, len(a.parents))
 	for i, parent := range a.parents {
@@ -255,6 +230,10 @@ func (a AnalyzedSchema) IsObject() bool {
 	return a.kind == analyzers.SchemaKindObject
 }
 
+func (a AnalyzedSchema) IsNull() bool {
+	return a.kind == analyzers.SchemaKindNull
+}
+
 func (a AnalyzedSchema) IsArray() bool {
 	return a.kind == analyzers.SchemaKindArray
 }
@@ -277,6 +256,10 @@ func (a AnalyzedSchema) IsPolymorphic() bool {
 
 func (a AnalyzedSchema) IsAnyWithoutValidation() bool {
 	return a.kind == analyzers.SchemaKindNone
+}
+
+func (a AnalyzedSchema) IsEnumOnly() bool {
+	return false
 }
 
 // IsEnum is a schema that boils down (after reduction) to a const or enum.
@@ -325,6 +308,16 @@ func (a AnalyzedSchema) HasFormatValidation() bool {
 }
 
 func (a AnalyzedSchema) FormatValidation() string {
+	return "" // TODO
+}
+
+// HasPattern indicates if here is a pattern validation
+func (a AnalyzedSchema) HasPattern() bool {
+	return false // TODO
+}
+
+// Pattern ... a
+func (a AnalyzedSchema) Pattern() string {
 	return "" // TODO
 }
 
