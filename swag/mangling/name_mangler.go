@@ -15,6 +15,7 @@
 package mangling
 
 import (
+	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -133,18 +134,76 @@ func (m NameMangler) Pascalize(name string) string {
 	return ""
 }
 
-// SpellNumber (TODO(fred))
+// SpellNumber spells the numbers that are in the input string into English.
+//
+// Example:
+//
+//	SpellNumber("I hit this 1 out of 3.35e3 possibilities")
+//	=> "I hit this one out of three thousand and thirty five possibilities"
+//
+// # Spelling rules
+//
+// Numbers in scientific notation are supported:
+//
+//	"123E9" =>  "one billion two hundred and three thousand" (TODO: verify correct spelling)
+//
+// There is a limit to the exponent set to 15 ("quadrillions"). Numbers larger than that are spelled like:
+//
+// "123E45" => "one hundred twenty-three times ten power forty-five"
+//
+// Numbers with a thousands separator are supported. By default this separator is ",":
+//
+//	"1,000,000" => "one million"
+//
+// Fractional numbers (e.g. 1.24) are generally spelled like "one dot twenty-four".
+// By default, the decimal separator is ".".
+//
+// Well-known fractional numbers are spelled according to their usual name:
+//
+//	"0.5" => "half"
+//	"0.25" => "quarter"
+//	"0.1" => "one tenth"
+//
+// TODO: there is an option to override or recognize additional special fractions, e.g to get results like:
+//
+//	"0.01" => "one cent"
+//
+// Non-adjacent digits are spelled as separate numbers:
+//
+//	"1 2" => "one two"
+//
+// Digits that are adjacent to a non-digit code point cause a blank space to be inserted when spelled out:
+//
+//	"a1" => "a one"
+//
+// Multiple adjacent decimal separators revert to integer parts:
+//
+//	"123.456.789"  => "one hundred three . four hundred fifty-six . seven hundred eighty-nine"
+//
+// (TODO(fred))
 // see: https://github.com/daniellowtw/go-spell-number
 func (m NameMangler) SpellNumber(numbers string) string {
 	return ""
 }
 
+// TODO: SpellTime() / SpellDate()
+
+// Dasherize replace word separators by dashes (also called "kebab case").
+//
+// Example:
+//
+// "In olden times when wishing still helped one" => "in-olden-times-when-wishing-still-helped-one"
 func (m NameMangler) Dasherize(name string) string {
 	return m.ToCommandName(name)
 }
 
+// Dasherize replace word separators by underscores ("snake case").
+//
+// Example:
+//
+// "In olden times when wishing still helped one" => "in_olden_times_when_wishing_still_helped_one"
 func (m NameMangler) Snakize(name string) string {
-	return m.ToFileName(name)
+	return m.ToFileName(name) // TODO:
 }
 
 // ToGoPackagePath builds a legit go package path from a sentence (TODO(fred))
@@ -152,9 +211,21 @@ func (m NameMangler) ToGoPackagePath(name string) string {
 	return ""
 }
 
-// GoPackageName builds a legit go package name from a sentence (TODO(fred))
+// ToGoPackageName builds a legit go short package name from a sentence (TODO(fred)),
+// to be used as alias or in "package ..." statements.
+//
+// It abides by go package naming conventions:
+//
+//   - names are a single lower case word
+//   - names are not suffixed by _test, _{arch} where {arch} is a supported go target compilation architecture
+//   - names are not suffixed by a version number "v{n}"
+//   - names are not go reserved keywords
+//
+// Example:
+//
+//	ToGoPackageName("this/folder/go-mypkg/v2") => "mypkg"
 func (m NameMangler) ToGoPackageName(name string) string {
-	return ""
+	return strings.ToLower(filepath.Base(name)) // TODO
 }
 
 // Camelize a single word.
@@ -186,9 +257,23 @@ func (m NameMangler) Camelize(word string) string {
 	}
 }
 
-// ToFileName generates a suitable snake-case file name from a sentence.
+// ToGoFileName generates a legit file name that holds go source.
 //
+// Notice that if there is file extension, it will be kept, but none is added to the name.
+//
+// Like [NameMangler.ToFileName], it generates a suitable snake-case file name from a sentence.
+//
+// In addition, the outcome abides by go conventions:
+//
+//   - names are not suffixed by _test, _{arch} where {arch} is a supported go target compilation architecture
+func (m NameMangler) ToGoFileName(name string) string {
+	return m.ToFileName(name) // TODO
+}
+
+// ToFileName generates a suitable snake-case file name from a sentence.
 // It lower-cases everything with underscore (_) as a word separator.
+//
+// Notice that if there is file extension, it will be kept, but none is added to the name.
 //
 // Examples:
 //
@@ -308,6 +393,33 @@ func (m NameMangler) ToJSONName(name string) string {
 	return strings.Join(out, "")
 }
 
+// ToGoVarName generates a legit unexported go type or variable name from a sentence.
+//
+// It abides by go convention rules for variable identifiers, as well as rule from the "revive" linter.
+//
+//   - unexported variable do not start with a capitalized letter
+//   - variable identifiers are camel-cased
+//
+// Further, we want the rules to be consistent with the output of [NameMangler.ToGoName], which yields
+// an exported identifier.
+//
+// The following equivalences apply, so we may always export or unexport the result either way:
+//
+// ToGoName(name) = ToGoName(ToVarName(name))
+// ToVarName(name) = ToVarName(ToGoName(name))
+//
+// # Handling of unicode
+//
+// # Linting
+//
+// [revive], the successor of golint is the reference linter.
+//
+// TODO: describe
+// TODO: option to transliterate into ascii.
+func (m NameMangler) ToGoVarName(name string) string {
+	return m.goIdentifier(name, false)
+}
+
 // ToVarName generates a legit unexported go variable name from a sentence.
 //
 // The generated name plays well with linters (see also [NameMangler.ToGoName]).
@@ -336,6 +448,11 @@ func (m NameMangler) ToVarName(name string) string {
 //
 //   - "hello_swagger" becomes "HelloSwagger"
 //   - "Http_server" becomes "HTTPServer"
+//
+// The following equivalences apply, so we may always export or unexport the result either way:
+//
+// ToGoName(name) = ToGoName(ToVarName(name))
+// ToVarName(name) = ToVarName(ToGoName(name))
 //
 // # Edge cases
 //
