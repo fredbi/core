@@ -55,9 +55,13 @@ linters:
 formatters:
   enable:
     - gofmt
+    - gofumpt
     - goimports
+    - golines
   settings:
-    goimport:
+    gofmt:
+      simplify: true
+    goimports:
       local-prefixes:
         - github.com/fredbi/core
   exclusions:

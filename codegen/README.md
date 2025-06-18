@@ -1,6 +1,6 @@
 # codegen
 
-A set of tools to build code generation applications.
+A set of tools to build applications that generate go code.
 
 ## [genapp](./genapp/README.md)
 

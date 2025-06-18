@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	repo "github.com/fredbi/core/codegen/templates-repo"
 	"github.com/spf13/afero"
+
+	repo "github.com/fredbi/core/codegen/templates-repo"
 )
 
 // GoGenApp is a helper type to generate golang code.

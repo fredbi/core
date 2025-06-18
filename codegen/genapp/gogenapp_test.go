@@ -10,11 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	repo "github.com/fredbi/core/codegen/templates-repo"
-	fsutils "github.com/fredbi/core/swag/fs"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	repo "github.com/fredbi/core/codegen/templates-repo"
+	fsutils "github.com/fredbi/core/swag/fs"
 )
 
 //go:embed fixtures/templates
@@ -35,7 +36,8 @@ func TestGoGenAppRender(t *testing.T) {
 	t.Run("should generate from embedded templates", func(t *testing.T) {
 		templatesFS := templatesFixture(t)
 		testFS := afero.NewMemMapFs()
-		require.NoError(t, testFS.MkdirAll(folder, 0750))
+		const userWriteOtherNone = 0o750
+		require.NoError(t, testFS.MkdirAll(folder, userWriteOtherNone))
 
 		g := New(
 			templatesFS,
@@ -65,7 +67,7 @@ func TestGoGenAppRender(t *testing.T) {
 		require.NoError(t, err)
 
 		tmpDir := makeTestDir(t)
-		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, folder), 0755))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, folder), 0o755))
 
 		g := New(
 			templatesFS,
@@ -96,8 +98,8 @@ func TestGoGenAppRender(t *testing.T) {
 
 			t.Run("permissions on written file should not be too lax", func(t *testing.T) {
 				const (
-					allWritePerms = os.FileMode(0004)
-					allReadPerms  = os.FileMode(0002)
+					allWritePerms = os.FileMode(0o004)
+					allReadPerms  = os.FileMode(0o002)
 				)
 				require.Less(t, perms&allWritePerms, perms)
 				require.LessOrEqual(t, perms&allReadPerms, allReadPerms)
@@ -178,26 +180,32 @@ func templatesFixture(t *testing.T) fs.FS {
 	templatesFS, err := fs.Sub(fixturesFS, location)
 	require.NoError(t, err)
 
-	t.Run(fmt.Sprintf("embed fixtures in %q should be configured as expected", location), func(t *testing.T) {
-		t.Helper()
+	t.Run(
+		fmt.Sprintf("embed fixtures in %q should be configured as expected", location),
+		func(t *testing.T) {
+			t.Helper()
 
-		var found bool
-		require.NoError(t, fs.WalkDir(templatesFS, ".", func(path string, _ fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
+			var found bool
+			require.NoError(
+				t,
+				fs.WalkDir(templatesFS, ".", func(path string, _ fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
 
-			if path == templateName {
-				found = true
-			}
-			return nil
-		}))
-		require.True(t, found)
+					if path == templateName {
+						found = true
+					}
+					return nil
+				}),
+			)
+			require.True(t, found)
 
-		f, err := templatesFS.Open(templateName)
-		require.NoError(t, err)
-		_ = f.Close()
-	})
+			f, err := templatesFS.Open(templateName)
+			require.NoError(t, err)
+			_ = f.Close()
+		},
+	)
 
 	return templatesFS
 }
@@ -233,7 +241,10 @@ func trimCR(r rune) bool {
 }
 
 func makeTestDir(t *testing.T) string {
-	dir, err := os.MkdirTemp(".", "gentest") //nolint:usetesting  // cannot use t.TempDir() because we want to remain inside the go source tree
+	dir, err := os.MkdirTemp(
+		".",
+		"gentest",
+	) //nolint:usetesting  // cannot use t.TempDir() because we want to remain inside the go source tree
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

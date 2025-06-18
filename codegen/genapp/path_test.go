@@ -26,13 +26,20 @@ func TestPackagePath(t *testing.T) {
 
 				target := filepath.Join(cwd, tgt, "ok")
 				g := New(templatesFS, WithOutputPath(target))
+
+				needsGoMod, err := g.IsGoModRequired()
+				require.NoError(t, err)
+				require.False(t, needsGoMod)
 				pth, err := g.PackagePath()
 				require.NoError(t, err)
 				assert.Equal(t, expected, pth)
 
-				t.Run("called function should not leave simulated folder behind", func(t *testing.T) {
-					assert.NoDirExists(t, target)
-				})
+				t.Run(
+					"called function should not leave simulated folder behind",
+					func(t *testing.T) {
+						assert.NoDirExists(t, target)
+					},
+				)
 			})
 
 			t.Run("should determine package path from existing folder", func(t *testing.T) {
@@ -42,9 +49,12 @@ func TestPackagePath(t *testing.T) {
 				t.Cleanup(wipeTarget(tgt))
 
 				target := filepath.Join(cwd, tgt, "ok")
-				require.NoError(t, os.MkdirAll(target, 0755))
+				require.NoError(t, os.MkdirAll(target, 0o755))
 
 				g := New(templatesFS, WithOutputPath(target))
+				needsGoMod, err := g.IsGoModRequired()
+				require.NoError(t, err)
+				require.False(t, needsGoMod)
 				pth, err := g.PackagePath()
 				require.NoError(t, err)
 				assert.Equal(t, expected, pth)
@@ -63,17 +73,20 @@ func TestPackagePath(t *testing.T) {
 				t.Cleanup(wipeTarget(tgt))
 
 				target := filepath.Join(tgt, "ok")
-				fmt.Println("DEBUG: before")
 				g := New(templatesFS, WithOutputPath(target))
-				fmt.Println("DEBUG: OK")
-				t.Log("ok")
+				needsGoMod, err := g.IsGoModRequired()
+				require.NoError(t, err)
+				require.False(t, needsGoMod)
 				pth, err := g.PackagePath()
 				require.NoError(t, err)
 				assert.Equal(t, expected, pth)
 
-				t.Run("called function should not leave simulated folder behind", func(t *testing.T) {
-					assert.NoDirExists(t, target)
-				})
+				t.Run(
+					"called function should not leave simulated folder behind",
+					func(t *testing.T) {
+						assert.NoDirExists(t, target)
+					},
+				)
 			})
 
 			t.Run("should determine package path from existing folder", func(t *testing.T) {
@@ -82,9 +95,12 @@ func TestPackagePath(t *testing.T) {
 				t.Cleanup(wipeTarget(tgt))
 
 				target := filepath.Join(tgt, "ok")
-				require.NoError(t, os.MkdirAll(target, 0755))
+				require.NoError(t, os.MkdirAll(target, 0o755))
 
 				g := New(templatesFS, WithOutputPath(target))
+				needsGoMod, err := g.IsGoModRequired()
+				require.NoError(t, err)
+				require.False(t, needsGoMod)
 				pth, err := g.PackagePath()
 				require.NoError(t, err)
 				assert.Equal(t, expected, pth)
@@ -101,13 +117,19 @@ func TestPackagePath(t *testing.T) {
 				target := filepath.Join("..", "..", tgt, "ok")
 				t.Cleanup(wipeTarget(target))
 				g := New(templatesFS, WithOutputPath(target))
+				needsGoMod, err := g.IsGoModRequired()
+				require.NoError(t, err)
+				require.False(t, needsGoMod)
 				pth, err := g.PackagePath()
 				require.NoError(t, err)
 				assert.Equal(t, expected, pth)
 
-				t.Run("called function should not leave simulated folder behind", func(t *testing.T) {
-					assert.NoDirExists(t, target)
-				})
+				t.Run(
+					"called function should not leave simulated folder behind",
+					func(t *testing.T) {
+						assert.NoDirExists(t, target)
+					},
+				)
 			})
 		})
 	})
@@ -123,13 +145,19 @@ func TestPackagePath(t *testing.T) {
 
 				target := filepath.Join("..", "..", tgt, "ok")
 				g := New(templatesFS, WithOutputPath(target))
+				needsGoMod, err := g.IsGoModRequired()
+				require.NoError(t, err)
+				require.False(t, needsGoMod)
 				pth, err := g.PackagePath(WithModulePath(moduleRoot))
 				require.NoError(t, err)
 				assert.Equal(t, expected, pth)
 
-				t.Run("called function should not leave simulated folder behind", func(t *testing.T) {
-					assert.NoDirExists(t, target)
-				})
+				t.Run(
+					"called function should not leave simulated folder behind",
+					func(t *testing.T) {
+						assert.NoDirExists(t, target)
+					},
+				)
 			})
 		})
 
@@ -144,13 +172,19 @@ func TestPackagePath(t *testing.T) {
 
 				target := filepath.Join(root, tgt, "ok")
 				g := New(templatesFS, WithOutputPath(target))
+				needsGoMod, err := g.IsGoModRequired()
+				require.NoError(t, err)
+				require.True(t, needsGoMod)
 				pth, err := g.PackagePath(WithModulePath(moduleRoot))
 				require.NoError(t, err)
 				assert.Equal(t, expected, pth)
 
-				t.Run("called function should not leave simulated folder behind", func(t *testing.T) {
-					assert.NoDirExists(t, target)
-				})
+				t.Run(
+					"called function should not leave simulated folder behind",
+					func(t *testing.T) {
+						assert.NoDirExists(t, target)
+					},
+				)
 			})
 		})
 	})

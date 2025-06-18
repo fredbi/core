@@ -6,9 +6,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
+
+	"golang.org/x/tools/go/packages"
 
 	"github.com/fredbi/core/swag/mangling"
-	"golang.org/x/tools/go/packages"
 )
 
 // PackagePath returns the go package path that corresponds to the output dir.
@@ -68,10 +70,14 @@ func packagePath(outputPath string, modOpts modOptions) (string, error) {
 			return "", errors.Join(fileExistsErr, ErrGenApp)
 		}
 
-		if mkDirErr := os.MkdirAll(pth, 0755); mkDirErr != nil {
+		const userWriteOthersRead = 0o755
+		if mkDirErr := os.MkdirAll(pth, userWriteOthersRead); mkDirErr != nil {
 			return "", fmt.Errorf(
 				"the calling process should have write access to %q to simulate a go build, or have %q already created: %w: %w",
-				pth, outputPath, mkDirErr, ErrGenApp,
+				pth,
+				outputPath,
+				mkDirErr,
+				ErrGenApp,
 			)
 		}
 
@@ -81,7 +87,9 @@ func packagePath(outputPath string, modOpts modOptions) (string, error) {
 	}
 
 	mangler := mangling.New()
-	shortPackage := mangler.ToGoPackageName(pth) // TODO: finish mangler to extract package short name
+	shortPackage := mangler.ToGoPackageName(
+		pth,
+	) // TODO: finish mangler to extract package short name
 
 	// simulate a package file
 	overlays := map[string][]byte{
@@ -137,4 +145,24 @@ func packagePath(outputPath string, modOpts modOptions) (string, error) {
 	}
 
 	return pkg.PkgPath, nil
+}
+
+// IsGoModRequired checks the configured output path and returns true without error
+// if this path requires a go.mod to host buildable go source.
+// This is the case whenever the output path is outside the go build tree.
+//
+// It returns false without error if the target may be built without go.mod.
+//
+// IsGoModRequired may return false and an error when other build-related errors are found.
+func (g *GoGenApp) IsGoModRequired() (bool, error) {
+	_, err := packagePath(g.outputPath, modOptions{})
+	if err == nil {
+		return false, nil
+	}
+
+	if strings.Contains(err.Error(), "go.mod file not found") {
+		return true, nil
+	}
+
+	return false, err
 }

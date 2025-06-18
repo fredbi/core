@@ -6,10 +6,11 @@ import (
 	"strings"
 	"sync"
 
-	golangfunc "github.com/fredbi/core/codegen/funcmaps/golang"
-	repo "github.com/fredbi/core/codegen/templates-repo"
 	"github.com/spf13/afero"
 	"golang.org/x/tools/imports"
+
+	golangfunc "github.com/fredbi/core/codegen/funcmaps/golang"
+	repo "github.com/fredbi/core/codegen/templates-repo"
 )
 
 // Option to configure a [GoGenApp].
@@ -39,7 +40,7 @@ func (o goOptions) goFormat(name string, content []byte) ([]byte, error) {
 	return imports.Process(name, content, &o.formatOptions)
 }
 
-var globalMx sync.Mutex
+var globalMx sync.Mutex //nolint:gochecknoglobals // this guards access to a global in golang.org/x/tools/imports
 
 func optionsWithDefaults(templatesFS fs.FS, opts []Option) options {
 	const defaultTabWidth = 2
