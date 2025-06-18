@@ -1,5 +1,7 @@
 package model
 
+import types "github.com/fredbi/core/genmodels/generators/extra-types"
+
 // TargetKind describes a kind of go type to be generated.
 //
 // Notice that tuples are not native go types and they are normally represented by a struct.
@@ -64,6 +66,10 @@ func (m SerializerSelector) String() string {
 // Applicable when MarshalMode includes JSON serialization.
 type JSONLibSelector uint8
 
+func (m JSONLibSelector) Is(selected ...JSONLibSelector) bool {
+	return types.IsSelector(m, selected...)
+}
+
 const (
 	JSONStdLib JSONLibSelector = iota
 	JSONLibGoCCY
@@ -106,6 +112,10 @@ const (
 	IntegerMappingJSONType
 )
 
+func (m IntegerMappingSelector) Is(selected ...IntegerMappingSelector) bool {
+	return types.IsSelector(m, selected...)
+}
+
 func (m IntegerMappingSelector) String() string {
 	switch m {
 	case IntegerMappingFixed:
@@ -141,7 +151,11 @@ const (
 	DecimalMappingJSONType
 )
 
-type MethodKindSelector uint8
+func (m DecimalMappingSelector) Is(selected ...DecimalMappingSelector) bool {
+	return types.IsSelector(m, selected...)
+}
+
+type MethodKindSelector uint8 // TODO: should be mode
 
 const (
 	MethodKindGetter MethodKindSelector = iota
@@ -149,6 +163,10 @@ const (
 	// MethodKindStringer
 	// MethodKindDeepCopier
 )
+
+func (m MethodKindSelector) Is(selected ...MethodKindSelector) bool {
+	return types.IsSelector(m, selected...)
+}
 
 type MarshalMode uint8
 
@@ -162,6 +180,10 @@ const (
 	MarshalBSON                                 // MongoDB's BSON serialization
 	GobEncode                                   // standard library binary serialization
 )
+
+func (m MarshalMode) Has(modes ...MarshalMode) bool {
+	return types.HasMode[MarshalMode](m, modes...)
+}
 
 func (m MarshalMode) String() string {
 	switch m {

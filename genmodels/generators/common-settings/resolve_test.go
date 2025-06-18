@@ -1,4 +1,4 @@
-package models
+package settings
 
 /*
 func TestResolveSettings(t *testing.T) {

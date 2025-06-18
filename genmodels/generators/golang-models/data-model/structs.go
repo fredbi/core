@@ -5,6 +5,7 @@ import (
 )
 
 type LocationInfo struct {
+	BaseImportPath  string // the base generation target path (derived from TargetDir and TargetModuleRoot)
 	Package         string // package short name (e.g. "models")
 	PackageLocation string // relative path to the package (e.g. "models/subpackage/enums")
 	FullPackage     string // fully qualified package name (e.g. "github.com/fredbi/core/models")

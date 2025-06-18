@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 
 	"github.com/fredbi/core/codegen/genapp"
@@ -36,14 +37,15 @@ type options struct {
 	inputSchemas      jsonschema.Collection
 	overlaySchemas    jsonschema.OverlayCollection // load optional overlays to merge on top of the load schemas
 	generatorOptions  []genapp.Option
-	baseFS            afero.Fs // TODO: use fs.FS
-	outputPath        string   // output folder
+	baseFS            afero.Fs
+	outputPath        string // output folder
 	overlayTemplates  []string
 	wantsDumpAnalyzed bool
 	namingOptions     []providers.Option
 	dumpOutput        io.Writer
 	templateOverlays  []fs.FS
 	loadOptions       []loading.Option
+	logLevel          slog.Level
 	l                 log.Logger
 }
 
@@ -51,7 +53,7 @@ func (o options) validateOptions() error {
 	if len(o.sourceSchemas) == 0 {
 		return fmt.Errorf("the model generator requires at least one source to load schema. Use WithSourceSchemas(): %w", ErrInit)
 	}
-	if o.TargetImportPath == "" {
+	if o.TargetDir == "" {
 		return fmt.Errorf("the model generator requires an output folder to be specified. Use configuration or WithOutputPath(): %w", ErrInit)
 	}
 
@@ -60,8 +62,8 @@ func (o options) validateOptions() error {
 
 func (o options) genappDefaults() []genapp.Option {
 	return []genapp.Option{
-		genapp.WithOutputAferoFS(o.baseFS),
-		genapp.WithOutputPath(o.TargetImportPath),                // the target location
+		genapp.WithOutputAferoFS(o.baseFS),                       // should be afero.OsFs for other use cases than testing
+		genapp.WithOutputPath(o.TargetDir),                       // the target location
 		genapp.WithSkipFormat(o.SkipFmt),                         // skip go fmt step (e.g. for debug)
 		genapp.WithSkipCheckImport(o.SkipCheckImport),            // skip go import step (e.g. for debug)
 		genapp.WithFormatGroupPrefixes(o.FormatGroupPrefixes...), /// specify imports grouping patterns
@@ -92,7 +94,7 @@ func optionsWithDefaults(opts []Option) options {
 	}
 
 	if o.baseFS == nil {
-		o.baseFS = afero.NewOsFs() // TODO: use fs.FS
+		o.baseFS = afero.NewOsFs()
 	}
 
 	if o.inputSchemas.Len() == 0 {
@@ -104,7 +106,8 @@ func optionsWithDefaults(opts []Option) options {
 	}
 
 	if o.l == nil {
-		o.l = log.NewColoredLogger(log.WithName("golang-models"))
+		// default level is 0 (info)
+		o.l = log.NewColoredLogger(log.WithName("golang-models"), log.WithLevel(o.logLevel))
 	}
 
 	if o.dumpOutput == nil {
@@ -121,8 +124,6 @@ func optionsWithDefaults(opts []Option) options {
 // Use this option with care, as the go imports check would need access to the go modules tree when resolving imports.
 //
 // Also since we generate go.mod file using the go command, it is not possible to generate a go module within an [afero.Fs].
-//
-// TODO: this is sufficiently complicated like that, we could remove this option.
 func WithAferoFS(fs afero.Fs) Option {
 	return func(o *options) {
 		if fs != nil {
@@ -131,9 +132,7 @@ func WithAferoFS(fs afero.Fs) Option {
 	}
 }
 
-// WithOutputPath overrides the TargetImportPath setting to define the output folder.
-//
-// This overrides the TargetImportPath config setting.
+// WithOutputPath defines the output folder.
 func WithOutputPath(path string) Option {
 	return func(o *options) {
 		if path != "" {
@@ -142,7 +141,7 @@ func WithOutputPath(path string) Option {
 	}
 }
 
-// WithTemplateOverlays allows for overriding the provided embeded templates with
+// WithTemplateOverlays allows for overriding the provided embedded templates with
 // a collection of [fs.FS] containing alternate templates.
 //
 // Notice that the templates structure in the provided file systems must match exactly the
@@ -244,8 +243,16 @@ func WithDumpOutput(w io.Writer) Option {
 //
 // This setting allows to tune the loader, for instance to support unrecognized file extensions or
 // to load JSON schema assets from a [fs.FS] (e.g. [embed.FS]).
+//
+// For remote URLs, these options also allow to setup custom header or authentication.
 func WithLoadOptions(loadOptions ...loading.Option) Option {
 	return func(o *options) {
 		o.loadOptions = loadOptions
+	}
+}
+
+func WithLogLevel(level slog.Level) Option {
+	return func(o *options) {
+		o.logLevel = level
 	}
 }

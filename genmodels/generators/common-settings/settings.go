@@ -38,6 +38,7 @@ type GenTargetOptions struct {
 
 type GenSchemaOptions struct {
 	WantsExtraMethod bool
+	WantsAudit       bool // will report audit in the analyzed schema
 	ExtraMethodsMode ExtraMethodsMode
 }
 
@@ -45,6 +46,7 @@ type GenJSONSchemaOptions struct {
 	DefaultJSONSchemaVersion          jsonschema.Version // the default dialect to use
 	WantsJSONSchemaVersion            jsonschema.Version
 	WantsEnumConstant                 bool   // generate constants for enum values
+	WantsFactorizedEnums              bool   // identifies factorizable enum definitions and reduce them to one declaration
 	WantsImplicitAdditionalProperties bool   // when true, JSON objects keep non-explicitly defined additionalProperties
 	WantsImplicitAdditionalItems      bool   // when true, JSON tuples keep non-explicitly defined additionalItems
 	WantsName                         bool   `aliases:"name"`
@@ -95,7 +97,7 @@ type GenCustomOptions struct {
 //
 // TODO: disambiguate top-level vs schema-level settings
 type GenLayoutOptions struct {
-	TargetImportPath     string                      // the base generation target path
+	TargetDir            string                      // the target generation folder
 	PackageLayout        PackageLayoutSelector       // options to plan the layout of generated packages
 	PackageLayoutOptions PackageLayoutOptionSelector // additional options for package layout
 	PackageLayoutMode    PackageLayoutOptionMode     // additional options for package layout

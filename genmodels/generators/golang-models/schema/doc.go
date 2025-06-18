@@ -1,2 +1,3 @@
-// Package schema implements the logic to map an analyzed JSON schema to go types.
+// Package schema implements the logic
+// that maps an [AnalyzedSchema] to a [model.TargetSchema] to generate go types.
 package schema

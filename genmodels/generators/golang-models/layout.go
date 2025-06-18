@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"path"
+	"path/filepath"
 
 	"github.com/fredbi/core/codegen/genapp"
 	settings "github.com/fredbi/core/genmodels/generators/common-settings"
@@ -51,21 +53,16 @@ import (
 // The package layout consists of:
 //
 //   - creating the directories to hold package source files
-//   - optionally initializing a go.mod file for the generated target
-//   - creating specific files that are unique to a package (e.g. doc.go, other utilities)
+//   - creating specific files that are unique to a package (e.g. doc.go, other utilities).
 //     This code generation may be carried out in parallel.
 func (g *Generator) planPackageLayout() error {
-	bundleOptions, err := g.makeBundleOptions()
-	if err != nil {
-		return err
-	}
-
 	// 1. reorganize the schemas hierarchy with proper names and layout
 	//
 	// This step invokes the configured callbacks to define if and how schemas and packages are named.
 	//
+	//
 	// This is also the moment when we reorganize the '$ref's in the schema collection to achieve the desired layout.
-	bundled, err := g.analyzer.Bundle(bundleOptions...)
+	bundled, err := g.analyzer.Bundle()
 	if err != nil {
 		return errors.Join(err, ErrModel)
 	}
@@ -76,26 +73,15 @@ func (g *Generator) planPackageLayout() error {
 	// This step only needs to retrieve the generatormost folders to create the entire source tree structure.
 	var numPkg int
 	for folder := range bundled.Namespaces(structural.OnlyLeaves()) {
-		if err := g.baseFS.MkdirAll(folder, 0755); err != nil {
+		dir := filepath.Join(g.outputPath, folder)
+		if err := g.baseFS.MkdirAll(dir, 0755); err != nil {
 			return errors.Join(err, ErrModel)
 		}
 		numPkg++
 	}
 	g.l.Info("package folders created", "packages", numPkg)
 
-	if g.GenOptions.WantsGoMod {
-		// TODO: should warn this doesn't work with afero FS
-		if err := g.generator.GoMod(
-			genapp.WithModulePath(g.nameProvider.PackageFullName(g.outputPath)),
-			genapp.WithGoVersion(g.GenOptions.MinGoVersion),
-		); err != nil {
-			return errors.Join(err, ErrModel)
-		}
-
-		g.l.Info("module initialized", "target_package", g.outputPath)
-	}
-
-	if g.GenOptions.WantsPkgArtifact() {
+	if g.WantsPkgArtifact() {
 		// 3. generate package-level source files (e.g. doc.go, README.md, utils.go...)
 		//
 		// This content is typically not dependent on the generated models.
@@ -120,6 +106,21 @@ func (g *Generator) planPackageLayout() error {
 		}
 
 		g.l.Info("package-level artifacts created", "packages", numPkg)
+
+		if g.WantsGoMod {
+			if err := g.generator.GoMod(
+				genapp.WithModulePath(g.BaseImportPath),
+				genapp.WithGoVersion(g.MinGoVersion), // if empty, will apply go mod defaults, i.e. latest install go version
+			); err != nil {
+				return errors.Join(err, ErrModel)
+			}
+
+			g.l.Info(
+				"go module updated",
+				"target_package", g.BaseImportPath,
+				"target_dir", g.outputPath,
+			)
+		}
 	}
 
 	// 4. supersede the analyzer with the bundled version
@@ -134,27 +135,92 @@ func (g *Generator) planPackageLayout() error {
 //
 // At this moment, the configuration only produces a "doc.go" in each package.
 func (g *Generator) makeGenPackage(pkg structural.AnalyzedPackage) iter.Seq[model.TargetPackage] {
-	// We need:
-	// TargetOptions like we have for schemas
-	seed := model.TargetPackage{}
+	seed := model.TargetPackage{
+		GenPackageOptions: model.GenPackageOptions{ /* empty for now */ },
+		GenPackageTemplateOptions: model.GenPackageTemplateOptions{
+			GenOptions: &g.GenOptions,
+		},
+		LocationInfo: model.LocationInfo{
+			BaseImportPath:  g.BaseImportPath,
+			Package:         pkg.Name(),
+			PackageLocation: filepath.FromSlash(pkg.Path()),
+			FullPackage:     path.Join(g.BaseImportPath, pkg.Path()),
+		},
+		Index:  pkg.Index,
+		Source: &pkg,
+	}
 
-	return g.packageBuilder.GenNamedPackages(pkg, seed) // TODO
+	const (
+		// list of possibly generated files from a single analyzed package
+		typePkgDoc int = iota + 1
+		typePkgReadme
+	)
+
+	return func(yield func(model.TargetPackage) bool) {
+		for _, targetCode := range []int{
+			typePkgDoc,
+			typePkgReadme,
+		} {
+			switch targetCode {
+
+			case typePkgDoc:
+				if !g.WantsPkgDoc {
+					continue
+				}
+
+				seed.NeedsDoc = true
+				seed.NeedsReadme = false
+				seed.File = "doc"
+				seed.Template = "pkgdoc"
+				seed.Ext = ".go"
+
+			case typePkgReadme:
+				if !g.WantsPkgReadme {
+					continue
+				}
+
+				seed.NeedsDoc = false
+				seed.NeedsReadme = true
+				seed.File = "README"
+				seed.Template = "readme"
+				seed.Ext = ".md"
+
+			default:
+				continue
+			}
+
+			for targetPackage := range g.packageBuilder.GenNamedPackages(pkg, seed) { // TODO in builder (e.g. only 1 output for the foreseeable future)
+				if !yield(targetPackage) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // makeBundleOptions configures all the naming and package layout for the analyzer to produce a bundled schema.
-func (g *Generator) makeBundleOptions() ([]structural.BundleOption, error) {
-	bundlingOptions := []structural.BundleOption{
+//
+// This settings ties the [structural.Analyzer] with the [providers.NameProvider], so bundling will callback
+// the name provider when visiting packages and schemas.
+//
+// The other way around, the [providers.NameProvider] will call the [structural.Analyzer] to enrich schemas.
+func (g *Generator) makeBundleOptions() ([]structural.Option, error) {
+	bundlingOptions := []structural.Option{
 		// configure naming callbacks to name packages and schemas during bundling
-		structural.WithBundleNameProvider(structural.NameProvider(g.nameProvider.NameSchema)),      // callback to name schemas
-		structural.WithBundleNameEqualOperator(structural.EqualOperator(g.nameProvider.EqualName)), // callback to detect name conflicts on named schemas
-		structural.WithBundlePathProvider(structural.NameProvider(g.nameProvider.NamePackage)),     // callback to name package paths
-		structural.WithBundlePathEqualOperator(structural.EqualOperator(g.nameProvider.EqualPath)), // callback to detect name conflicts on package paths
-		structural.WithBundleMarker(structural.SchemaMarker(g.nameProvider.Mark)),                  // callback to amend the schema on-the-fly with extra extensions
+		structural.WithBundleNameProvider(structural.NameProvider(g.nameProvider.NameSchema)),           // callback to name schemas
+		structural.WithBundleNameIdentifier(structural.UniqueIdentifier(g.nameProvider.UniqueSchema)),   // callback to detect name conflicts on named schemas
+		structural.WithBundleNameDeconflicter(structural.Deconflicter(g.nameProvider.DeconflictSchema)), // callback to name package paths
+		structural.WithBundlePathProvider(structural.NameProvider(g.nameProvider.NamePackage)),          // callback to name package paths
+		structural.WithBundlePathIdentifier(structural.UniqueIdentifier(g.nameProvider.UniquePath)),     // callback to detect name conflicts on package paths
+		structural.WithBundlePathDeconflicter(structural.Deconflicter(g.nameProvider.DeconflictPath)),   // callback to name package paths
 		//
 		// other layout options that affect schema bundling
 		structural.WithBundleSingleRoot(g.ModelLayout.Is(settings.ModelLayoutAllModelsOneFile)), // enforce a single root schema, so we may pack everything into one file if desired
-		structural.WithBundleEnums(g.PackageLayoutMode.Has(settings.PackageLayoutEnums)),        // allow enums to be defined in their own package
 		structural.WithBundleEnumsPackage(g.EnumPackageName),                                    // if PackageLayoutEnums is enabled, the package name to define (e.g. "enums")
+	}
+
+	if g.PackageLayoutMode.Has(settings.PackageLayoutEnums) { // allow enums to be defined in their own package
+		bundlingOptions = append(bundlingOptions, structural.WithBundleEnumsPackage(g.EnumPackageName)) // if PackageLayoutEnums is enabled, the package name to define (e.g. "enums")
 	}
 
 	// configure the layout strategy for bundling

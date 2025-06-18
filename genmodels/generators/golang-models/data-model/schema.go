@@ -13,10 +13,10 @@ type TargetSchema struct {
 	TypeDefinition
 	TypeValidations
 
-	StdImports ImportsMap // imports from the standard library
-	Imports    ImportsMap // non-standard imports
+	Index   int64
+	Imports ImportsMap // all imports (inherited from the parent model)
 
-	Source structural.AnalyzedSchema
+	Source *structural.AnalyzedSchema
 	// ParentDependencies []analyzers.UniqueID // UniqueID's of models this schema depends on
 }
 

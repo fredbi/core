@@ -1,5 +1,6 @@
 package providers
 
+/*
 import "github.com/fredbi/core/jsonschema/analyzers/structural"
 
 // TODO: this is a common feature => move to codegen tools
@@ -44,3 +45,4 @@ func (d *NameDeconflicter) tryDeconflict(name string, _ structural.AnalyzedSchem
 	// use schema as a context to find our best move
 	return name + "X" // TODO
 }
+*/

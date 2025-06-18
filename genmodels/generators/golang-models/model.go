@@ -9,15 +9,12 @@ import (
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
 )
 
+const sensibleAllocs = 10
+
 type targetModelContext struct {
 	model.TargetModel
 
-	genContext
-}
-
-type genContext struct {
-	// currently unused.
-	// TODO: not sure we need this wrapper
+	// possibly extensible here
 }
 
 // makeGenModels builds target models from a single analyzed schema.
@@ -50,14 +47,6 @@ type genContext struct {
 // - x-go-wants-split-validation (x-go-split-validation)
 // - x-go-wants-test (x-go-test)
 func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[model.TargetModel] {
-	const (
-		// list of possibly generated files from a single analyzed schema
-		typeDefinitionModel int = iota
-		typeValidationModel
-		typeDefinitionTest
-		typeValidationTest
-	)
-
 	// 1. construct the base data model for this schema
 	genModelWithContext := g.makeGenModel(analyzed)
 
@@ -75,11 +64,10 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 		g.stashMx.Lock()
 		defer g.stashMx.Unlock()
 
-		stashed, foundInStash := g.stashedSchemas[analyzed.ID]
+		stashed, foundInStash := g.stashedSchemas[analyzed.ID()]
 		if foundInStash {
 			genModel.MergeSchemas(stashed.Schemas)
-			genModel.StdImports.Merge(stashed.StdImports)
-			genModel.Imports.Merge(stashed.Imports)
+			genModel.Imports = g.deconflictedMergedImports(genModel.Imports, stashed.Imports)
 		}
 
 		// stash this model for later generation
@@ -89,7 +77,7 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 	}
 
 	g.stashMx.RLock()
-	_, foundInStash := g.stashedSchemas[analyzed.ID]
+	_, foundInStash := g.stashedSchemas[analyzed.ID()]
 	g.stashMx.RUnlock()
 
 	// 4. determine if we should merge previously stashed models
@@ -99,17 +87,27 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 		// We may safely assume that by now, all dependency schemas have been processed, so the
 		// stash for this key is no longer updated.
 		g.stashMx.Lock()
-		stashed, _ := g.stashedSchemas[analyzed.ID]
-		genModel.MergeSchemas(stashed.Schemas) // TODO: should sort dependencies to reflect nice code, with dependencies last
-		genModel.StdImports.Merge(stashed.StdImports)
-		genModel.Imports.Merge(stashed.Imports)
-		delete(g.stashedSchemas, analyzed.ID)
+		stashed := g.stashedSchemas[analyzed.ID()]
+		genModel.MergeSchemas(stashed.Schemas) // dependencies are sorted in reverse, to reflect nice code with dependencies last
+		genModel.Imports = g.deconflictedMergedImports(genModel.Imports, stashed.Imports)
+		delete(g.stashedSchemas, analyzed.ID())
 		g.stashMx.Unlock()
 	}
 
 	// 5. yields the iterator over model variants based on the same genModel.
 	//
-	// Produced models will differ only by their target file name and layout flags.
+	// Produced models will differ only by their target file name, their layout flags and possibly imports.
+	//
+	// It is possible to configure these models with different templates. At present, the "model" top-level
+	// templates serves as a switch.
+	const (
+		// list of possibly generated files from a single analyzed schema
+		typeDefinitionModel int = iota
+		typeValidationModel
+		typeDefinitionTest
+		typeValidationTest
+	)
+
 	return func(yield func(model.TargetModel) bool) {
 		var targetModel model.TargetModel
 		for _, targetCode := range []int{
@@ -155,6 +153,9 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 				targetModel.TargetCodeFlags = applyLayoutOptions(genModel.TargetCodeFlags, flags)
 				targetModel.Schemas = applyLayoutOptionsToSchemas(targetModel.Schemas, flags)
 
+				testImports := model.MakeImportsMap(g.extraModelImports(flags)...)
+				targetModel.Imports = g.deconflictedMergedImports(testImports, targetModel.Imports)
+
 			case typeValidationTest:
 				// we want to produce a test for the Validate method only
 				if !layout.SchemaWantsSplitValidation || !layout.SchemaWantsTest || !targetModel.NeedsValidation {
@@ -165,8 +166,12 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 				// yield a version of this [TargetModel] to generate {name}_validation_test.go, with only tests for validation code
 				targetModel = genModel
 				targetModel.File = g.nameProvider.FileNameForTest(targetModel.File+"_validation_test", analyzed)
-				targetModel.TargetCodeFlags = applyLayoutOptions(genModel.TargetCodeFlags, flagsForValidationTest)
+				flags := flagsForValidationTest
+				targetModel.TargetCodeFlags = applyLayoutOptions(genModel.TargetCodeFlags, flags)
 				targetModel.Schemas = applyLayoutOptionsToSchemas(targetModel.Schemas, flagsForValidationTest)
+
+				testImports := model.MakeImportsMap(g.extraModelImports(flags)...)
+				targetModel.Imports = g.deconflictedMergedImports(testImports, targetModel.Imports)
 			}
 
 			if !yield(targetModel) {
@@ -176,14 +181,98 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 	}
 }
 
-func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModelContext {
-	const sensibleAllocs = 10
+func (g *Generator) deconflictedMergedImports(base model.ImportsMap, merged model.ImportsMap) model.ImportsMap {
+	deconflict := func(alias string) string {
+		deconflicted, _ := g.nameProvider.DeconflictAlias(alias, base)
 
-	genModel := model.TargetModel{
+		return deconflicted
+	}
+
+	base.MergeDeconflicted(merged, deconflict)
+
+	return base
+}
+
+// defaultModelImports defines default imports for all models.
+//
+// TODO(fred): imports depends on options ... etc. This will be a last minute tuning
+func (g *Generator) defaultModelImports() []model.AliasedImport {
+	// 1. customize import to support formats
+	formatsPkg := g.FormatsImportPath
+	if formatsPkg == "" {
+		formatsPkg = "github.com/fredbi/core/strfmt/jsonschema-formats"
+	}
+
+	baseImports := []model.AliasedImport{
+		{
+			Alias:   "apierrors",
+			Name:    "errors",
+			Package: "github.com/fredbi/core/errors", // possible to override this with settings
+		},
+		{
+			Alias:   "formats",
+			Name:    "formats",
+			Package: formatsPkg,
+		},
+	}
+
+	// 2. configure JSON std lib
+	if g.WantsSerializer {
+		switch {
+		case g.JSONLibSelector.Is(model.JSONStdLib):
+			baseImports = append(baseImports, model.AliasedImport{
+				Alias:   "json",
+				Name:    "json",
+				Package: "encoding/json",
+			})
+		case g.JSONLibSelector.Is(model.JSONLibGoCCY):
+			baseImports = append(baseImports, model.AliasedImport{
+				Alias:   "json",
+				Name:    "json",
+				Package: "github.com/goccy/go-json",
+			})
+		case g.JSONLibSelector.Is(model.JSONLibJsoniter):
+			baseImports = append(baseImports, model.AliasedImport{
+				Alias:   "jsoniter",
+				Name:    "jsoniter",
+				Package: "github.com/json-iterator/go",
+			})
+		}
+	}
+
+	// 3. other imports
+
+	return baseImports
+}
+
+// extraModelImports lists supplementary imports required for alternative model targets,
+// e.g test code.
+//
+// Extra imports are thus determined by the model.TargetCodeFlags
+func (g *Generator) extraModelImports(layout model.TargetCodeFlags) []model.AliasedImport {
+	imports := make([]model.AliasedImport, 0, sensibleAllocs)
+
+	if layout.NeedsTest {
+		imports = append(imports, model.AliasedImport{
+			Alias:   "testing",
+			Name:    "testing",
+			Package: "testing",
+		})
+	}
+
+	return imports
+}
+
+// makeGenModel produces a seed model from a [structural.AnalyzedSchema].
+//
+// It decides whether to stash it for later generation (e.g. several schemas in a single file), or to render
+// it straight away.
+func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModelContext {
+	seed := model.TargetModel{
 		GenModelOptions: model.GenModelOptions{
 			GenOptions: &g.GenOptions,
 		},
-		ID:   analyzed.ID,
+		ID:   analyzed.ID(),
 		Name: analyzed.OriginalName(),
 		LocationInfo: model.LocationInfo{
 			Package:         g.nameProvider.PackageShortName(analyzed.Path(), analyzed),
@@ -191,9 +280,8 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 			FullPackage:     g.nameProvider.PackageFullName(analyzed.Path(), analyzed), // fully qualified package name (e.g. "github.com/fredbi/core/models")
 			File:            g.nameProvider.FileName(analyzed.Name(), analyzed),        // deconflicted file name, safe for go
 		},
-		StdImports: make(model.ImportsMap, 0, sensibleAllocs),
-		Imports:    make(model.ImportsMap, 0, sensibleAllocs),
-		Schemas:    make([]model.TargetSchema, 0, sensibleAllocs),
+		Imports: model.MakeImportsMap(g.defaultModelImports()...),
+		Schemas: make([]model.TargetSchema, 0, sensibleAllocs),
 	}
 
 	switch {
@@ -204,27 +292,30 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 		// When a RelatedParent is defined, the model will be stashed for later merge and rendering in the same file
 		// as its RelatedParent.
 		if !analyzed.IsRoot() && analyzed.WasAnonymous() {
-			parentID := analyzed.Parent().ID
-			genModel.RelatedParent = parentID
+			parent := analyzed.Parent()
+			parentID := parent.ID()
+			seed.RelatedParent = parentID
 		}
 	case g.ModelLayout.Is(settings.ModelLayoutAllModelsOneFile):
 		// in this layout, all models are packed in a single source file
 		//
 		// When an UltimateParent is defined, the model with be stashed for later merge and rendering in a single file.
-		parentID := analyzed.UltimateParent().ID
-		genModel.UltimateParent = parentID
+		parent := analyzed.UltimateParent()
+		parentID := parent.ID()
+		seed.UltimateParent = parentID
+	default:
+		// nothing to do otherwise
 	}
 
 	// resolve all go type definitions that we want to produce from this [structural.AnalyzedSchema],
 	// possibly with validation setup.
-	for schema := range g.makeGenSchema(analyzed, genModel) {
-		genModel.Schemas = append(genModel.Schemas, schema)
-		genModel.StdImports.Merge(schema.StdImports)
-		genModel.Imports.Merge(schema.Imports)
+	for schema := range g.makeGenSchema(analyzed, seed) {
+		seed.Schemas = append(seed.Schemas, schema)
+		seed.Imports = g.deconflictedMergedImports(seed.Imports, schema.Imports)
 	}
 
 	return targetModelContext{
-		TargetModel: genModel,
+		TargetModel: seed,
 	}
 }
 
@@ -232,7 +323,7 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 //
 // In some situations, we may have several type definitions to assemble: e.g. enums, interfaces with concrete types...
 func (g *Generator) makeGenSchema(analyzed structural.AnalyzedSchema, seed model.TargetModel) iter.Seq[model.TargetSchema] {
-	return g.schemaBuilder.GenNamedSchemas(analyzed, seed)
+	return g.schemaBuilder.GenNamedSchemas(analyzed, seed) // TODO in schema.Builder
 }
 
 // shouldStashModel determines if the layout options tell that we should merge several (named) schemas

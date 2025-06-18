@@ -8,7 +8,7 @@ require (
 	github.com/fredbi/core/json v0.0.0-00010101000000-000000000000
 	github.com/fredbi/core/jsonschema v0.0.0-00010101000000-000000000000
 	github.com/fredbi/core/swag/loading v0.0.0-00010101000000-000000000000
-	github.com/fredbi/core/swag/mangling v0.0.0-00010101000000-000000000000
+	github.com/fredbi/core/swag/mangling v0.0.0-20250515102727-3befc1aaa0d7
 	github.com/spf13/afero v1.14.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.14.0
@@ -22,10 +22,7 @@ require (
 	github.com/fredbi/core/swag/pools v0.0.0-00010101000000-000000000000 // indirect
 	github.com/fredbi/core/swag/stringutils v0.0.0-20250515102727-3befc1aaa0d7 // indirect
 	github.com/fredbi/core/swag/typeutils v0.0.0-20250515102727-3befc1aaa0d7 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/tools v0.33.0 // indirect

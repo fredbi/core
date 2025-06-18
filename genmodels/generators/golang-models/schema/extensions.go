@@ -1,4 +1,4 @@
-package models
+package schema
 
 import (
 	"fmt"
@@ -6,12 +6,12 @@ import (
 	"github.com/fredbi/core/json/dynamic"
 )
 
-// MapExtensionForType validates and maps extensions that affects schema generation.
+// MapExtension validates and maps extensions that affects schema generation.
 //
 // It is provided as a callback executed during the schema analysis.
 //
 // Additional extensions that alter naming and layout (e.g. x-go-name, x-go-package, etc.) are handled by [providers.NameProvider].
-func (p *Generator) MapExtensionForType(directive string, jazon dynamic.JSON) (any, error) {
+func (b *Builder) MapExtension(directive string, jazon dynamic.JSON) (any, error) {
 	switch directive {
 	case "x-go-type":
 		ext := jazon.Interface()

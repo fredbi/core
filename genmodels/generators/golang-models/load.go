@@ -56,7 +56,7 @@ func (g *Generator) loadOverlays() error {
 /*
 Status:
 
-* loading.ReaderFromFileOrHTTP(source) : TODO in swag/loading
+* loading.ReaderFromFileOrHTTP(source) : DONE in swag/loading
 * jsonschema.Collection.DecodeAppend(reader) : TODO in jsonschema
 * jsonschema.OverlayCollection.ApplyTo(jsonschema.Collection) : TODO in jsonschema
 

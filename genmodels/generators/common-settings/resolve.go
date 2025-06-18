@@ -1,5 +1,6 @@
-package models
+package settings
 
+/*
 import (
 	"reflect"
 
@@ -20,7 +21,7 @@ type Settings struct {
 	Extensions []SettingWithLocation
 }
 
-/*
+*
 func dot(index []int) string {
 	if len(index) == 0 {
 		return ""
@@ -34,7 +35,7 @@ func dot(index []int) string {
 
 	return w.String()
 }
-*/
+*
 
 func ResolveSettings(o any) Settings {
 	v := reflect.ValueOf(o)
@@ -54,7 +55,7 @@ func ResolveSettings(o any) Settings {
 		}
 
 		if field.Type.Kind() == reflect.Struct {
-			/*
+			*
 				section, ok := field.Tag.Lookup("section")
 				if !ok {
 					continue
@@ -62,23 +63,23 @@ func ResolveSettings(o any) Settings {
 				parent := sections[dot(field.Index[:len(field.Index)-1])]
 				sections[dot(field.Index)] = path.Join(parent, section)
 
-			*/
+			*
 
 			continue
 		}
 
 		name := m.Dasherize(field.Name)
-		/*
+		*
 			pth := make([]string, 0, 10)
 			idx := dot(field.Index[:len(field.Index)-1])
 			section, ok := sections[idx]
 			if ok {
 				pth = append(pth, section)
 			}
-		*/
+		*
 
 		st := field.Type.String()
-		//values := make([]string, 0, 5)
+		// values := make([]string, 0, 5)
 		flags = append(flags, SettingWithLocation{Name: name, Type: st})
 		extensions = append(extensions, SettingWithLocation{Name: "x-go-" + name, Type: st})
 	}
@@ -88,3 +89,4 @@ func ResolveSettings(o any) Settings {
 		Extensions: extensions,
 	}
 }
+*/

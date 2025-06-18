@@ -4,7 +4,6 @@ import (
 	"iter"
 
 	model "github.com/fredbi/core/genmodels/generators/golang-models/data-model"
-	"github.com/fredbi/core/json"
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
 )
 
@@ -14,26 +13,6 @@ const (
 	genSchemaFlagIgnoreNamed genSchemaFlag = 1
 	genSchemaFlagPickNamed   genSchemaFlag = 2
 )
-
-// NameProvider is a limited interface to address the needs of the [Builder].
-//
-// It is implemented by [providers.NameProvider] and this interface definition is mainly intended to facilitate testing.
-type NameProvider interface {
-	// NameEnumValue is used to build an identifier (e.g. constant or variable) corresponding to an enum value
-	NameEnumValue(index int, enumValue json.Document, analyzed structural.AnalyzedSchema) (string, error)
-}
-
-// Builder knows how to produce a data model [model.TargetSchema] to be consumed by model generation templates.
-type Builder struct {
-	options
-}
-
-// NewBuilder constructs a new schema [Builder].
-func NewBuilder(opts ...Option) *Builder {
-	return &Builder{
-		options: optionsWithDefaults(opts),
-	}
-}
 
 // GenNamedSchemas transforms a [structural.AnalyzedSchema] into a series of [model.TargetSchema] s to be consumed by
 // templates.
@@ -143,8 +122,8 @@ func (g *Builder) initializeTargetSchemaFromModel(m model.TargetModel) model.Tar
 	return model.TargetSchema{
 		GenSchemaTemplateOptions: model.GenSchemaTemplateOptions{
 			GenOptions: m.GenOptions,
-			//NeedsSerializer bool
-			//MarshalMode     MarshalMode
+			// NeedsSerializer bool
+			//MarshalMode
 			//JSONLibPath     string
 			//Serializer      SerializerSelector
 			TargetCodeFlags: m.TargetCodeFlags,
@@ -183,7 +162,7 @@ func (g *Builder) makeNamedObject(analyzed structural.AnalyzedSchema, model mode
 
 	schema := g.initializeTargetSchemaFromModel(model)
 	schema.Identifier = analyzed.Name()
-	//schema.Metadata =  /* TODO */
+	// schema.Metadata =  /* TODO */
 	/*
 		schema.Target TargetSchema{
 			GenSchemaTemplateOptions: GenSchemaTemplateOptions{

@@ -1,6 +1,7 @@
 package log
 
 import (
+	"context"
 	"log/slog"
 )
 
@@ -9,6 +10,7 @@ type Logger interface {
 	Info(format string, args ...any)
 	Warn(format string, args ...any)
 	Error(format string, args ...any)
+	DebugEnabled() bool
 }
 
 type ColoredLogger struct {
@@ -25,15 +27,19 @@ func NewColoredLogger(opts ...Option) *ColoredLogger {
 	return l
 }
 
-func (d ColoredLogger) Debug(msg string, args ...any) {
+func (d *ColoredLogger) Debug(msg string, args ...any) {
 	d.Debug(msg, args...)
 }
-func (d ColoredLogger) Info(msg string, args ...any) {
+func (d *ColoredLogger) Info(msg string, args ...any) {
 	d.Info(msg, args...)
 }
-func (d ColoredLogger) Warn(msg string, args ...any) {
+func (d *ColoredLogger) Warn(msg string, args ...any) {
 	d.Warn(msg, args...)
 }
-func (d ColoredLogger) Error(msg string, args ...any) {
+func (d *ColoredLogger) Error(msg string, args ...any) {
 	d.Error(msg, args...)
+}
+
+func (d *ColoredLogger) DebugEnabled() bool {
+	return d.Enabled(context.Background(), slog.LevelDebug)
 }

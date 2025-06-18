@@ -1,6 +1,8 @@
 package model
 
 import (
+	"io"
+
 	settings "github.com/fredbi/core/genmodels/generators/common-settings"
 )
 
@@ -17,11 +19,6 @@ import (
 /*
 TODO: support other tags such as x-go-type, x-go-external, x-go-omitempty etc
 */
-
-type AliasedImport struct {
-	Alias   string
-	Package string
-}
 
 // GenOptions lists all available code generation options for the golang model target.
 type GenOptions struct {
@@ -40,15 +37,21 @@ type GenOptions struct {
 	GenSchemaOptions `section:"schema"`
 }
 
+// Dump settings to an [io.Writer]
+func (g GenOptions) Dump(w io.Writer) error {
+	return nil // TODO
+}
+
 // GenTargetOptions defines top-level generation options.
 type GenTargetOptions struct {
 	settings.GenTargetOptions `section:",squash"`
 
-	WantsGoGenerate bool
-	WantsGoMod      bool
-	WantsPkgDoc     bool   // generate a doc.go file for each package
-	WantsPkgReadme  bool   // generate a README.md file for each package
-	MinGoVersion    string // when WantsGoMod is true, generate with a required go version
+	WantsGoGenerate  bool   // adds a "go:generate header" when PkgDoc is true.
+	WantsGoMod       bool   // requests a go.mod to be generated
+	TargetModuleRoot string // the base name of the module when WantsGoMod is enabled (not required)
+	WantsPkgDoc      bool   // generate a doc.go file for each package
+	WantsPkgReadme   bool   // generate a README.md file for each package
+	MinGoVersion     string // when WantsGoMod is true, generate with a required go version
 	ImportOptions
 }
 
@@ -57,8 +60,9 @@ func (o GenTargetOptions) WantsPkgArtifact() bool {
 }
 
 type ImportOptions struct {
-	ImportRuntime string
-	ImportStrFmt  string
+	BaseImportPath string // the base generation target path (derived from TargetDir and TargetModuleRoot)
+	ImportRuntime  string // defaults to github.com/fredbi/core/runtime
+	ImportStrFmt   string // defaults to github.com/fredbi/core/strfmt
 }
 
 type GenSchemaOptions struct {

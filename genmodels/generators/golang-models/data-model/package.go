@@ -8,13 +8,13 @@ type TargetPackage struct {
 	GenPackageTemplateOptions
 	LocationInfo
 
-	Source structural.AnalyzedPackage
+	Index  int64
+	Source *structural.AnalyzedPackage
 
 	// TODO: capture metadata about package
 }
 
 type GenPackageOptions struct {
-	*GenOptions
 }
 
 type GenPackageTemplateOptions struct {

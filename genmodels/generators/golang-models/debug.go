@@ -6,6 +6,13 @@ import (
 	"io"
 )
 
+// dumpSettings dumps [model.GenOptions] settings.
+//
+// This is enabled with debug logging.
+func (g *Generator) dumpSettings() error {
+	return g.Dump(g.dumpOutput)
+}
+
 // dumpTemplates writes genmodel templates structure to the standard output.
 //
 // This is useful to produce documentation.

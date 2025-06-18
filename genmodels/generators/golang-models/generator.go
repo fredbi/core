@@ -7,8 +7,7 @@ import (
 
 	"github.com/fredbi/core/codegen/genapp"
 	model "github.com/fredbi/core/genmodels/generators/golang-models/data-model"
-	"github.com/fredbi/core/genmodels/generators/golang-models/providers"
-	"github.com/fredbi/core/genmodels/generators/golang-models/schema"
+	"github.com/fredbi/core/genmodels/generators/golang-models/ifaces"
 	"github.com/fredbi/core/genmodels/generators/internal/sync"
 	"github.com/fredbi/core/jsonschema/analyzers"
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
@@ -16,16 +15,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Generator knows how to build go types from JSON schema models.
+// Generator builds go types from JSON schemas.
 type Generator struct {
 	options
 
-	analyzer       structural.Analyzer
 	generator      *genapp.GoGenApp
-	deconflicter   *providers.NameDeconflicter
-	nameProvider   NameProvider
-	schemaBuilder  SchemaBuilder
-	packageBuilder PackageBuilder
+	analyzer       structural.Analyzer
+	nameProvider   ifaces.NameProvider
+	schemaBuilder  ifaces.SchemaBuilder
+	packageBuilder ifaces.PackageBuilder
 
 	stashedSchemas map[analyzers.UniqueID]model.TargetModel
 	stashMx        stdsync.RWMutex
@@ -34,31 +32,52 @@ type Generator struct {
 // New code generator to build go types.
 func New(opts ...Option) *Generator {
 	g := &Generator{
-		options: optionsWithDefaults(opts),
+		options:        optionsWithDefaults(opts),
+		stashedSchemas: make(map[analyzers.UniqueID]model.TargetModel),
 	}
 
-	g.nameProvider = providers.NewNameProvider(g.namingOptions...)
-	g.stashedSchemas = make(map[analyzers.UniqueID]model.TargetModel)
-
-	builder := schema.NewBuilder(schema.WithNameProvider(g.nameProvider)) // builders leverage the name provider for generation based on enum value
-	g.schemaBuilder = builder                                             // [schema.Builder] implements both
-	g.packageBuilder = builder
-
-	// the rest of the initialization is deferred to after loading configuration.
+	// the rest of the initialization is deferred to after loading configuration. See [Generator.init].
 
 	return g
 }
 
 // Generate the models.
 //
-// The generation process essentially consists of 4 steps:
+// # Scope
 //
-//  1. analysis: a structural analysis of the JSON schema(s): raw JSON schema grammar and semantic subtleties are made more amenable
-//  2. bundling: an internal reorganization of the schema(s) structure, to define a '$ref's (named entities) with the
+// [Generator.Generate] generates go source code with types implementing a JSON schema specification.
+//
+// It supports different dialects of JSON schema, from draft4 to draft2020, as well as
+// the OpenAPI dialects v2 and v3.x.
+//
+// # Outcome
+//
+// The generated code lies as one or several go packages under one target output folder on local disk.
+//
+// This package may optionally be declared as a go module.
+//
+// It is possible to generate test code for your types.
+//
+// # Steps
+//
+// The generation process consists of 6 major steps:
+//
+//  1. Load configuration and settings
+//
+//  2. Load schemas
+//
+//  3. Apply overlays
+//
+//  4. Analysis: a structural analysis of the JSON schema(s): raw JSON schema grammar and semantic subtleties are made more amenable
+//
+//  5. Layout
+//
+//     4.1. bundling: an internal reorganization of the schema(s) structure, to define a '$ref's (named entities) with the
 //     appropriate strategy and rename things as expected to produce some go code.
-//  3. layout: prepare target folders, possibly with some generated package-level artifact (e.g. doc.go)
-//     (parallelizable)
-//  4. models generation: iterate over all analyzed schemas, walking up the dependency graph, and generate source code
+//
+//     4.2  prepare target folders, possibly with some generated package-level artifact (e.g. doc.go) (parallelizable)
+//
+//  6. Models generation: iterate over all analyzed schemas, walking up the dependency graph, and generate source code
 //     for go type definitions (parallelizable).
 func (g *Generator) Generate() error {
 	// 1. configuration & input schema analysis
@@ -68,7 +87,6 @@ func (g *Generator) Generate() error {
 		return err
 	}
 	g.l.Debug("model generator initialized")
-	// TODO: on debug show settings
 
 	if g.WantsDumpTemplates {
 		// invoked for debug or doc update: dump templates and exit
@@ -195,32 +213,13 @@ func (g *Generator) generate() error {
 	return nil
 }
 
-func (g *Generator) init() error {
-	// load the configuration from defaults, configuration file or CLI flags (applied in this order)
-	if err := g.loadConfig(); err != nil {
-		return err
-	}
-
-	// initialize the [genapp.GoGenApp] with templates, etc.
-	// deferring the configuration of the generator [GoGenApp] until the config is loaded
-	// TODO: resolve g.TargetImportPath (in go-swagger, this is very complicated.
-	g.generator = genapp.New(embedFS, g.genappOptionsWithDefaults()...)
-
-	return nil
-}
-
-// analyze the collection of input json schemas
+// analyze the collection of input json schemas.
+//
+// This may refactor anonymous constructs (lifting or pushing down thing).
+//
+// If named schemas need a refactor (e.g. overlapping allOf properties),
+// the [structural.Analyzer] calls back [providers.NameProvider.NameSchema] (see [structural.WithSplitOverlappingAllOf] option above).
 func (g *Generator) analyze() error {
-	g.analyzer = structural.NewAnalyzer(
-		// configure options for the analyzer
-		//
-		// validates all supported extensions
-		structural.WithExtensionMappers(
-			g.nameProvider.MapExtension, // all extensions that affect naming and layout
-			g.MapExtensionForType,       // all extensions that affect type mapping
-		),
-	)
-
 	return g.analyzer.AnalyzeCollection(g.inputSchemas)
 }
 
