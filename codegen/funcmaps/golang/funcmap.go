@@ -10,8 +10,6 @@ import (
 	"github.com/fredbi/core/codegen/funcmaps"
 	"github.com/fredbi/core/swag/mangling"
 	"github.com/fredbi/core/swag/stringutils"
-
-	"github.com/kr/pretty"
 )
 
 // DefaultFuncMap yields a map with default functions for use in the templates.
@@ -74,7 +72,9 @@ func DefaultFuncMap(opts ...Option) template.FuncMap {
 			// printing
 			"json":       asJSON,
 			"prettyjson": asPrettyJSON,
-			"inspect":    pretty.Sprint,
+			/*
+				"inspect":    pretty.Sprint,
+			*/
 			//
 			"dict":    dict,
 			"mdBlock": markdownBlock, // markdown block
