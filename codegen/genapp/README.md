@@ -39,4 +39,4 @@ There are a few differences though:
   to `golang.org/x/tools/go/packages` 
 
 Notice that much of the go specifics formerly found in https://github.com/go-swagger/go-swagger/blob/master/generator/language.go
-have now moved to [the new name mangler](../../swag/mangling/README.md).
+have now moved to [the new name mangler](../../mangling/README.md).

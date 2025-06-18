@@ -30,7 +30,7 @@
 //
 // And indirectly on:
 //
-//   - github.com/fredbi/core/swag/mangling
+//   - github.com/fredbi/core/mangling
 //   - github.com/fredbi/core/swag/stringutils
 //
 // Other dependencies found are test dependencies.

@@ -4,7 +4,7 @@ package settings
 import (
 	"reflect"
 
-	"github.com/fredbi/core/swag/mangling"
+	"github.com/fredbi/core/mangling"
 )
 
 // experimental: should be moved to some other internal package

@@ -7,7 +7,7 @@ import (
 	"text/template"
 
 	fsutils "github.com/fredbi/core/swag/fs"
-	"github.com/fredbi/core/swag/mangling"
+	"github.com/fredbi/core/mangling"
 )
 
 var defaultOptions = options{

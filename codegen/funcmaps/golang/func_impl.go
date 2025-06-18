@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/fredbi/core/swag/mangling/inflect"
+	"github.com/fredbi/core/mangling/inflect"
 	"github.com/fredbi/core/swag/stringutils"
 )
 

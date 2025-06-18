@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/fredbi/core/swag/mangling"
+	"github.com/fredbi/core/mangling"
 )
 
 // PackagePath returns the go package path that corresponds to the output dir.

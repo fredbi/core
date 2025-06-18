@@ -1,6 +1,6 @@
 package golang
 
-import "github.com/fredbi/core/swag/mangling"
+import "github.com/fredbi/core/mangling"
 
 type Option func(o *options)
 

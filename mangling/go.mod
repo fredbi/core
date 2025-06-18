@@ -1,4 +1,4 @@
-module github.com/fredbi/core/swag/mangling
+module github.com/fredbi/core/mangling
 
 require github.com/stretchr/testify v1.10.0
 
@@ -10,4 +10,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-go 1.20.0
+go 1.24.2

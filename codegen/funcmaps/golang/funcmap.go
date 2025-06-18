@@ -8,7 +8,7 @@ import (
 	"text/template"
 
 	"github.com/fredbi/core/codegen/funcmaps"
-	"github.com/fredbi/core/swag/mangling"
+	"github.com/fredbi/core/mangling"
 	"github.com/fredbi/core/swag/stringutils"
 )
 

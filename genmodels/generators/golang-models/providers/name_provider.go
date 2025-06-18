@@ -5,7 +5,7 @@ import (
 	// TODO: should alias token kinds somehow to avoid spreading this
 
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
-	"github.com/fredbi/core/swag/mangling"
+	"github.com/fredbi/core/mangling"
 )
 
 // NameProvider provides go names for identifiers, files and packages created from schemas.

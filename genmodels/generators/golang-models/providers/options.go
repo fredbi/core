@@ -2,7 +2,7 @@ package providers
 
 import (
 	"github.com/fredbi/core/genmodels/generators/golang-models/ifaces"
-	"github.com/fredbi/core/swag/mangling"
+	"github.com/fredbi/core/mangling"
 )
 
 type Option func(o *options)

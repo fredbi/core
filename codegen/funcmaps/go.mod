@@ -3,7 +3,7 @@ module github.com/fredbi/core/codegen/funcmaps
 go 1.24.2
 
 require (
-	github.com/fredbi/core/swag/mangling v0.0.0-00010101000000-000000000000
+	github.com/fredbi/core/mangling v0.0.0-00010101000000-000000000000
 	github.com/fredbi/core/swag/stringutils v0.0.0-20250515102727-3befc1aaa0d7
 	github.com/fredbi/core/swag/typeutils v0.0.0-20250515102727-3befc1aaa0d7
 	github.com/stretchr/testify v1.10.0
@@ -17,7 +17,7 @@ require (
 )
 
 replace (
-	github.com/fredbi/core/swag/mangling => ../../swag/mangling
+	github.com/fredbi/core/mangling => ../../mangling
 	github.com/fredbi/core/swag/stringutils => ../../swag/stringutils
 	github.com/fredbi/core/swag/typeutils => ../../swag/typeutils
 )

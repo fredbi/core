@@ -79,7 +79,7 @@ go1.24
 ```
 goos: linux
 goarch: amd64
-pkg: github.com/go-openapi/swag/mangling
+pkg: github.com/go-openapi/mangling
 cpu: AMD Ryzen 7 5800X 8-Core Processor             
 BenchmarkToXXXName/ToGoName-16         	22496130	      1618 ns/op	      31 B/op	       3 allocs/op
 BenchmarkToXXXName/ToVarName-16        	22538068	      1618 ns/op	      33 B/op	       3 allocs/op

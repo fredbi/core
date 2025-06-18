@@ -17,5 +17,5 @@
 // Excluding test dependencies, it relies directly on the following github.com/fredbi/core packages:
 //
 //   - github.com/fredbi/core/swag/fs
-//   - github.com/fredbi/core/swag/mangling
+//   - github.com/fredbi/core/mangling
 package repo
