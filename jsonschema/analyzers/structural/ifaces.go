@@ -56,6 +56,7 @@ type Analyzer interface {
 	//
 	// [Analyzer.LogAudit] mutates the internal representation of the [AnalyzedSchema].
 	LogAudit(AnalyzedSchema, AuditTrailEntry)
+	LogAuditPackage(AnalyzedPackage, AuditTrailEntry)
 
 	// MarkSchema injects extensions into this [AnalyzedSchema].
 	//

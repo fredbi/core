@@ -3,21 +3,24 @@ package structural
 import (
 	"fmt"
 
+	"github.com/fredbi/core/json/stores"
 	"github.com/fredbi/core/jsonschema/analyzers"
 )
 
 // TODO: how to mock AnalyzedSchema??
 
 type analyzedObject struct {
-	id analyzers.UniqueID // UUID of the package
 	// dependencies
 	Index         int64 // current index in the dependency graph
 	RequiredIndex int64 // -1 if no requirement
+
+	// all the rest is kept private
+	id analyzers.UniqueID // UUID of the package
 	AuditTrail
+	Metadata
 
 	//Ref
-	RefLocation string   // $ref path
-	Tags        []string // x-go-tag
+	refLocation string // $ref path
 
 	// naming
 	name string
@@ -324,4 +327,21 @@ func (a AnalyzedSchema) Pattern() string {
 // IsAlwaysInvalid indicate that this schema is never valid.
 func (a AnalyzedSchema) IsAlwaysInvalid() bool {
 	return false // TODO
+}
+
+type Metadata struct {
+	s    stores.Store
+	tags []string // x-go-tag
+}
+
+func (m Metadata) Store() stores.Store {
+	return m.s
+}
+
+func (m Metadata) HasTitle() bool {
+	return false
+}
+
+func (m Metadata) HasTags() bool {
+	return false
 }

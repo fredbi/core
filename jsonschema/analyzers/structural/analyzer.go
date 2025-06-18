@@ -128,7 +128,9 @@ type SchemaAnalyzer struct {
 	options
 	bundleOptions
 
-	index               map[analyzers.UniqueID]*AnalyzedSchema
+	index    map[analyzers.UniqueID]*AnalyzedSchema
+	pkgIndex map[analyzers.UniqueID]*AnalyzedPackage
+
 	forest              []AnalyzedSchema // TODO: dependency graph
 	namespaces          map[string]Namespace
 	packages            []AnalyzedPackage
@@ -231,6 +233,19 @@ func (a *SchemaAnalyzer) LogAudit(s AnalyzedSchema, e AuditTrailEntry) {
 	}
 
 	schema.auditEntries = append(schema.auditEntries, e)
+}
+
+func (a *SchemaAnalyzer) LogAuditPackage(p AnalyzedPackage, e AuditTrailEntry) {
+	if e.Action == AuditActionNone {
+		return
+	}
+
+	pkg, found := a.pkgIndex[p.id]
+	if !found {
+		return
+	}
+
+	pkg.auditEntries = append(pkg.auditEntries, e)
 }
 
 func (a *SchemaAnalyzer) MarkSchema(s AnalyzedSchema, e Extensions) {

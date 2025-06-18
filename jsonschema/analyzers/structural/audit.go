@@ -30,6 +30,8 @@ const (
 	AuditActionNameAnonymous
 	AuditActionNameInfo
 	AuditActionNamePackage
+	AuditActionPackageInfo
+	AuditActionMetadata
 )
 
 type AuditTrailEntry struct {

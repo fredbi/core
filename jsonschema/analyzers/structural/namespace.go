@@ -16,6 +16,9 @@ type ConflictMeta struct {
 	Name  string
 	ID    analyzers.UniqueID
 
+	Schema  *AnalyzedSchema
+	Package *AnalyzedPackage
+
 	Metadata any
 }
 
@@ -29,7 +32,7 @@ type Namespace interface {
 
 	// Meta yields the [ConflictMeta] associated to an existing [Ident] or false if there is none.
 	//
-	// Notice that mutating the return structure won't have any effect on the [Namespace].
+	// Notice that mutating the returned structure won't have any effect on the [Namespace].
 	Meta(ident Ident) (ConflictMeta, bool)
 }
 
@@ -53,22 +56,22 @@ func (n namespace) Path() string {
 	return n.path
 }
 
-func (n namespace) Meta(ident Ident) (ConflictMeta, bool) {
-	meta, ok := n.entries[ident]
+func (n namespace) Meta(ident Ident) (meta ConflictMeta, ok bool) {
+	meta, ok = n.entries[ident]
 
 	return meta, ok
 }
 
-func (n namespace) CheckNoConflict(ident Ident) bool {
-	_, ok := n.entries[ident]
+func (n namespace) CheckNoConflict(ident Ident) (ok bool) {
+	_, ok = n.entries[ident]
 
 	return !ok
 }
 
 // register a new identifier with metadata if not conflicting.
-func (n *namespace) register(meta ConflictMeta) bool {
+func (n *namespace) register(meta ConflictMeta) (ok bool) {
 	ident := meta.Ident
-	_, ok := n.entries[ident]
+	_, ok = n.entries[ident]
 	if ok {
 		return false
 	}
@@ -90,7 +93,7 @@ type backtrackable struct {
 	analyzer *SchemaAnalyzer
 }
 
-func (b *backtrackable) Backtrack(resolved ConflictMeta) bool {
+func (b *backtrackable) Backtrack(resolved ConflictMeta) (ok bool) {
 	if !b.register(resolved) {
 		return false
 	}
@@ -98,7 +101,7 @@ func (b *backtrackable) Backtrack(resolved ConflictMeta) bool {
 	return b.analyzer.rename(resolved.ID, resolved.Name)
 }
 
-func (a *SchemaAnalyzer) rename(id analyzers.UniqueID, newName string) bool {
+func (a *SchemaAnalyzer) rename(id analyzers.UniqueID, newName string) (ok bool) {
 	// rename a package or an object
 	return false // TODO
 }
