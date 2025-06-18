@@ -15,6 +15,9 @@
 package loading
 
 import (
+	"context"
+	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -49,6 +52,72 @@ func (fo fileOptions) ReadFileFunc() func(string) ([]byte, error) {
 	}
 
 	return fo.fs.ReadFile
+}
+
+func (fo fileOptions) LocalReader(path string) io.ReadCloser {
+	if fo.fs == nil {
+		file, err := os.Open(path)
+		if err != nil {
+			return errReadCloser{err: err}
+		}
+
+		return file
+	}
+
+	file, err := fo.fs.Open(path)
+	if err != nil {
+		return errReadCloser{err: err}
+	}
+
+	return file
+}
+
+func (ho httpOptions) RemoteReader(path string) io.ReadCloser {
+	client := ho.client
+	timeoutCtx := context.Background()
+	var cancel func()
+
+	if ho.httpTimeout > 0 {
+		timeoutCtx, cancel = context.WithTimeout(timeoutCtx, ho.httpTimeout)
+		defer cancel()
+	}
+
+	req, err := http.NewRequestWithContext(timeoutCtx, http.MethodGet, path, nil)
+	if err != nil {
+		return errReadCloser{err: err}
+	}
+
+	if ho.basicAuthUsername != "" && ho.basicAuthPassword != "" {
+		req.SetBasicAuth(ho.basicAuthUsername, ho.basicAuthPassword)
+	}
+
+	for key, val := range ho.customHeaders {
+		req.Header.Set(key, val)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return errReadCloser{err: err}
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return errReadCloser{err: fmt.Errorf("could not access document at %q [%s]: %w", path, resp.Status, ErrLoader)}
+	}
+
+	return resp.Body
+}
+
+func (ho httpOptions) LoadHTTPBytes(opts ...Option) func(path string) ([]byte, error) {
+	return func(path string) ([]byte, error) {
+		rdr := ho.RemoteReader(path)
+		defer func() {
+			if rdr != nil {
+				_ = rdr.Close()
+			}
+		}()
+
+		return io.ReadAll(rdr)
+	}
 }
 
 // WithTimeout sets a timeout for the remote file loader.
@@ -115,6 +184,20 @@ type readFileFS struct {
 
 func (r readFileFS) ReadFile(name string) ([]byte, error) {
 	return fs.ReadFile(r.FS, name)
+}
+
+var _ io.ReadCloser = errReadCloser{}
+
+type errReadCloser struct {
+	err error
+}
+
+func (e errReadCloser) Read(_ []byte) (int, error) {
+	return 0, e.err
+}
+
+func (e errReadCloser) Close() error {
+	return e.err
 }
 
 func optionsWithDefaults(opts []Option) options {

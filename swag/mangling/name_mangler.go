@@ -211,6 +211,11 @@ func (m NameMangler) ToGoPackagePath(name string) string {
 	return ""
 }
 
+// ToGoPackageAlias builds a legit go package alias from a path (TODO(fred))
+func (m NameMangler) ToGoPackageAlias(name string, parts int) string {
+	return m.ToGoPackageName(name)
+}
+
 // ToGoPackageName builds a legit go short package name from a sentence (TODO(fred)),
 // to be used as alias or in "package ..." statements.
 //

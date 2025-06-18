@@ -16,6 +16,7 @@ package loading
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,20 @@ func TestLoadFromHTTP(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.YAMLEq(t, string(yamlPetStore), string(content))
+
+		t.Run("reader should load pet store API doc", func(t *testing.T) {
+			rdr := ReaderFromFileOrHTTP(ts.URL)
+			defer func() {
+				require.NoError(t, rdr.Close())
+			}()
+
+			require.NotNil(t, rdr)
+
+			copied, err := io.ReadAll(rdr)
+			require.NoError(t, err)
+
+			assert.YAMLEq(t, string(yamlPetStore), string(copied))
+		})
 	})
 
 	t.Run("should not load from invalid URL", func(t *testing.T) {
@@ -182,6 +197,19 @@ func TestLoadFromHTTP(t *testing.T) {
 		)
 		require.NoError(t, err)
 		assert.YAMLEq(t, string(yamlPetStore), string(b))
+
+		t.Run("reader should load from local embedded file system (single file)", func(t *testing.T) {
+			rdr := ReaderFromFileOrHTTP("petstore_fixture.yaml", WithFS(rooted))
+			require.NotNil(t, rdr)
+
+			defer func() {
+				require.NoError(t, rdr.Close())
+			}()
+
+			copied, err := io.ReadAll(rdr)
+			require.NoError(t, err)
+			assert.YAMLEq(t, string(yamlPetStore), string(copied))
+		})
 	})
 
 	t.Run("should load from memory file system (single file)", func(t *testing.T) {

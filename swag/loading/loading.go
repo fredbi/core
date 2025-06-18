@@ -15,12 +15,9 @@
 package loading
 
 import (
-	"context"
+	"bytes"
 	"embed"
-	"fmt"
 	"io"
-	"log"
-	"net/http"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -28,14 +25,22 @@ import (
 	"strings"
 )
 
-func ReaderFromFileOrHTTP(pth string, opts ...Option) io.Reader {
-	return nil // TODO
+func ReaderFromFileOrHTTP(pth string, opts ...Option) io.ReadCloser {
+	o := optionsWithDefaults(opts)
+	switch selectStrategy(pth) {
+	case loadStrategyRemote:
+		return o.RemoteReader(pth)
+	case loadStrategyLocal:
+		return wrapLocalReader(o.LocalReader, opts...)(pth)
+	default:
+		panic("internal error: invalid strategy")
+	}
 }
 
 // LoadFromFileOrHTTP loads the bytes from a file or a remote http server based on the path passed in
 func LoadFromFileOrHTTP(pth string, opts ...Option) ([]byte, error) {
 	o := optionsWithDefaults(opts)
-	return LoadStrategy(pth, o.ReadFileFunc(), loadHTTPBytes(opts...), opts...)(pth)
+	return LoadStrategy(pth, o.ReadFileFunc(), o.LoadHTTPBytes(opts...), opts...)(pth)
 }
 
 // LoadStrategy returns a loader function for a given path or URI.
@@ -69,18 +74,63 @@ func LoadFromFileOrHTTP(pth string, opts ...Option) ([]byte, error) {
 // - `file:///c:/folder/file` becomes `C:\folder\file`
 // - `file://c:/folder/file` is tolerated (without leading `/`) and becomes `c:\folder\file`
 func LoadStrategy(pth string, local, remote func(string) ([]byte, error), opts ...Option) func(string) ([]byte, error) {
-	if strings.HasPrefix(pth, "http") {
+	switch selectStrategy(pth) {
+	case loadStrategyRemote:
 		return remote
+	case loadStrategyLocal:
+		return wrapLocalLoader(local, opts...)
+	default:
+		panic("internal error: invalid strategy")
 	}
+}
+
+type loadStrategy uint8
+
+const (
+	loadStrategyLocal loadStrategy = iota
+	loadStrategyRemote
+)
+
+func selectStrategy(pth string) loadStrategy {
+	if strings.HasPrefix(pth, "http") {
+		return loadStrategyRemote
+	}
+	return loadStrategyLocal
+}
+
+func wrapLocalLoader(local func(string) ([]byte, error), opts ...Option) func(string) ([]byte, error) {
+	localReader := func(p string) io.ReadCloser {
+		buf, err := local(p)
+		if err != nil {
+			return errReadCloser{err: err}
+		}
+
+		return io.NopCloser(bytes.NewReader(buf))
+	}
+
+	return func(p string) ([]byte, error) {
+		rdr := wrapLocalReader(localReader, opts...)(p)
+		defer func() {
+			if rdr != nil {
+				_ = rdr.Close()
+			}
+		}()
+
+		return io.ReadAll(rdr)
+	}
+}
+
+func wrapLocalReader(local func(string) io.ReadCloser, opts ...Option) func(string) io.ReadCloser {
 	o := optionsWithDefaults(opts)
 	_, isEmbedFS := o.fs.(embed.FS)
 
-	return func(p string) ([]byte, error) {
+	return func(p string) io.ReadCloser {
 		upth, err := url.PathUnescape(p)
 		if err != nil {
-			return nil, err
+			return errReadCloser{err: err}
 		}
 
+		// TODO(fred): this has to be fixed properly using fred/core/uri (forked from fredbi/uri)
 		cpth, hasPrefix := strings.CutPrefix(upth, "file://")
 		if !hasPrefix || isEmbedFS || runtime.GOOS != "windows" {
 			// crude processing: trim the file:// prefix. This leaves full URIs with a host with a (mostly) unexpected result
@@ -98,7 +148,7 @@ func LoadStrategy(pth string, local, remote func(string) ([]byte, error), opts .
 		// support for canonical file URIs on windows.
 		u, err := url.Parse(filepath.ToSlash(upth))
 		if err != nil {
-			return nil, err
+			return errReadCloser{err: err}
 		}
 
 		if u.Host != "" {
@@ -125,51 +175,5 @@ func LoadStrategy(pth string, local, remote func(string) ([]byte, error), opts .
 		}
 
 		return local(filepath.FromSlash(upth))
-	}
-}
-
-func loadHTTPBytes(opts ...Option) func(path string) ([]byte, error) {
-	o := optionsWithDefaults(opts)
-
-	return func(path string) ([]byte, error) {
-		client := o.client
-		timeoutCtx := context.Background()
-		var cancel func()
-
-		if o.httpTimeout > 0 {
-			timeoutCtx, cancel = context.WithTimeout(timeoutCtx, o.httpTimeout)
-			defer cancel()
-		}
-
-		req, err := http.NewRequestWithContext(timeoutCtx, http.MethodGet, path, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if o.basicAuthUsername != "" && o.basicAuthPassword != "" {
-			req.SetBasicAuth(o.basicAuthUsername, o.basicAuthPassword)
-		}
-
-		for key, val := range o.customHeaders {
-			req.Header.Set(key, val)
-		}
-
-		resp, err := client.Do(req)
-		defer func() {
-			if resp != nil {
-				if e := resp.Body.Close(); e != nil {
-					log.Println(e)
-				}
-			}
-		}()
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("could not access document at %q [%s]: %w", path, resp.Status, ErrLoader)
-		}
-
-		return io.ReadAll(resp.Body)
 	}
 }
