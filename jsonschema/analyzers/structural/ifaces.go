@@ -62,4 +62,14 @@ type Analyzer interface {
 	//
 	// [Analyzer.MarkSchema] mutates the internal representation of the [AnalyzedSchema].
 	MarkSchema(AnalyzedSchema, Extensions)
+
+	// MarkPackage injects extensions into this [AnalyzedPackage].
+	//
+	// [Analyzer.MarkPackage] mutates the internal representation of the [AnalyzedPackage].
+	MarkPackage(AnalyzedPackage, Extensions)
+
+	// AnnotateSchema injects metadata into this [AnalyzedSchema].
+	//
+	// [Analyzer.MarkSchema] mutates the internal representation of the [AnalyzedSchema].
+	AnnotateSchema(AnalyzedSchema, Metadata)
 }

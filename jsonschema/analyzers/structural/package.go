@@ -10,6 +10,7 @@ type AnalyzedPackage struct {
 	parent         *AnalyzedPackage
 	children       []*AnalyzedPackage
 	ultimateParent *AnalyzedPackage
+	extensions     Extensions
 }
 
 func (p AnalyzedPackage) IsEmpty() bool {
@@ -40,4 +41,8 @@ func (p AnalyzedPackage) Schemas() []AnalyzedSchema {
 	}
 
 	return values
+}
+
+func (p AnalyzedPackage) GetExtension(extension string, aliases ...string) (any, bool) {
+	return p.extensions.Get(extension, aliases...)
 }

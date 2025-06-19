@@ -8,7 +8,6 @@ import (
 	"github.com/fredbi/core/jsonschema"
 	"github.com/fredbi/core/jsonschema/analyzers"
 	"github.com/fredbi/core/jsonschema/analyzers/validations"
-	"github.com/fredbi/core/swag/typeutils"
 )
 
 var _ Analyzer = &SchemaAnalyzer{}
@@ -220,43 +219,4 @@ func (a *SchemaAnalyzer) Dump(w io.Writer) error {
 	_, err = w.Write(content)
 
 	return err
-}
-
-func (a *SchemaAnalyzer) LogAudit(s AnalyzedSchema, e AuditTrailEntry) {
-	if e.Action == AuditActionNone {
-		return
-	}
-
-	schema, found := a.index[s.id]
-	if !found {
-		return
-	}
-
-	schema.auditEntries = append(schema.auditEntries, e)
-}
-
-func (a *SchemaAnalyzer) LogAuditPackage(p AnalyzedPackage, e AuditTrailEntry) {
-	if e.Action == AuditActionNone {
-		return
-	}
-
-	pkg, found := a.pkgIndex[p.id]
-	if !found {
-		return
-	}
-
-	pkg.auditEntries = append(pkg.auditEntries, e)
-}
-
-func (a *SchemaAnalyzer) MarkSchema(s AnalyzedSchema, e Extensions) {
-	if len(e) == 0 {
-		return
-	}
-
-	schema, found := a.index[s.id]
-	if !found {
-		return
-	}
-
-	schema.extensions = typeutils.MergeMaps(schema.extensions, e)
 }

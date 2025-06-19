@@ -24,7 +24,7 @@ type bundleOptions struct {
 	bundleNameDeconflicter Deconflicter
 
 	// package naming
-	bundlePathProvider     NameProvider
+	bundlePathProvider     PackageNameProvider
 	bundlePathIdentifier   UniqueIdentifier
 	bundlePathDeconflicter Deconflicter
 
@@ -48,7 +48,7 @@ func WithBundleNameProvider(provider NameProvider) Option {
 }
 
 // WithBundlePathProvider equips the analyzer with a [PathProvider] to construct a path hierarchy in the bundled schema.
-func WithBundlePathProvider(provider NameProvider) Option {
+func WithBundlePathProvider(provider PackageNameProvider) Option {
 	return func(o *options) {
 		o.bundlePathProvider = provider
 	}

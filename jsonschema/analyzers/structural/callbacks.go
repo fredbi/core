@@ -8,6 +8,14 @@ func (p NameProvider) NameSchema(name string, analyzed AnalyzedSchema) (string, 
 	return p(name, analyzed)
 }
 
+// PackageNameProvider is a callback, which knows how to name a package, given a suggested name and the package to be named for more context.
+type PackageNameProvider func(name string, analyzed AnalyzedPackage) (string, error)
+
+// NamePackage names a package. It may return an error if the naming operation is impossible.
+func (p PackageNameProvider) NamePackage(name string, analyzed AnalyzedPackage) (string, error) {
+	return p(name, analyzed)
+}
+
 // UniqueIdentifier knows how to determine a unique [Ident] for a name.
 type UniqueIdentifier func(name string) Ident
 

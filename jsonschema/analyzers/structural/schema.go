@@ -3,7 +3,6 @@ package structural
 import (
 	"fmt"
 
-	"github.com/fredbi/core/json/stores"
 	"github.com/fredbi/core/jsonschema/analyzers"
 )
 
@@ -13,11 +12,11 @@ type analyzedObject struct {
 	// dependencies
 	Index         int64 // current index in the dependency graph
 	RequiredIndex int64 // -1 if no requirement
+	AuditTrail
 
 	// all the rest is kept private
-	id analyzers.UniqueID // UUID of the package
-	AuditTrail
-	Metadata
+	id   analyzers.UniqueID // UUID of the package
+	meta Metadata
 
 	//Ref
 	refLocation string // $ref path
@@ -31,6 +30,10 @@ func (p analyzedObject) ID() analyzers.UniqueID {
 	return p.id
 }
 
+func (p analyzedObject) Metadata() Metadata {
+	return p.meta
+}
+
 func (p analyzedObject) Name() string {
 	return p.name
 }
@@ -42,7 +45,7 @@ func (p analyzedObject) Path() string {
 // AnalyzedSchema is the outcome of the analysis of a JSON schema.
 type AnalyzedSchema struct {
 	analyzedObject
-	DollarID string // "$id"
+	dollarID string // "$id"
 
 	kind         analyzers.SchemaKind
 	polymorphism analyzers.PolymorphismKind
@@ -69,6 +72,14 @@ func (a AnalyzedSchema) IsRefactored() bool {
 
 func (a AnalyzedSchema) IsCircular() bool {
 	return false
+}
+
+func (a AnalyzedSchema) HasSchemaID() bool {
+	return a.dollarID != ""
+}
+
+func (a AnalyzedSchema) SchemaID() string {
+	return a.dollarID
 }
 
 // Parents yields all parent schemas of a given schema.
@@ -327,21 +338,4 @@ func (a AnalyzedSchema) Pattern() string {
 // IsAlwaysInvalid indicate that this schema is never valid.
 func (a AnalyzedSchema) IsAlwaysInvalid() bool {
 	return false // TODO
-}
-
-type Metadata struct {
-	s    stores.Store
-	tags []string // x-go-tag
-}
-
-func (m Metadata) Store() stores.Store {
-	return m.s
-}
-
-func (m Metadata) HasTitle() bool {
-	return false
-}
-
-func (m Metadata) HasTags() bool {
-	return false
 }
