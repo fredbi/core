@@ -1,0 +1,23 @@
+all: false
+dir: '{{.InterfaceDir}}'
+filename: mocks_test.go
+force-file-write: true
+formatter: goimports
+log-level: info
+structname: '{{.Mock}}{{.InterfaceName}}'
+pkgname: 'mocks'
+recursive: false
+require-template-schema-exists: true
+template: matryer
+template-schema: '{{.Template}}.schema.json'
+packages:
+  github.com/fredbi/core/genmodels/generators/golang-models/ifaces:
+    config:
+      all: true
+      dir: generators/golang-models/ifaces/internal/mocks
+      filename: mocks_iface.go
+  github.com/fredbi/core/jsonschema/analyzers/structural:
+    config:
+      all: true
+      dir: generators/golang-models/ifaces/internal/mocks
+      filename: mocks_analyzer.go
