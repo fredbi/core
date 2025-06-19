@@ -4,32 +4,45 @@ import (
 	"fmt"
 	"path"
 	"strconv"
+	"strings"
 
-	"github.com/fredbi/core/genmodels/generators/internal/audit"
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
 )
 
-// UniquePath yields the key that should be considered unique for package pths.
-func (p NameProvider) UniquePath(pth string) structural.Ident {
+// UniquePath yields the key that should be considered unique for package paths.
+//
+// For go generation, we are interested in the uniqueness of the paths transformed by ToGoPackagePath().
+func (p *NameProvider) UniquePath(pth string) structural.Ident {
 	return structural.Ident(p.mangler.ToGoPackagePath(pth))
 }
 
 // NamePackage knows how to determine the relative go package pth for a schema, when called back by the analyzer.
 //
+// The [structural.Analyzer] calls this whenever it visits a package node, that is a namespace for schemas.
+//
+// The result is a relative slash-separated path.
+//
 // Example: generated/models/go-folder
 //
 // It rewrites names to get legit, idiomatic go package names:
 //
-// * x_test gets rewritten
-// * x/v2 gets rewritten
-// * Abc gets rewritten to abc
+// * x_test gets rewritten as xtest
+// * x/v2 gets rewritten as xv2
+// * Abc gets rewritten as abc
 // * computeService gets rewritten as compute-service
 // * compute_service gets rewritten as compute-service
-func (p NameProvider) NamePackage(pth string, analyzed structural.AnalyzedSchema) (goPkg string, err error) {
+//
+// TODO: search go doc for constraints on legit chars, unicode etc
+func (p *NameProvider) NamePackage(
+	pth string,
+	analyzed structural.AnalyzedPackage,
+) (goPkg string, err error) {
 	const directive = "x-go-package"
+	did, logAudit := p.prepareAuditPackage(&analyzed)
+	defer logAudit()
 
 	if p.marker != nil {
-		// document the schema with the original pth name
+		// document the package with the original pth name
 		defer func() {
 			if goPkg == pth {
 				return
@@ -37,18 +50,24 @@ func (p NameProvider) NamePackage(pth string, analyzed structural.AnalyzedSchema
 
 			mark := make(structural.Extensions, 1)
 			mark.Add("x-go-original-pth", analyzed.Path())
-			p.marker.MarkSchema(analyzed, mark)
+			p.marker.MarkPackage(analyzed, mark)
 		}()
 	}
 
 	if ext, isUserDefined := analyzed.GetExtension(directive); isUserDefined {
 		goPkg = ext.(string)
 
+		did(structural.AuditActionRenamePackage, fmt.Sprintf(
+			"applied directive %s to rename package name %q to %q", directive, pth, goPkg,
+		))
+
 		return goPkg, nil
 	}
 
 	goPkg = p.mangler.ToGoPackagePath(pth)
-	// TODO audit
+	did(structural.AuditActionNamePackage, fmt.Sprintf(
+		"applied mangler ToGoPackagePath to transform %q into %q", pth, goPkg,
+	))
 
 	return goPkg, nil
 }
@@ -69,10 +88,64 @@ func (p NameProvider) NamePackage(pth string, analyzed structural.AnalyzedSchema
 //	here:
 //	  models:
 //	    child: {}
+//	  Models:
+//	    child: {}
 //
-// This structure produces the same package path twice: "here/models"
-func (p NameProvider) DeconflictPath(name string, namespace structural.Namespace) (goName string, err error) {
-	return "", nil // TODO
+// This structure produces the same package path 3 times: "here/models"
+func (p *NameProvider) DeconflictPath(
+	pth string,
+	namespace structural.Namespace,
+) (goPkg string, err error) {
+	existing, ok := namespace.Meta(p.UniquePath(pth))
+	if !ok {
+		// TODO code assertion - we don't want to handle internal errors
+		return "", fmt.Errorf(
+			"invalid conflict detection: %w",
+			ErrInternal,
+		)
+	}
+
+	did, logAudit := p.prepareAuditPackage(existing.Package)
+	defer logAudit()
+
+	// find a common path where path strings match exactly (with case or other ignored character)
+	assertConflictMetaMustHavePackage(existing.Package, pth)
+	originalConflicting := existing.Package.OriginalName()
+	commonPrefix := longestIdentical(pth, originalConflicting)
+
+	// search last /
+	lastSlash := strings.LastIndex(commonPrefix, "/")
+	if lastSlash > 0 {
+		commonPrefix = commonPrefix[:lastSlash-1]
+	}
+
+	// determine the longest "common path" corresponding to both packages.
+	baseCommonPath := p.mangler.ToGoPackagePath(commonPrefix)
+
+	// mangle the remaining part
+	newSuffixPath := p.mangler.ToGoPackagePath(pth[lastSlash+1:])
+
+	for index := range maxAttempts {
+		newSuffixPath += strconv.Itoa(index)
+		goPkg = path.Join(baseCommonPath, newSuffixPath)
+		if !namespace.CheckNoConflict(p.UniquePath(goPkg)) {
+			continue
+		}
+
+		did(structural.AuditActionRenamePackage, fmt.Sprintf(
+			"deconflicted package path by adding to %q the index %d, then applied mangler ToGoPackagePath: %q",
+			pth,
+			index,
+			goPkg,
+		))
+
+		return goPkg, nil
+	}
+
+	assertMustDeconflictUsingIndex(pth)
+
+	// never reach this, we panic before
+	return "", nil
 }
 
 // PackageShortName provides the package name to be used in the "package" statement.
@@ -83,7 +156,9 @@ func (p NameProvider) DeconflictPath(name string, namespace structural.Namespace
 //
 //   - generated/models/go-folder -> "folder"
 //   - generated/models/go-folder/v2 -> "folder"
-func (p NameProvider) PackageShortName(pth string, analyzed ...structural.AnalyzedSchema) string {
+func (p *NameProvider) PackageShortName(pth string, analyzed ...structural.AnalyzedSchema) string {
+	_ = analyzed
+
 	return p.mangler.ToGoPackageName(pth)
 }
 
@@ -94,7 +169,9 @@ func (p NameProvider) PackageShortName(pth string, analyzed ...structural.Analyz
 // Example:
 //
 //   - generated/models/go-folder -> "github.com/fredbi/core/genmodels/generated/models/go-folder"
-func (p NameProvider) PackageFullName(pth string, analyzed ...structural.AnalyzedSchema) string {
+func (p *NameProvider) PackageFullName(pth string, analyzed ...structural.AnalyzedSchema) string {
+	_ = analyzed
+
 	return path.Join(p.baseImportPath, p.mangler.ToGoPackagePath(pth))
 }
 
@@ -108,7 +185,13 @@ func (p NameProvider) PackageFullName(pth string, analyzed ...structural.Analyze
 //   - PackageAlias("generated/models/go-folder/v2",0) -> "folder"
 //   - PackageAlias("generated/models/go-folder/v2",1) -> "folderv2"
 //   - PackageAlias("generated/models/go-folder/v2",2) -> "gofolderv2"
-func (p NameProvider) PackageAlias(pth string, parts int, analyzed ...structural.AnalyzedSchema) string {
+func (p *NameProvider) PackageAlias(
+	pth string,
+	parts int,
+	analyzed ...structural.AnalyzedSchema,
+) string {
+	_ = analyzed
+
 	return p.mangler.ToGoPackageAlias(pth, parts)
 }
 
@@ -135,33 +218,16 @@ func (p NameProvider) PackageAlias(pth string, parts int, analyzed ...structural
 //
 //   - "folder"
 //   - "folder2"
-func (p NameProvider) DeconflictAlias(name string, namespace structural.Namespace) (goName string, err error) {
+func (p *NameProvider) DeconflictAlias(
+	name string,
+	namespace structural.Namespace,
+) (goName string, err error) {
+	// 1. strategy based on folding parts
 	const maxNumParts = 3 // max number of attempts to fold a previous part of the package name to produce a distinctive alias
-	audit := structural.AuditTrailEntry{
-		Originator: audit.Originator(),
-	}
-	didSomething := false
-	did := noaudit
 	meta, _ := namespace.Meta(structural.Ident(name))
 	analyzed := meta.Package
-
-	if p.auditor != nil && analyzed != nil {
-		// prepare for logging our action on return: post an audit entry into the original schema
-		defer func() {
-			if !didSomething {
-				return
-			}
-
-			p.auditor.LogAuditPackage(*analyzed, audit)
-		}()
-
-		did = func(action structural.AuditAction, description string) {
-			// describe the action performed
-			didSomething = true
-			audit.Action = action
-			audit.Description = description
-		}
-	}
+	did, logAudit := p.prepareAuditPackage(analyzed)
+	defer logAudit()
 
 	for parts := range maxNumParts {
 		attempt := p.PackageAlias(name, parts)
@@ -169,13 +235,16 @@ func (p NameProvider) DeconflictAlias(name string, namespace structural.Namespac
 			goName = attempt
 			did(structural.AuditActionPackageInfo, fmt.Sprintf(
 				"deconflicted package alias by joining package parts, got %q, then applied mangler ToGoAlias with %d parts: %q",
-				name, parts, goName,
+				name,
+				parts,
+				goName,
 			))
 
 			return goName, err
 		}
 	}
 
+	// 2. strategy based on folding parts, with backtracing
 	backtrackable, useBacktrackStragegy := namespace.(structural.BacktrackableNamespace)
 	// [model.ImportsMap] implements a [structural.BacktrackableNamespace]
 	if useBacktrackStragegy {
@@ -218,7 +287,9 @@ func (p NameProvider) DeconflictAlias(name string, namespace structural.Namespac
 
 					did(structural.AuditActionPackageInfo, fmt.Sprintf(
 						"deconflicted package alias by backtracing on a previous aliasing for package %q, now realiased to %q. Current alias: %q",
-						existing.Name, attempt, goName,
+						existing.Name,
+						attempt,
+						goName,
 					))
 
 					break
@@ -230,6 +301,8 @@ func (p NameProvider) DeconflictAlias(name string, namespace structural.Namespac
 			return goName, err
 		}
 	}
+
+	// 3. strategy based on indexing
 
 	// still not a good result. As a last resort, simply add a number. This will eventually work, with a sufficiently high index.
 	//
@@ -247,13 +320,14 @@ func (p NameProvider) DeconflictAlias(name string, namespace structural.Namespac
 	// So we have:
 	//
 	//  - "github.com/owner/repo/pkg/go-go-go-structs" -> "structs2"
-	const maxAttempts = 100
 	for idx := range maxAttempts {
-		goName = name + strconv.Itoa(idx+2)
+		goName = name + strconv.Itoa(idx+indexingStart)
 		if namespace.CheckNoConflict(structural.Ident(goName)) {
 			did(structural.AuditActionPackageInfo, fmt.Sprintf(
 				"deconflicted package alias using degraded naming strategy, got %q then iterated index to %d: %q",
-				name, idx, goName,
+				name,
+				idx,
+				goName,
 			))
 
 			return goName, nil
@@ -265,4 +339,18 @@ func (p NameProvider) DeconflictAlias(name string, namespace structural.Namespac
 
 	// never get there: we want alias deconfliction to always complete
 	return "", nil
+}
+
+func longestIdentical(s1, s2 string) string {
+	r2 := []rune(s2)
+	j := 0
+
+	for i, c := range s1 {
+		if i >= len(r2) || c != r2[i] {
+			break
+		}
+		j++
+	}
+
+	return string(r2[:j])
 }

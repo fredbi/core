@@ -8,6 +8,8 @@ import (
 // Handle distributed by a [Store], which corresponds to some [Value]
 type Handle uint64
 
+const HandleZero Handle = 0
+
 // Resolve this [Handle] against a [Store].
 //
 // This is a shorthand to calling [Store].Get with this [Handle].

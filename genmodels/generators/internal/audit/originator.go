@@ -6,8 +6,8 @@ import (
 	"strconv"
 )
 
-func Originator() string {
-	pc, source, line, ok := runtime.Caller(1)
+func Originator(skip int) string {
+	pc, source, line, ok := runtime.Caller(skip + 1)
 	if !ok {
 		return ""
 	}

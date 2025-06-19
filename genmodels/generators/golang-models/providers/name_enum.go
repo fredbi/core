@@ -106,8 +106,13 @@ import (
 //		     - First
 //
 // TODO: the user may opt-in to make (some of) these unexported.
-// TODO: needs a deconflicter too
-func (p NameProvider) NameEnumValue(index int, enumValue json.Document, analyzed structural.AnalyzedSchema) (string, error) {
+// TODO: needs a deconflicter too, at the package level (enum consts or vars may conflict with other type declarations).
+// TODO: replace json.Document by dynamic.JSON, so we no longer propagate the stuff with tokens etc
+func (p NameProvider) NameEnumValue(
+	index int,
+	enumValue json.Document,
+	analyzed structural.AnalyzedSchema,
+) (string, error) {
 	const directive = "x-go-enums"
 
 	if ext, isUserDefined := analyzed.GetExtension(directive); isUserDefined {
@@ -126,6 +131,9 @@ func (p NameProvider) NameEnumValue(index int, enumValue json.Document, analyzed
 			return p.mangler.ToGoName(v.String()), nil // may be deconflicted later
 		case token.Number:
 			return p.mangler.ToGoName(p.mangler.SpellNumber(enumValue.String())), nil
+		default:
+			assertInvalidKindScalar(v)
+			return "", nil
 		}
 	default:
 		// enum value is a complex schema, not a scalar
@@ -135,15 +143,19 @@ func (p NameProvider) NameEnumValue(index int, enumValue json.Document, analyzed
 		// walk up dependencies until we find a named schema
 		parentName, err := p.NameSchema(parent.Name(), parent)
 		if err != nil {
-			return "", fmt.Errorf("unable to determine a name for this schema: %v", analyzed)
+			return "", fmt.Errorf(
+				"unable to determine a name for this schema: %v: %w",
+				analyzed, ErrNameProvider,
+			)
 		}
 
 		if parentName == "" {
-			return "", fmt.Errorf("unable to determine a name for this schema: %v", analyzed)
+			return "", fmt.Errorf(
+				"unable to determine a name for this schema: %v: %w",
+				analyzed, ErrNameProvider,
+			)
 		}
 
 		return p.mangler.ToGoName(parentName + " enum" + strconv.Itoa(index)), nil
 	}
-
-	return "", nil
 }

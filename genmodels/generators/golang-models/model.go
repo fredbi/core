@@ -276,7 +276,7 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 		Name: analyzed.OriginalName(),
 		LocationInfo: model.LocationInfo{
 			Package:         g.nameProvider.PackageShortName(analyzed.Path(), analyzed),
-			PackageLocation: analyzed.Path(),                                           // this is relative to the codegen path
+			PackageLocation: analyzed.Path(),                                           // Location is a sanitized /-separated URL path. This is relative to the codegen path
 			FullPackage:     g.nameProvider.PackageFullName(analyzed.Path(), analyzed), // fully qualified package name (e.g. "github.com/fredbi/core/models")
 			File:            g.nameProvider.FileName(analyzed.Name(), analyzed),        // deconflicted file name, safe for go
 		},
@@ -299,10 +299,12 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 	case g.ModelLayout.Is(settings.ModelLayoutAllModelsOneFile):
 		// in this layout, all models are packed in a single source file
 		//
-		// When an UltimateParent is defined, the model with be stashed for later merge and rendering in a single file.
+		// When an UltimateParent is defined, the model with be stashed for later merge and rendering in a single file,
+		// which naming will be decided by the root schema (or pseudo-root if the dependency graph is multi-rooted).
 		parent := analyzed.UltimateParent()
 		parentID := parent.ID()
 		seed.UltimateParent = parentID
+
 	default:
 		// nothing to do otherwise
 	}

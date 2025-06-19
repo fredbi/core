@@ -9,6 +9,12 @@ import (
 // In general, these options should not be language-specific.
 //
 // All options can be set globally or as "x-***" extensions in the JSON schema.
+//
+// TODO: at some point, we'd need to stop composing things into a big flag namespace
+// and start hierarchizing these settings.
+//
+// This would help make the models.Generator composable, with specialized sub-components
+// focuses on one sort of stuff with one piece of settings only.
 type GenOptions struct {
 	// targets selection
 	GenTargetOptions `section:"target"`
@@ -28,8 +34,9 @@ type GenOptions struct {
 
 // GenTargetOptions defines top-level generation options.
 type GenTargetOptions struct {
-	Copyright       string // a Copyright header to add to all generated source files
-	WantsDumpSchema bool   // a dump of the transformed schema used by code gen
+	Copyright        string // a Copyright header to add to all generated source files
+	WantsDumpSchema  bool   // a dump of the transformed schema used by code gen
+	WantsGenMetadata bool   // would fill missing metadata for anonymous types
 
 	GenJSONSchemaOptions `section:"jsonschema"`
 	GenOAISchemaOptions  `section:"openapi-schema"`

@@ -58,7 +58,7 @@ type (
 		// but:
 		//
 		//   "$ref": "schemas/models.json#/$defs" would produce "schema/models"
-		NamePackage(path string, analyzed structural.AnalyzedSchema) (string, error)
+		NamePackage(path string, analyzed structural.AnalyzedPackage) (string, error)
 
 		// DeconflictPath is called back by the [structural.Analyzer] whenever a path conflicts.
 		//
@@ -117,6 +117,9 @@ type (
 
 		// SetMarker equips a provider with an extension marker, e.g. [structural.Analyzer]
 		SetMarker(Marker)
+
+		// SetAnnotator equips a provider with a metadata annotator, e.g. [structural.Analyzer]
+		SetAnnotator(Annotator)
 	}
 
 	// SchemaBuilder transforms a [structural.AnalyzedSchema] into one or several [model.TargetSchema] that
@@ -154,11 +157,19 @@ type Auditor interface {
 	LogAuditPackage(structural.AnalyzedPackage, structural.AuditTrailEntry)
 }
 
+// Annotator is the interface for types that know how to alter the metadata of a schema.
+//
+// It is implemented by [structural.SchemaAnalyzer]
+type Annotator interface {
+	AnnotateSchema(structural.AnalyzedSchema, structural.Metadata)
+}
+
 // Marker is the interface for types that know how to enrich a schema with additional "x-*" extensions.
 //
 // It is implemented by [structural.SchemaAnalyzer]
 type Marker interface {
 	MarkSchema(structural.AnalyzedSchema, structural.Extensions)
+	MarkPackage(structural.AnalyzedPackage, structural.Extensions)
 }
 
 // NameMangler is the interface for types that produce names which follow go rules and conventions.

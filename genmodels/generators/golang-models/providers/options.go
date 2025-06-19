@@ -12,6 +12,7 @@ type options struct {
 	manglingOptions []mangling.Option
 	auditor         ifaces.Auditor
 	marker          ifaces.Marker
+	annotator       ifaces.Annotator
 	baseImportPath  string
 }
 
@@ -23,6 +24,11 @@ func (o *options) SetAuditor(auditor ifaces.Auditor) {
 // SetMarker does the same as [WithMarker], but after the [NameMangler] has been already initialized.
 func (o *options) SetMarker(marker ifaces.Marker) {
 	o.marker = marker
+}
+
+// SetAnnotator does the same as [WithAnnotator], but after the [NameMangler] has been already initialized.
+func (o *options) SetAnnotator(annotator ifaces.Annotator) {
+	o.annotator = annotator
 }
 
 func optionsWithDefaults(opts []Option) options {
@@ -68,6 +74,15 @@ func WithAuditor(auditor ifaces.Auditor) Option {
 func WithMarker(marker ifaces.Marker) Option {
 	return func(o *options) {
 		o.marker = marker
+	}
+}
+
+// WithAnnotator injects a [ifaces.Annotator] to inject schema metadata from the [NameProvider]
+//
+// If the [Annotator] is not defined at initialization time, you may set it later using SetMarker().
+func WithAnnotator(annotator ifaces.Annotator) Option {
+	return func(o *options) {
+		o.annotator = annotator
 	}
 }
 

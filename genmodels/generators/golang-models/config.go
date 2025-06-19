@@ -57,8 +57,6 @@ func (g *Generator) init() error {
 		// this general-purpose name provider method inspects [structural.AnalyzedSchema.IsRefectored]
 		structural.WithSplitOverlappingAllOf(true),
 		structural.WithRefactorEnums(g.PackageLayoutMode.Has(settings.PackageLayoutEnums)), // allow enums to be defined in their own package
-		//
-		// TODO(fred): nice to have - might inject other providers (MetadataProvider?) to produce more metadata, such as title and description
 	}
 
 	// configure options for Bundle
@@ -76,6 +74,10 @@ func (g *Generator) init() error {
 		g.nameProvider.SetAuditor(g.analyzer)
 	}
 	g.nameProvider.SetMarker(g.analyzer)
+
+	if g.WantsGenMetadata {
+		g.nameProvider.SetAnnotator(g.analyzer)
+	}
 
 	return nil
 }

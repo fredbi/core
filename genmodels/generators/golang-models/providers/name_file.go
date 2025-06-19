@@ -7,6 +7,83 @@ import (
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
 )
 
+/*
+type fileNamespaces map[string]fileNamespace
+
+func MakeFileNamespaces() fileNamespaces {
+	return make(map[string]fileNamespace)
+}
+
+func (n fileNamespaces) CheckNoConflictInPath(path string, file string) bool {
+	namespace, ok := n[path]
+	if !ok {
+		return true
+	}
+
+	return namespace.CheckNoConflict(structural.Ident(file))
+}
+
+var _ structural.Namespace = fileNamespace{}
+
+type fileNamespace struct {
+	path  string
+	files map[string]struct{}
+}
+
+func MakeFileNamespace(path string) fileNamespace {
+	return fileNamespace{
+		path:  path,
+		files: make(map[string]struct{}),
+	}
+}
+
+func (f fileNamespace) Path() string {
+	return f.path
+}
+
+func (f fileNamespace) CheckNoConflict(ident structural.Ident) (ok bool) {
+	_, ok = f.files[string(ident)]
+
+	return !ok
+}
+
+// backtracking is problematic because the file naming is performed on the fly without
+func (f fileNamespace) Backtrack(resolved structural.ConflictMeta) (ok bool) {
+	if !f.CheckNoConflict(resolved.Ident) {
+		return false
+	}
+
+	oldFile := resolved.ID.String()
+	_, found := f.files[oldFile]
+	if !found {
+		return false
+	}
+
+	// swap file names for the pre-existing entry
+	newFile := string(resolved.Ident)
+	delete(f.files, oldFile)
+	f.files[newFile] = struct{}{}
+
+	return true
+}
+
+func (f fileNamespace) Meta(ident structural.Ident) (structural.ConflictMeta, bool) {
+	_, ok := f.files[string(ident)]
+
+	return structural.ConflictMeta{}, ok
+}
+func (f *fileNamespace) Set(file string) (ok bool) {
+	_, ok = f.files[file]
+	if ok {
+		return false
+	}
+
+	f.files[file] = struct{}{}
+
+	return true
+}
+*/
+
 // FileName produces a source file name to hold model code.
 //
 // It is possible to override a generated file name using "x-go-file-name".
@@ -44,6 +121,7 @@ func (p NameProvider) FileName(name string, analyzed structural.AnalyzedSchema) 
 }
 
 // FileNameForTest produces a source file name to hold test code.
+// TODO: like for package aliases, build a type that implements structural.Namespace for files.
 func (p NameProvider) FileNameForTest(name string, analyzed structural.AnalyzedSchema) string {
 	var suffix string
 	if withoutTestSuffix, isTestFile := strings.CutSuffix(name, "_test"); isTestFile {
@@ -62,21 +140,19 @@ func (p NameProvider) FileNameForTest(name string, analyzed structural.AnalyzedS
 }
 
 func (p NameProvider) registerFile(name, pth string) {
-	namespace, ok := p.filesNamespaces[pth]
+	namespace, ok := p.files[pth]
 	if !ok {
 		namespace = make(map[string]struct{})
 	}
 
 	namespace[name] = struct{}{}
 
-	p.filesNamespaces[pth] = namespace
-
-	return
+	p.files[pth] = namespace
 }
 
 // isFileConflict detects if the file name we are about to generate for this artifact
 func (p NameProvider) isFileConflict(name, pth string) bool {
-	namespace, ok := p.filesNamespaces[pth]
+	namespace, ok := p.files[pth]
 	if !ok {
 		return false
 	}

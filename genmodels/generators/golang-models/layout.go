@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"net/url"
 	"path"
 	"path/filepath"
 
@@ -73,8 +74,13 @@ func (g *Generator) planPackageLayout() error {
 	// This step only needs to retrieve the generatormost folders to create the entire source tree structure.
 	var numPkg int
 	for folder := range bundled.Namespaces(structural.OnlyLeaves()) {
-		dir := filepath.Join(g.outputPath, folder)
-		if err := g.baseFS.MkdirAll(dir, 0755); err != nil {
+		osCompatiblePath, err := normalizePath(folder) // paths are sanitized URL paths
+		if err != nil {
+			return fmt.Errorf("could not normalize package path to build a valid directory: %q: %w: %w", folder, err, ErrModel)
+		}
+		const userWritableOtherReadable = 0755
+		dir := filepath.Join(g.outputPath, osCompatiblePath)
+		if err := g.baseFS.MkdirAll(dir, userWritableOtherReadable); err != nil {
 			return errors.Join(err, ErrModel)
 		}
 		numPkg++
@@ -210,7 +216,7 @@ func (g *Generator) makeBundleOptions() ([]structural.Option, error) {
 		structural.WithBundleNameProvider(structural.NameProvider(g.nameProvider.NameSchema)),           // callback to name schemas
 		structural.WithBundleNameIdentifier(structural.UniqueIdentifier(g.nameProvider.UniqueSchema)),   // callback to detect name conflicts on named schemas
 		structural.WithBundleNameDeconflicter(structural.Deconflicter(g.nameProvider.DeconflictSchema)), // callback to name package paths
-		structural.WithBundlePathProvider(structural.NameProvider(g.nameProvider.NamePackage)),          // callback to name package paths
+		structural.WithBundlePathProvider(structural.PackageNameProvider(g.nameProvider.NamePackage)),   // callback to name package paths
 		structural.WithBundlePathIdentifier(structural.UniqueIdentifier(g.nameProvider.UniquePath)),     // callback to detect name conflicts on package paths
 		structural.WithBundlePathDeconflicter(structural.Deconflicter(g.nameProvider.DeconflictPath)),   // callback to name package paths
 		//
@@ -256,4 +262,12 @@ func (g *Generator) makeBundleOptions() ([]structural.Option, error) {
 	// probably a lot of other configurable stuff to add here...
 
 	return bundlingOptions, nil
+}
+
+func normalizePath(pth string) (string, error) {
+	u, err := url.PathUnescape(pth)
+	if err != nil {
+		return "", err
+	}
+	return filepath.FromSlash(pth)
 }
