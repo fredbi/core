@@ -80,8 +80,9 @@ func (p *NameProvider) NameSchema(
 		if analyzed.IsRefactored() {
 			// TODO: depending on the refactoring action find a better name
 			// example: "{name}Without{prop1}{prop2}
-			did(structural.AuditActionNameInfo,
-				"inspected anonymous refactored schema but did nothing special",
+			did(
+				structural.AuditActionNameInfo,
+				"inspected anonymous refactored schema but did nothing special. Maybe I should have.",
 			)
 		}
 
@@ -205,10 +206,65 @@ func (p *NameProvider) nameAnonymousChild(
 		return p.nameAnonymousSchemaInPolymorph(parent, analyzed, parentName, did)
 
 	default:
+		// Assertion: parent can't be a scalar
+		//
+		// This is not possible when the analyzed schma is anonymous, because we expect stuff
+		// like below to have been refactored by the analyzer:
+		//
+		// parent:
+		//   type: number
+		//   allOf:
+		//     - type: integer   # <- parent is indeed a scalar
+		//       minimum:0
+		//     - type: number
+		//       multipleOf: 10
+		//
+		// Should arrive to us simplified like so:
+		//
+		// parent:
+		//   type: integer
+		//   minimum:0
+		//   multipleOf: 10      # <- merged validations
+		//
+		// This is possible when the analyzed schema is named:
+		//
+		// parent:
+		//   $ref: #/$defs/MyString
+		//
+		// $defs:
+		//   MyString:
+		//     type: number
+		//
+		// With this slightly more complex example, anonymous members of the allOf are lifted:
+		//
+		// parent:
+		//   type: number
+		//   allOf:
+		//     - type: integer   # <- parent is indeed a scalar
+		//       minimum:0
+		//     - type: number
+		//       multipleOf: 10
+		//     - $ref: #/$defs/MyString
+		//
+		// $defs:
+		//   MyString:
+		//     type: number
+		//     maximum: 1000
+		//
+		// Is rewritten for us as:
+		// parent:
+		//   type: integer
+		//   minimum:0
+		//   multipleOf: 10              # <- merged validations
+		//   allOf:
+		//     - $ref: #/$defs/MyString  # <- named composition is kept
+		//
 		// TODO: code assertion - other cases are invalid JSON schema or unexpected outcome of a refactored schema
 		return "", fmt.Errorf(
-			"hit unsupported case of an anonymous, non-root schema: %v: %w",
-			analyzed, ErrNotImplemented,
+			"hit unsupported case of an anonymous, non-root schema: %v: %w: %w",
+			analyzed, errHint(
+				`this error is likely caused by an omitted case in schema refactoring by the structural.Analyzer`,
+			), ErrNotImplemented,
 		)
 	}
 }

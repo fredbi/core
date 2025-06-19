@@ -7,23 +7,6 @@ import (
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
 )
 
-/*
-func assertNameSchema(schema structural.AnalyzedSchema) {
-	if !schema.IsNamed() {
-		panic("expect a named schema here")
-	}
-}
-*/
-
-/*
-func assertNotInfiniteAttempts(attempts int) {
-	const tooMany = 100
-	if attempts > tooMany {
-		panic(fmt.Errorf("could not deconflict in a reasonable number of attempts (%d)", attempts))
-	}
-}
-*/
-
 func assertAnonymousInParentObject(_ structural.AnalyzedSchema) {
 	panic(fmt.Errorf(
 		"an anonymous schema found in a parent object must be in a property, additionalProperty, patternProperty or allOf: %w",
@@ -59,18 +42,6 @@ func assertAnonymousInParentPolymorphic(_ structural.AnalyzedSchema) {
 	))
 }
 
-/*
-func assertMustDeconflictPackageAlias(done bool, name string) {
-	if !done {
-		panic(
-			fmt.Errorf(
-				"the package alias deconflicter should always manage to find a deconficted alias. Failed doing so for alias %q",
-				name,
-			))
-	}
-}
-*/
-
 func assertMustDeconflictUsingIndex(name string) {
 	panic(fmt.Errorf(
 		"failed to deconflict name using an index strategy that is supposed to always work: %q: %w",
@@ -95,3 +66,30 @@ func assertInvalidKindScalar(v stores.Value) {
 		ErrInternal,
 	))
 }
+
+/*
+func assertMustDeconflictPackageAlias(done bool, name string) {
+	if !done {
+		panic(
+			fmt.Errorf(
+				"the package alias deconflicter should always manage to find a deconficted alias. Failed doing so for alias %q",
+				name,
+			))
+	}
+}
+
+func assertNameSchema(schema structural.AnalyzedSchema) {
+	if !schema.IsNamed() {
+		panic("expect a named schema here")
+	}
+}
+*/
+
+/*
+func assertNotInfiniteAttempts(attempts int) {
+	const tooMany = 100
+	if attempts > tooMany {
+		panic(fmt.Errorf("could not deconflict in a reasonable number of attempts (%d)", attempts))
+	}
+}
+*/
