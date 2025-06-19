@@ -4,13 +4,16 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/spf13/afero"
+
 	"github.com/fredbi/core/codegen/genapp"
 	settings "github.com/fredbi/core/genmodels/generators/common-settings"
 	"github.com/fredbi/core/genmodels/generators/golang-models/providers"
 	"github.com/fredbi/core/genmodels/generators/golang-models/schema"
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
-	"github.com/spf13/afero"
 )
+
+const userWritableOtherReadable = 0o755
 
 func (g *Generator) init() error {
 	// load the configuration from defaults, configuration file or CLI flags (applied in this order)
@@ -34,14 +37,18 @@ func (g *Generator) init() error {
 
 	// initialize the name provider
 	namingOptions := []providers.Option{
-		providers.WithBaseImportPath(g.BaseImportPath), // the nameProvider needs the base import path to generate fully qualified package names
+		providers.WithBaseImportPath(
+			g.BaseImportPath,
+		), // the nameProvider needs the base import path to generate fully qualified package names
 	}
 	namingOptions = append(namingOptions, g.namingOptions...)
 	g.nameProvider = providers.NewNameProvider(namingOptions...)
 
 	// initialize the schema builder
-	builder := schema.NewBuilder(schema.WithNameProvider(g.nameProvider)) // builders leverage the name provider for generation based on enum value
-	g.schemaBuilder = builder                                             // [schema.Builder] implements both
+	builder := schema.NewBuilder(
+		schema.WithNameProvider(g.nameProvider),
+	) // builders leverage the name provider for generation based on enum value
+	g.schemaBuilder = builder // [schema.Builder] implements both
 	g.packageBuilder = builder
 
 	// configure options for the analyzer
@@ -56,7 +63,9 @@ func (g *Generator) init() error {
 		// Name provider for refactored named schemas
 		// this general-purpose name provider method inspects [structural.AnalyzedSchema.IsRefectored]
 		structural.WithSplitOverlappingAllOf(true),
-		structural.WithRefactorEnums(g.PackageLayoutMode.Has(settings.PackageLayoutEnums)), // allow enums to be defined in their own package
+		structural.WithRefactorEnums(
+			g.PackageLayoutMode.Has(settings.PackageLayoutEnums),
+		), // allow enums to be defined in their own package
 	}
 
 	// configure options for Bundle
@@ -97,7 +106,7 @@ func (g *Generator) loadConfig() error {
 
 func (g *Generator) initOutput() error {
 	if err := g.ensureOutputPath(); err != nil {
-		return errors.Join(err, ErrModel)
+		return err
 	}
 
 	// g.outputPath is now guaranteed to exist, be empty and user-writable
@@ -112,15 +121,18 @@ func (g *Generator) initOutput() error {
 		if g.TargetModuleRoot == "" {
 			return fmt.Errorf(
 				"target %q is outside the go build tree and a go.mod file is required. Please specify a TargetModuleRoot: %w",
-				g.outputPath, ErrModel,
+				g.outputPath,
+				ErrInit,
 			)
 		}
 
 		if !g.WantsGoMod {
 			g.l.Warn(
 				"a go.mod file is required and will be generated, even though this requirement is missing from configuration",
-				"target_dir", g.outputPath,
-				"hint", "if you don't want to see this warning again, enable WantsGoMod (go.mod generation) in the config",
+				"target_dir",
+				g.outputPath,
+				"hint",
+				"if you don't want to see this warning again, enable WantsGoMod (go.mod generation) in the config",
 			)
 
 			g.WantsGoMod = true
@@ -143,10 +155,9 @@ func (g *Generator) initOutput() error {
 	pkgName, err := g.generator.PackagePath(genapp.WithModulePath(g.TargetModuleRoot))
 	if err != nil {
 		return fmt.Errorf(
-			"an error occured when checking for a valid package fully qualified name in %q",
-			g.outputPath,
+			"an error occurred when checking for a valid fully qualified package name in %q: %w",
+			g.outputPath, ErrInit,
 		)
-
 	}
 
 	g.BaseImportPath = pkgName
@@ -195,33 +206,46 @@ func (g *Generator) ensureOutputPath() (err error) {
 		if !outputDirIsEmpty {
 			g.l.Error(
 				"target output error",
-				"target_dir", g.outputPath,
-				"hint", "the target may contain content from a previous generation. Please make sure the target is fresh.",
+				"target_dir",
+				g.outputPath,
+				"hint",
+				"the target may contain content from a previous generation. Please make sure the target is fresh.",
 			)
 
 			return fmt.Errorf(
-				"target %q already exists and is not empty. Please make sure the target is empty before launching the generation",
+				"target %q already exists and is not empty. Please make sure the target is empty before launching the generation: %w: %w",
 				g.outputPath,
+				errHint(
+					"this may happen for instance if you run a generation several times to the same location. There is a risk of conflicting files and I don't dare cleaning up things by myself.",
+				),
+				ErrInit,
 			)
 		}
 
 		if !isUserWritableDir(g.baseFS, g.outputPath) {
 			return fmt.Errorf(
-				"target %q already exists and is not writable. Please make sure the target is writable before launching the generation",
+				"target %q already exists and is not writable. Please make sure the target is writable before launching the generation: %w: %w",
 				g.outputPath,
+				errHint(
+					"this may happen for instance if you build from a container that does not properly mount the ouptput directory (just saying)",
+				),
+				ErrInit,
 			)
 		}
 
 		return nil
 	}
 
-	if err = g.baseFS.MkdirAll(g.outputPath, 0755); err != nil {
+	if err = g.baseFS.MkdirAll(g.outputPath, userWritableOtherReadable); err != nil {
 		return err
 	}
 
 	return nil
 }
 
+// isUserWritableDir checks if writing a file is possible.
+//
+// NOTE: this won't verify that writes are successful (e.g. file system full).
 func isUserWritableDir(baseFS afero.Fs, dir string) bool {
 	file, err := afero.TempFile(baseFS, dir, "_check_writable_")
 	if err != nil {

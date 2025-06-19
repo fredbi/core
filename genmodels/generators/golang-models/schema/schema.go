@@ -18,13 +18,24 @@ const (
 // templates.
 //
 // The {model.TargetModel] is needed to seed all options and settings.
-func (g *Builder) GenNamedSchemas(analyzed structural.AnalyzedSchema, seed model.TargetModel) iter.Seq[model.TargetSchema] {
+func (g *Builder) GenNamedSchemas(
+	analyzed structural.AnalyzedSchema,
+	seed model.TargetModel,
+) iter.Seq[model.TargetSchema] {
 	assertNamedSchema(analyzed)
 
-	return g.makeGenNamedSchema(analyzed, seed, genSchemaFlagPickNamed) // at the topmost level, pick a named schema.
+	return g.makeGenNamedSchema(
+		analyzed,
+		seed,
+		genSchemaFlagPickNamed,
+	) // at the topmost level, pick a named schema.
 }
 
-func (g *Builder) makeGenNamedSchema(analyzed structural.AnalyzedSchema, seed model.TargetModel, flag genSchemaFlag) iter.Seq[model.TargetSchema] {
+func (g *Builder) makeGenNamedSchema(
+	analyzed structural.AnalyzedSchema,
+	seed model.TargetModel,
+	flag genSchemaFlag,
+) iter.Seq[model.TargetSchema] {
 	if !analyzed.IsAnonymous() && (flag&genSchemaFlagIgnoreNamed > 0) {
 		// assume this named schema is handled independently
 		return nil
@@ -74,7 +85,11 @@ func (g *Builder) makeGenNamedSchema(analyzed structural.AnalyzedSchema, seed mo
 //
 // =>
 // type Analyzed string
-func (g *Builder) makeNamedScalar(analyzed structural.AnalyzedSchema, seed model.TargetModel, flag genSchemaFlag) iter.Seq[model.TargetSchema] {
+func (g *Builder) makeNamedScalar(
+	analyzed structural.AnalyzedSchema,
+	seed model.TargetModel,
+	flag genSchemaFlag,
+) iter.Seq[model.TargetSchema] {
 	/*
 		var goType string
 		if ext, isUserDefined := analyzed.GetExtension("x-go-type"); isUserDefined {
@@ -123,9 +138,9 @@ func (g *Builder) initializeTargetSchemaFromModel(m model.TargetModel) model.Tar
 		GenSchemaTemplateOptions: model.GenSchemaTemplateOptions{
 			GenOptions: m.GenOptions,
 			// NeedsSerializer bool
-			//MarshalMode
-			//JSONLibPath     string
-			//Serializer      SerializerSelector
+			// MarshalMode
+			// JSONLibPath     string
+			// Serializer      SerializerSelector
 			TargetCodeFlags: m.TargetCodeFlags,
 		},
 		/*
@@ -158,8 +173,11 @@ func (g *Builder) initializeTargetSchemaFromModel(m model.TargetModel) model.Tar
 	}
 }
 
-func (g *Builder) makeNamedObject(analyzed structural.AnalyzedSchema, model model.TargetModel, flag genSchemaFlag) iter.Seq[model.TargetSchema] {
-
+func (g *Builder) makeNamedObject(
+	analyzed structural.AnalyzedSchema,
+	model model.TargetModel,
+	flag genSchemaFlag,
+) iter.Seq[model.TargetSchema] {
 	schema := g.initializeTargetSchemaFromModel(model)
 	schema.Identifier = analyzed.Name()
 	// schema.Metadata =  /* TODO */
@@ -201,7 +219,11 @@ func (g *Builder) makeNamedObject(analyzed structural.AnalyzedSchema, model mode
 	return nil // TODO
 }
 
-func (g *Builder) makeNamedArray(analyzed structural.AnalyzedSchema, m model.TargetModel, flag genSchemaFlag) iter.Seq[model.TargetSchema] {
+func (g *Builder) makeNamedArray(
+	analyzed structural.AnalyzedSchema,
+	m model.TargetModel,
+	flag genSchemaFlag,
+) iter.Seq[model.TargetSchema] {
 	/*
 		children := analyzed.Children()
 		if len(children) > 1 {
@@ -221,6 +243,10 @@ func (g *Builder) makeNamedArray(analyzed structural.AnalyzedSchema, m model.Tar
 	return nil // TODO
 }
 
-func (g *Builder) makeNamedTuple(analyzed structural.AnalyzedSchema, model model.TargetModel, flag genSchemaFlag) iter.Seq[model.TargetSchema] {
+func (g *Builder) makeNamedTuple(
+	analyzed structural.AnalyzedSchema,
+	model model.TargetModel,
+	flag genSchemaFlag,
+) iter.Seq[model.TargetSchema] {
 	return nil // TODO
 }

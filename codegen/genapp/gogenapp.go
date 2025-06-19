@@ -65,6 +65,8 @@ func New(templateFS fs.FS, opts ...Option) *GoGenApp {
 // The target path is relative to the output path of the [GoGenApp]
 // and must be a valid relative path on the running OS.
 //
+// If the target is located in a folder, the latter will be created automatically.
+//
 // By default, the generated output is subject to go format and go imports.
 //
 // # Concurrency
@@ -99,6 +101,7 @@ func (g *GoGenApp) Render(template string, target string, data any) error {
 		_, _ = buffer.Write(formatted)
 	}
 
+	// NOTE: WriteReader automatically create directories if needed
 	if err := afero.WriteReader(g.fs, target, &buffer); err != nil {
 		return errors.Join(err, ErrGenApp)
 	}

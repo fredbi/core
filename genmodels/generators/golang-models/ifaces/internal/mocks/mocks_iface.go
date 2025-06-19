@@ -869,6 +869,688 @@ func (mock *MockNameProvider) UniqueSchemaCalls() []struct {
 	return calls
 }
 
+// Ensure that MockSchemaNameProvider does implement ifaces.SchemaNameProvider.
+// If this is not the case, regenerate this file with mockery.
+var _ ifaces.SchemaNameProvider = &MockSchemaNameProvider{}
+
+// MockSchemaNameProvider is a mock implementation of ifaces.SchemaNameProvider.
+//
+//	func TestSomethingThatUsesSchemaNameProvider(t *testing.T) {
+//
+//		// make and configure a mocked ifaces.SchemaNameProvider
+//		mockedSchemaNameProvider := &MockSchemaNameProvider{
+//			DeconflictSchemaFunc: func(name string, namespace structural.Namespace) (string, error) {
+//				panic("mock out the DeconflictSchema method")
+//			},
+//			NameSchemaFunc: func(name string, analyzed structural.AnalyzedSchema) (string, error) {
+//				panic("mock out the NameSchema method")
+//			},
+//			UniqueSchemaFunc: func(name string) structural.Ident {
+//				panic("mock out the UniqueSchema method")
+//			},
+//		}
+//
+//		// use mockedSchemaNameProvider in code that requires ifaces.SchemaNameProvider
+//		// and then make assertions.
+//
+//	}
+type MockSchemaNameProvider struct {
+	// DeconflictSchemaFunc mocks the DeconflictSchema method.
+	DeconflictSchemaFunc func(name string, namespace structural.Namespace) (string, error)
+
+	// NameSchemaFunc mocks the NameSchema method.
+	NameSchemaFunc func(name string, analyzed structural.AnalyzedSchema) (string, error)
+
+	// UniqueSchemaFunc mocks the UniqueSchema method.
+	UniqueSchemaFunc func(name string) structural.Ident
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// DeconflictSchema holds details about calls to the DeconflictSchema method.
+		DeconflictSchema []struct {
+			// Name is the name argument value.
+			Name string
+			// Namespace is the namespace argument value.
+			Namespace structural.Namespace
+		}
+		// NameSchema holds details about calls to the NameSchema method.
+		NameSchema []struct {
+			// Name is the name argument value.
+			Name string
+			// Analyzed is the analyzed argument value.
+			Analyzed structural.AnalyzedSchema
+		}
+		// UniqueSchema holds details about calls to the UniqueSchema method.
+		UniqueSchema []struct {
+			// Name is the name argument value.
+			Name string
+		}
+	}
+	lockDeconflictSchema sync.RWMutex
+	lockNameSchema       sync.RWMutex
+	lockUniqueSchema     sync.RWMutex
+}
+
+// DeconflictSchema calls DeconflictSchemaFunc.
+func (mock *MockSchemaNameProvider) DeconflictSchema(name string, namespace structural.Namespace) (string, error) {
+	if mock.DeconflictSchemaFunc == nil {
+		panic("MockSchemaNameProvider.DeconflictSchemaFunc: method is nil but SchemaNameProvider.DeconflictSchema was just called")
+	}
+	callInfo := struct {
+		Name      string
+		Namespace structural.Namespace
+	}{
+		Name:      name,
+		Namespace: namespace,
+	}
+	mock.lockDeconflictSchema.Lock()
+	mock.calls.DeconflictSchema = append(mock.calls.DeconflictSchema, callInfo)
+	mock.lockDeconflictSchema.Unlock()
+	return mock.DeconflictSchemaFunc(name, namespace)
+}
+
+// DeconflictSchemaCalls gets all the calls that were made to DeconflictSchema.
+// Check the length with:
+//
+//	len(mockedSchemaNameProvider.DeconflictSchemaCalls())
+func (mock *MockSchemaNameProvider) DeconflictSchemaCalls() []struct {
+	Name      string
+	Namespace structural.Namespace
+} {
+	var calls []struct {
+		Name      string
+		Namespace structural.Namespace
+	}
+	mock.lockDeconflictSchema.RLock()
+	calls = mock.calls.DeconflictSchema
+	mock.lockDeconflictSchema.RUnlock()
+	return calls
+}
+
+// NameSchema calls NameSchemaFunc.
+func (mock *MockSchemaNameProvider) NameSchema(name string, analyzed structural.AnalyzedSchema) (string, error) {
+	if mock.NameSchemaFunc == nil {
+		panic("MockSchemaNameProvider.NameSchemaFunc: method is nil but SchemaNameProvider.NameSchema was just called")
+	}
+	callInfo := struct {
+		Name     string
+		Analyzed structural.AnalyzedSchema
+	}{
+		Name:     name,
+		Analyzed: analyzed,
+	}
+	mock.lockNameSchema.Lock()
+	mock.calls.NameSchema = append(mock.calls.NameSchema, callInfo)
+	mock.lockNameSchema.Unlock()
+	return mock.NameSchemaFunc(name, analyzed)
+}
+
+// NameSchemaCalls gets all the calls that were made to NameSchema.
+// Check the length with:
+//
+//	len(mockedSchemaNameProvider.NameSchemaCalls())
+func (mock *MockSchemaNameProvider) NameSchemaCalls() []struct {
+	Name     string
+	Analyzed structural.AnalyzedSchema
+} {
+	var calls []struct {
+		Name     string
+		Analyzed structural.AnalyzedSchema
+	}
+	mock.lockNameSchema.RLock()
+	calls = mock.calls.NameSchema
+	mock.lockNameSchema.RUnlock()
+	return calls
+}
+
+// UniqueSchema calls UniqueSchemaFunc.
+func (mock *MockSchemaNameProvider) UniqueSchema(name string) structural.Ident {
+	if mock.UniqueSchemaFunc == nil {
+		panic("MockSchemaNameProvider.UniqueSchemaFunc: method is nil but SchemaNameProvider.UniqueSchema was just called")
+	}
+	callInfo := struct {
+		Name string
+	}{
+		Name: name,
+	}
+	mock.lockUniqueSchema.Lock()
+	mock.calls.UniqueSchema = append(mock.calls.UniqueSchema, callInfo)
+	mock.lockUniqueSchema.Unlock()
+	return mock.UniqueSchemaFunc(name)
+}
+
+// UniqueSchemaCalls gets all the calls that were made to UniqueSchema.
+// Check the length with:
+//
+//	len(mockedSchemaNameProvider.UniqueSchemaCalls())
+func (mock *MockSchemaNameProvider) UniqueSchemaCalls() []struct {
+	Name string
+} {
+	var calls []struct {
+		Name string
+	}
+	mock.lockUniqueSchema.RLock()
+	calls = mock.calls.UniqueSchema
+	mock.lockUniqueSchema.RUnlock()
+	return calls
+}
+
+// Ensure that MockPackageNameProvider does implement ifaces.PackageNameProvider.
+// If this is not the case, regenerate this file with mockery.
+var _ ifaces.PackageNameProvider = &MockPackageNameProvider{}
+
+// MockPackageNameProvider is a mock implementation of ifaces.PackageNameProvider.
+//
+//	func TestSomethingThatUsesPackageNameProvider(t *testing.T) {
+//
+//		// make and configure a mocked ifaces.PackageNameProvider
+//		mockedPackageNameProvider := &MockPackageNameProvider{
+//			DeconflictPathFunc: func(name string, namespace structural.Namespace) (string, error) {
+//				panic("mock out the DeconflictPath method")
+//			},
+//			NamePackageFunc: func(path string, analyzed structural.AnalyzedPackage) (string, error) {
+//				panic("mock out the NamePackage method")
+//			},
+//			PackageFullNameFunc: func(name string, analyzed ...structural.AnalyzedSchema) string {
+//				panic("mock out the PackageFullName method")
+//			},
+//			PackageShortNameFunc: func(name string, analyzed ...structural.AnalyzedSchema) string {
+//				panic("mock out the PackageShortName method")
+//			},
+//			UniquePathFunc: func(path string) structural.Ident {
+//				panic("mock out the UniquePath method")
+//			},
+//		}
+//
+//		// use mockedPackageNameProvider in code that requires ifaces.PackageNameProvider
+//		// and then make assertions.
+//
+//	}
+type MockPackageNameProvider struct {
+	// DeconflictPathFunc mocks the DeconflictPath method.
+	DeconflictPathFunc func(name string, namespace structural.Namespace) (string, error)
+
+	// NamePackageFunc mocks the NamePackage method.
+	NamePackageFunc func(path string, analyzed structural.AnalyzedPackage) (string, error)
+
+	// PackageFullNameFunc mocks the PackageFullName method.
+	PackageFullNameFunc func(name string, analyzed ...structural.AnalyzedSchema) string
+
+	// PackageShortNameFunc mocks the PackageShortName method.
+	PackageShortNameFunc func(name string, analyzed ...structural.AnalyzedSchema) string
+
+	// UniquePathFunc mocks the UniquePath method.
+	UniquePathFunc func(path string) structural.Ident
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// DeconflictPath holds details about calls to the DeconflictPath method.
+		DeconflictPath []struct {
+			// Name is the name argument value.
+			Name string
+			// Namespace is the namespace argument value.
+			Namespace structural.Namespace
+		}
+		// NamePackage holds details about calls to the NamePackage method.
+		NamePackage []struct {
+			// Path is the path argument value.
+			Path string
+			// Analyzed is the analyzed argument value.
+			Analyzed structural.AnalyzedPackage
+		}
+		// PackageFullName holds details about calls to the PackageFullName method.
+		PackageFullName []struct {
+			// Name is the name argument value.
+			Name string
+			// Analyzed is the analyzed argument value.
+			Analyzed []structural.AnalyzedSchema
+		}
+		// PackageShortName holds details about calls to the PackageShortName method.
+		PackageShortName []struct {
+			// Name is the name argument value.
+			Name string
+			// Analyzed is the analyzed argument value.
+			Analyzed []structural.AnalyzedSchema
+		}
+		// UniquePath holds details about calls to the UniquePath method.
+		UniquePath []struct {
+			// Path is the path argument value.
+			Path string
+		}
+	}
+	lockDeconflictPath   sync.RWMutex
+	lockNamePackage      sync.RWMutex
+	lockPackageFullName  sync.RWMutex
+	lockPackageShortName sync.RWMutex
+	lockUniquePath       sync.RWMutex
+}
+
+// DeconflictPath calls DeconflictPathFunc.
+func (mock *MockPackageNameProvider) DeconflictPath(name string, namespace structural.Namespace) (string, error) {
+	if mock.DeconflictPathFunc == nil {
+		panic("MockPackageNameProvider.DeconflictPathFunc: method is nil but PackageNameProvider.DeconflictPath was just called")
+	}
+	callInfo := struct {
+		Name      string
+		Namespace structural.Namespace
+	}{
+		Name:      name,
+		Namespace: namespace,
+	}
+	mock.lockDeconflictPath.Lock()
+	mock.calls.DeconflictPath = append(mock.calls.DeconflictPath, callInfo)
+	mock.lockDeconflictPath.Unlock()
+	return mock.DeconflictPathFunc(name, namespace)
+}
+
+// DeconflictPathCalls gets all the calls that were made to DeconflictPath.
+// Check the length with:
+//
+//	len(mockedPackageNameProvider.DeconflictPathCalls())
+func (mock *MockPackageNameProvider) DeconflictPathCalls() []struct {
+	Name      string
+	Namespace structural.Namespace
+} {
+	var calls []struct {
+		Name      string
+		Namespace structural.Namespace
+	}
+	mock.lockDeconflictPath.RLock()
+	calls = mock.calls.DeconflictPath
+	mock.lockDeconflictPath.RUnlock()
+	return calls
+}
+
+// NamePackage calls NamePackageFunc.
+func (mock *MockPackageNameProvider) NamePackage(path string, analyzed structural.AnalyzedPackage) (string, error) {
+	if mock.NamePackageFunc == nil {
+		panic("MockPackageNameProvider.NamePackageFunc: method is nil but PackageNameProvider.NamePackage was just called")
+	}
+	callInfo := struct {
+		Path     string
+		Analyzed structural.AnalyzedPackage
+	}{
+		Path:     path,
+		Analyzed: analyzed,
+	}
+	mock.lockNamePackage.Lock()
+	mock.calls.NamePackage = append(mock.calls.NamePackage, callInfo)
+	mock.lockNamePackage.Unlock()
+	return mock.NamePackageFunc(path, analyzed)
+}
+
+// NamePackageCalls gets all the calls that were made to NamePackage.
+// Check the length with:
+//
+//	len(mockedPackageNameProvider.NamePackageCalls())
+func (mock *MockPackageNameProvider) NamePackageCalls() []struct {
+	Path     string
+	Analyzed structural.AnalyzedPackage
+} {
+	var calls []struct {
+		Path     string
+		Analyzed structural.AnalyzedPackage
+	}
+	mock.lockNamePackage.RLock()
+	calls = mock.calls.NamePackage
+	mock.lockNamePackage.RUnlock()
+	return calls
+}
+
+// PackageFullName calls PackageFullNameFunc.
+func (mock *MockPackageNameProvider) PackageFullName(name string, analyzed ...structural.AnalyzedSchema) string {
+	if mock.PackageFullNameFunc == nil {
+		panic("MockPackageNameProvider.PackageFullNameFunc: method is nil but PackageNameProvider.PackageFullName was just called")
+	}
+	callInfo := struct {
+		Name     string
+		Analyzed []structural.AnalyzedSchema
+	}{
+		Name:     name,
+		Analyzed: analyzed,
+	}
+	mock.lockPackageFullName.Lock()
+	mock.calls.PackageFullName = append(mock.calls.PackageFullName, callInfo)
+	mock.lockPackageFullName.Unlock()
+	return mock.PackageFullNameFunc(name, analyzed...)
+}
+
+// PackageFullNameCalls gets all the calls that were made to PackageFullName.
+// Check the length with:
+//
+//	len(mockedPackageNameProvider.PackageFullNameCalls())
+func (mock *MockPackageNameProvider) PackageFullNameCalls() []struct {
+	Name     string
+	Analyzed []structural.AnalyzedSchema
+} {
+	var calls []struct {
+		Name     string
+		Analyzed []structural.AnalyzedSchema
+	}
+	mock.lockPackageFullName.RLock()
+	calls = mock.calls.PackageFullName
+	mock.lockPackageFullName.RUnlock()
+	return calls
+}
+
+// PackageShortName calls PackageShortNameFunc.
+func (mock *MockPackageNameProvider) PackageShortName(name string, analyzed ...structural.AnalyzedSchema) string {
+	if mock.PackageShortNameFunc == nil {
+		panic("MockPackageNameProvider.PackageShortNameFunc: method is nil but PackageNameProvider.PackageShortName was just called")
+	}
+	callInfo := struct {
+		Name     string
+		Analyzed []structural.AnalyzedSchema
+	}{
+		Name:     name,
+		Analyzed: analyzed,
+	}
+	mock.lockPackageShortName.Lock()
+	mock.calls.PackageShortName = append(mock.calls.PackageShortName, callInfo)
+	mock.lockPackageShortName.Unlock()
+	return mock.PackageShortNameFunc(name, analyzed...)
+}
+
+// PackageShortNameCalls gets all the calls that were made to PackageShortName.
+// Check the length with:
+//
+//	len(mockedPackageNameProvider.PackageShortNameCalls())
+func (mock *MockPackageNameProvider) PackageShortNameCalls() []struct {
+	Name     string
+	Analyzed []structural.AnalyzedSchema
+} {
+	var calls []struct {
+		Name     string
+		Analyzed []structural.AnalyzedSchema
+	}
+	mock.lockPackageShortName.RLock()
+	calls = mock.calls.PackageShortName
+	mock.lockPackageShortName.RUnlock()
+	return calls
+}
+
+// UniquePath calls UniquePathFunc.
+func (mock *MockPackageNameProvider) UniquePath(path string) structural.Ident {
+	if mock.UniquePathFunc == nil {
+		panic("MockPackageNameProvider.UniquePathFunc: method is nil but PackageNameProvider.UniquePath was just called")
+	}
+	callInfo := struct {
+		Path string
+	}{
+		Path: path,
+	}
+	mock.lockUniquePath.Lock()
+	mock.calls.UniquePath = append(mock.calls.UniquePath, callInfo)
+	mock.lockUniquePath.Unlock()
+	return mock.UniquePathFunc(path)
+}
+
+// UniquePathCalls gets all the calls that were made to UniquePath.
+// Check the length with:
+//
+//	len(mockedPackageNameProvider.UniquePathCalls())
+func (mock *MockPackageNameProvider) UniquePathCalls() []struct {
+	Path string
+} {
+	var calls []struct {
+		Path string
+	}
+	mock.lockUniquePath.RLock()
+	calls = mock.calls.UniquePath
+	mock.lockUniquePath.RUnlock()
+	return calls
+}
+
+// Ensure that MockPackageAliasProvider does implement ifaces.PackageAliasProvider.
+// If this is not the case, regenerate this file with mockery.
+var _ ifaces.PackageAliasProvider = &MockPackageAliasProvider{}
+
+// MockPackageAliasProvider is a mock implementation of ifaces.PackageAliasProvider.
+//
+//	func TestSomethingThatUsesPackageAliasProvider(t *testing.T) {
+//
+//		// make and configure a mocked ifaces.PackageAliasProvider
+//		mockedPackageAliasProvider := &MockPackageAliasProvider{
+//			DeconflictAliasFunc: func(name string, namespace structural.Namespace) (string, error) {
+//				panic("mock out the DeconflictAlias method")
+//			},
+//			PackageAliasFunc: func(name string, part int, analyzed ...structural.AnalyzedSchema) string {
+//				panic("mock out the PackageAlias method")
+//			},
+//		}
+//
+//		// use mockedPackageAliasProvider in code that requires ifaces.PackageAliasProvider
+//		// and then make assertions.
+//
+//	}
+type MockPackageAliasProvider struct {
+	// DeconflictAliasFunc mocks the DeconflictAlias method.
+	DeconflictAliasFunc func(name string, namespace structural.Namespace) (string, error)
+
+	// PackageAliasFunc mocks the PackageAlias method.
+	PackageAliasFunc func(name string, part int, analyzed ...structural.AnalyzedSchema) string
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// DeconflictAlias holds details about calls to the DeconflictAlias method.
+		DeconflictAlias []struct {
+			// Name is the name argument value.
+			Name string
+			// Namespace is the namespace argument value.
+			Namespace structural.Namespace
+		}
+		// PackageAlias holds details about calls to the PackageAlias method.
+		PackageAlias []struct {
+			// Name is the name argument value.
+			Name string
+			// Part is the part argument value.
+			Part int
+			// Analyzed is the analyzed argument value.
+			Analyzed []structural.AnalyzedSchema
+		}
+	}
+	lockDeconflictAlias sync.RWMutex
+	lockPackageAlias    sync.RWMutex
+}
+
+// DeconflictAlias calls DeconflictAliasFunc.
+func (mock *MockPackageAliasProvider) DeconflictAlias(name string, namespace structural.Namespace) (string, error) {
+	if mock.DeconflictAliasFunc == nil {
+		panic("MockPackageAliasProvider.DeconflictAliasFunc: method is nil but PackageAliasProvider.DeconflictAlias was just called")
+	}
+	callInfo := struct {
+		Name      string
+		Namespace structural.Namespace
+	}{
+		Name:      name,
+		Namespace: namespace,
+	}
+	mock.lockDeconflictAlias.Lock()
+	mock.calls.DeconflictAlias = append(mock.calls.DeconflictAlias, callInfo)
+	mock.lockDeconflictAlias.Unlock()
+	return mock.DeconflictAliasFunc(name, namespace)
+}
+
+// DeconflictAliasCalls gets all the calls that were made to DeconflictAlias.
+// Check the length with:
+//
+//	len(mockedPackageAliasProvider.DeconflictAliasCalls())
+func (mock *MockPackageAliasProvider) DeconflictAliasCalls() []struct {
+	Name      string
+	Namespace structural.Namespace
+} {
+	var calls []struct {
+		Name      string
+		Namespace structural.Namespace
+	}
+	mock.lockDeconflictAlias.RLock()
+	calls = mock.calls.DeconflictAlias
+	mock.lockDeconflictAlias.RUnlock()
+	return calls
+}
+
+// PackageAlias calls PackageAliasFunc.
+func (mock *MockPackageAliasProvider) PackageAlias(name string, part int, analyzed ...structural.AnalyzedSchema) string {
+	if mock.PackageAliasFunc == nil {
+		panic("MockPackageAliasProvider.PackageAliasFunc: method is nil but PackageAliasProvider.PackageAlias was just called")
+	}
+	callInfo := struct {
+		Name     string
+		Part     int
+		Analyzed []structural.AnalyzedSchema
+	}{
+		Name:     name,
+		Part:     part,
+		Analyzed: analyzed,
+	}
+	mock.lockPackageAlias.Lock()
+	mock.calls.PackageAlias = append(mock.calls.PackageAlias, callInfo)
+	mock.lockPackageAlias.Unlock()
+	return mock.PackageAliasFunc(name, part, analyzed...)
+}
+
+// PackageAliasCalls gets all the calls that were made to PackageAlias.
+// Check the length with:
+//
+//	len(mockedPackageAliasProvider.PackageAliasCalls())
+func (mock *MockPackageAliasProvider) PackageAliasCalls() []struct {
+	Name     string
+	Part     int
+	Analyzed []structural.AnalyzedSchema
+} {
+	var calls []struct {
+		Name     string
+		Part     int
+		Analyzed []structural.AnalyzedSchema
+	}
+	mock.lockPackageAlias.RLock()
+	calls = mock.calls.PackageAlias
+	mock.lockPackageAlias.RUnlock()
+	return calls
+}
+
+// Ensure that MockFileNameProvider does implement ifaces.FileNameProvider.
+// If this is not the case, regenerate this file with mockery.
+var _ ifaces.FileNameProvider = &MockFileNameProvider{}
+
+// MockFileNameProvider is a mock implementation of ifaces.FileNameProvider.
+//
+//	func TestSomethingThatUsesFileNameProvider(t *testing.T) {
+//
+//		// make and configure a mocked ifaces.FileNameProvider
+//		mockedFileNameProvider := &MockFileNameProvider{
+//			FileNameFunc: func(name string, analyzed structural.AnalyzedSchema) string {
+//				panic("mock out the FileName method")
+//			},
+//			FileNameForTestFunc: func(name string, analyzed structural.AnalyzedSchema) string {
+//				panic("mock out the FileNameForTest method")
+//			},
+//		}
+//
+//		// use mockedFileNameProvider in code that requires ifaces.FileNameProvider
+//		// and then make assertions.
+//
+//	}
+type MockFileNameProvider struct {
+	// FileNameFunc mocks the FileName method.
+	FileNameFunc func(name string, analyzed structural.AnalyzedSchema) string
+
+	// FileNameForTestFunc mocks the FileNameForTest method.
+	FileNameForTestFunc func(name string, analyzed structural.AnalyzedSchema) string
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// FileName holds details about calls to the FileName method.
+		FileName []struct {
+			// Name is the name argument value.
+			Name string
+			// Analyzed is the analyzed argument value.
+			Analyzed structural.AnalyzedSchema
+		}
+		// FileNameForTest holds details about calls to the FileNameForTest method.
+		FileNameForTest []struct {
+			// Name is the name argument value.
+			Name string
+			// Analyzed is the analyzed argument value.
+			Analyzed structural.AnalyzedSchema
+		}
+	}
+	lockFileName        sync.RWMutex
+	lockFileNameForTest sync.RWMutex
+}
+
+// FileName calls FileNameFunc.
+func (mock *MockFileNameProvider) FileName(name string, analyzed structural.AnalyzedSchema) string {
+	if mock.FileNameFunc == nil {
+		panic("MockFileNameProvider.FileNameFunc: method is nil but FileNameProvider.FileName was just called")
+	}
+	callInfo := struct {
+		Name     string
+		Analyzed structural.AnalyzedSchema
+	}{
+		Name:     name,
+		Analyzed: analyzed,
+	}
+	mock.lockFileName.Lock()
+	mock.calls.FileName = append(mock.calls.FileName, callInfo)
+	mock.lockFileName.Unlock()
+	return mock.FileNameFunc(name, analyzed)
+}
+
+// FileNameCalls gets all the calls that were made to FileName.
+// Check the length with:
+//
+//	len(mockedFileNameProvider.FileNameCalls())
+func (mock *MockFileNameProvider) FileNameCalls() []struct {
+	Name     string
+	Analyzed structural.AnalyzedSchema
+} {
+	var calls []struct {
+		Name     string
+		Analyzed structural.AnalyzedSchema
+	}
+	mock.lockFileName.RLock()
+	calls = mock.calls.FileName
+	mock.lockFileName.RUnlock()
+	return calls
+}
+
+// FileNameForTest calls FileNameForTestFunc.
+func (mock *MockFileNameProvider) FileNameForTest(name string, analyzed structural.AnalyzedSchema) string {
+	if mock.FileNameForTestFunc == nil {
+		panic("MockFileNameProvider.FileNameForTestFunc: method is nil but FileNameProvider.FileNameForTest was just called")
+	}
+	callInfo := struct {
+		Name     string
+		Analyzed structural.AnalyzedSchema
+	}{
+		Name:     name,
+		Analyzed: analyzed,
+	}
+	mock.lockFileNameForTest.Lock()
+	mock.calls.FileNameForTest = append(mock.calls.FileNameForTest, callInfo)
+	mock.lockFileNameForTest.Unlock()
+	return mock.FileNameForTestFunc(name, analyzed)
+}
+
+// FileNameForTestCalls gets all the calls that were made to FileNameForTest.
+// Check the length with:
+//
+//	len(mockedFileNameProvider.FileNameForTestCalls())
+func (mock *MockFileNameProvider) FileNameForTestCalls() []struct {
+	Name     string
+	Analyzed structural.AnalyzedSchema
+} {
+	var calls []struct {
+		Name     string
+		Analyzed structural.AnalyzedSchema
+	}
+	mock.lockFileNameForTest.RLock()
+	calls = mock.calls.FileNameForTest
+	mock.lockFileNameForTest.RUnlock()
+	return calls
+}
+
 // Ensure that MockSchemaBuilder does implement ifaces.SchemaBuilder.
 // If this is not the case, regenerate this file with mockery.
 var _ ifaces.SchemaBuilder = &MockSchemaBuilder{}

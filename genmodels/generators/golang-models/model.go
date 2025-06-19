@@ -88,7 +88,9 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 		// stash for this key is no longer updated.
 		g.stashMx.Lock()
 		stashed := g.stashedSchemas[analyzed.ID()]
-		genModel.MergeSchemas(stashed.Schemas) // dependencies are sorted in reverse, to reflect nice code with dependencies last
+		genModel.MergeSchemas(
+			stashed.Schemas,
+		) // dependencies are sorted in reverse, to reflect nice code with dependencies last
 		genModel.Imports = g.deconflictedMergedImports(genModel.Imports, stashed.Imports)
 		delete(g.stashedSchemas, analyzed.ID())
 		g.stashMx.Unlock()
@@ -121,7 +123,7 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 			case typeDefinitionModel:
 				// we want to produce a file with the type definition, {name}.go
 				targetModel = genModel
-				flags := flagsForTypeDefinition
+				flags := flagsForTypeDefinition()
 				flags.NeedsValidation = !layout.SchemaWantsSplitValidation
 				targetModel.TargetCodeFlags = applyLayoutOptions(genModel.TargetCodeFlags, flags)
 				targetModel.Schemas = applyLayoutOptionsToSchemas(targetModel.Schemas, flags)
@@ -135,8 +137,14 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 				// yield a version of this [TargetModel] to generate {name}_validation.go (possibly deconflicted)
 				targetModel = genModel
 				targetModel.File = g.nameProvider.FileName(targetModel.File+"_validation", analyzed)
-				targetModel.TargetCodeFlags = applyLayoutOptions(genModel.TargetCodeFlags, flagsForTypeValidation)
-				targetModel.Schemas = applyLayoutOptionsToSchemas(targetModel.Schemas, flagsForTypeValidation)
+				targetModel.TargetCodeFlags = applyLayoutOptions(
+					genModel.TargetCodeFlags,
+					flagsForTypeValidation(),
+				)
+				targetModel.Schemas = applyLayoutOptionsToSchemas(
+					targetModel.Schemas,
+					flagsForTypeValidation(),
+				)
 
 			case typeDefinitionTest:
 				// we want to produce a test for the type definition
@@ -147,8 +155,11 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 
 				// yield a version of this [TargetModel] to generate {name}_test.go (possibly deconflicted)
 				targetModel = genModel
-				targetModel.File = g.nameProvider.FileNameForTest(targetModel.File+"_test", analyzed)
-				flags := flagsForTypeTest
+				targetModel.File = g.nameProvider.FileNameForTest(
+					targetModel.File+"_test",
+					analyzed,
+				)
+				flags := flagsForTypeTest()
 				flags.NeedsValidation = !layout.SchemaWantsSplitValidation
 				targetModel.TargetCodeFlags = applyLayoutOptions(genModel.TargetCodeFlags, flags)
 				targetModel.Schemas = applyLayoutOptionsToSchemas(targetModel.Schemas, flags)
@@ -158,17 +169,24 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 
 			case typeValidationTest:
 				// we want to produce a test for the Validate method only
-				if !layout.SchemaWantsSplitValidation || !layout.SchemaWantsTest || !targetModel.NeedsValidation {
+				if !layout.SchemaWantsSplitValidation || !layout.SchemaWantsTest ||
+					!targetModel.NeedsValidation {
 					// no specific file: skip
 					continue
 				}
 
 				// yield a version of this [TargetModel] to generate {name}_validation_test.go, with only tests for validation code
 				targetModel = genModel
-				targetModel.File = g.nameProvider.FileNameForTest(targetModel.File+"_validation_test", analyzed)
-				flags := flagsForValidationTest
+				targetModel.File = g.nameProvider.FileNameForTest(
+					targetModel.File+"_validation_test",
+					analyzed,
+				)
+				flags := flagsForValidationTest()
 				targetModel.TargetCodeFlags = applyLayoutOptions(genModel.TargetCodeFlags, flags)
-				targetModel.Schemas = applyLayoutOptionsToSchemas(targetModel.Schemas, flagsForValidationTest)
+				targetModel.Schemas = applyLayoutOptionsToSchemas(
+					targetModel.Schemas,
+					flagsForValidationTest(),
+				)
 
 				testImports := model.MakeImportsMap(g.extraModelImports(flags)...)
 				targetModel.Imports = g.deconflictedMergedImports(testImports, targetModel.Imports)
@@ -181,7 +199,10 @@ func (g *Generator) makeGenModels(analyzed structural.AnalyzedSchema) iter.Seq[m
 	}
 }
 
-func (g *Generator) deconflictedMergedImports(base model.ImportsMap, merged model.ImportsMap) model.ImportsMap {
+func (g *Generator) deconflictedMergedImports(
+	base model.ImportsMap,
+	merged model.ImportsMap,
+) model.ImportsMap {
 	deconflict := func(alias string) string {
 		deconflicted, _ := g.nameProvider.DeconflictAlias(alias, base)
 
@@ -275,10 +296,18 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 		ID:   analyzed.ID(),
 		Name: analyzed.OriginalName(),
 		LocationInfo: model.LocationInfo{
-			Package:         g.nameProvider.PackageShortName(analyzed.Path(), analyzed),
-			PackageLocation: analyzed.Path(),                                           // Location is a sanitized /-separated URL path. This is relative to the codegen path
-			FullPackage:     g.nameProvider.PackageFullName(analyzed.Path(), analyzed), // fully qualified package name (e.g. "github.com/fredbi/core/models")
-			File:            g.nameProvider.FileName(analyzed.Name(), analyzed),        // deconflicted file name, safe for go
+			Package: g.nameProvider.PackageShortName(analyzed.Path(), analyzed),
+			PackageLocation: normalizeOSPath(
+				analyzed.Path(),
+			), // Location is an OS path relative to the codegen path
+			FullPackage: g.nameProvider.PackageFullName(
+				analyzed.Path(),
+				analyzed,
+			), // fully qualified package name (e.g. "github.com/fredbi/core/models")
+			File: g.nameProvider.FileName(
+				analyzed.Name(),
+				analyzed,
+			), // deconflicted file name, safe for go (without extension)
 		},
 		Imports: model.MakeImportsMap(g.defaultModelImports()...),
 		Schemas: make([]model.TargetSchema, 0, sensibleAllocs),
@@ -324,7 +353,10 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 // makeGenSchema produces the data model to generate a go type for a schema.
 //
 // In some situations, we may have several type definitions to assemble: e.g. enums, interfaces with concrete types...
-func (g *Generator) makeGenSchema(analyzed structural.AnalyzedSchema, seed model.TargetModel) iter.Seq[model.TargetSchema] {
+func (g *Generator) makeGenSchema(
+	analyzed structural.AnalyzedSchema,
+	seed model.TargetModel,
+) iter.Seq[model.TargetSchema] {
 	return g.schemaBuilder.GenNamedSchemas(analyzed, seed) // TODO in schema.Builder
 }
 
@@ -379,37 +411,46 @@ func (g *Generator) layoutOptionsForSchema(analyzed structural.AnalyzedSchema) l
 	}
 }
 
-var (
-	flagsForTypeDefinition = model.TargetCodeFlags{
+func flagsForTypeDefinition() model.TargetCodeFlags {
+	return model.TargetCodeFlags{
 		NeedsType:           true,
 		NeedsValidation:     true,
 		NeedsOnlyValidation: false,
 		NeedsTest:           false,
 	}
+}
 
-	flagsForTypeValidation = model.TargetCodeFlags{
+func flagsForTypeValidation() model.TargetCodeFlags {
+	return model.TargetCodeFlags{
 		NeedsType:           false,
 		NeedsValidation:     true,
 		NeedsOnlyValidation: true,
 		NeedsTest:           false,
 	}
+}
 
-	flagsForTypeTest = model.TargetCodeFlags{
+func flagsForTypeTest() model.TargetCodeFlags {
+	return model.TargetCodeFlags{
 		NeedsType:           false,
 		NeedsValidation:     true,
 		NeedsOnlyValidation: false,
 		NeedsTest:           true,
 	}
+}
 
-	flagsForValidationTest = model.TargetCodeFlags{
+func flagsForValidationTest() model.TargetCodeFlags {
+	return model.TargetCodeFlags{
 		NeedsType:           false,
 		NeedsValidation:     true,
 		NeedsOnlyValidation: true,
 		NeedsTest:           true,
 	}
-)
+}
 
-func applyLayoutOptions(input model.TargetCodeFlags, merge model.TargetCodeFlags) (output model.TargetCodeFlags) {
+func applyLayoutOptions(
+	input model.TargetCodeFlags,
+	merge model.TargetCodeFlags,
+) (output model.TargetCodeFlags) {
 	output.NeedsType = merge.NeedsType
 	output.NeedsValidation = input.NeedsValidation && merge.NeedsValidation
 	output.NeedsOnlyValidation = merge.NeedsOnlyValidation
@@ -418,7 +459,10 @@ func applyLayoutOptions(input model.TargetCodeFlags, merge model.TargetCodeFlags
 	return
 }
 
-func applyLayoutOptionsToSchemas(schemas []model.TargetSchema, merge model.TargetCodeFlags) []model.TargetSchema {
+func applyLayoutOptionsToSchemas(
+	schemas []model.TargetSchema,
+	merge model.TargetCodeFlags,
+) []model.TargetSchema {
 	output := make([]model.TargetSchema, 0, len(schemas))
 
 	for _, schema := range schemas {

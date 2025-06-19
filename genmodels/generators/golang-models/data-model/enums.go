@@ -129,6 +129,7 @@ func (m IntegerMappingSelector) String() string {
 		return ""
 	}
 }
+
 func (m IntegerMappingSelector) DocString() string {
 	switch m {
 	case IntegerMappingFixed:

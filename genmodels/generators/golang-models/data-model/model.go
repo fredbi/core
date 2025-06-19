@@ -26,8 +26,9 @@ type TargetModel struct {
 
 func (m *TargetModel) MergeSchemas(from []TargetSchema) {
 	m.Schemas = append(m.Schemas, from...)
+	const shouldSortLen = 2
 
-	if len(m.Schemas) < 2 {
+	if len(m.Schemas) < shouldSortLen {
 		return
 	}
 

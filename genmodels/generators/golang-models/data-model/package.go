@@ -14,8 +14,7 @@ type TargetPackage struct {
 	// TODO: capture metadata about package
 }
 
-type GenPackageOptions struct {
-}
+type GenPackageOptions struct{}
 
 type GenPackageTemplateOptions struct {
 	*GenOptions

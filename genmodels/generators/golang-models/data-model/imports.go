@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/fredbi/core/jsonschema/analyzers"
@@ -53,6 +52,7 @@ func (m ImportsMap) List() []AliasedImport {
 
 	return sorted
 }
+
 func (m ImportsMap) Path() string {
 	return ""
 }
@@ -126,7 +126,10 @@ func (m *ImportsMap) Set(aliased AliasedImport) bool {
 //
 // If an alias conflict is detected (same alias, different target), a deconflict function is called to resolve
 // the conflict.
-func (m ImportsMap) MergeDeconflicted(merged ImportsMap, deconflict func(string) string) ImportsMap {
+func (m ImportsMap) MergeDeconflicted(
+	merged ImportsMap,
+	deconflict func(string) string,
+) ImportsMap {
 	for _, element := range merged.List() {
 		i, foundAlias := m.byAlias[element.Alias]
 
@@ -159,12 +162,6 @@ func (m ImportsMap) MergeDeconflicted(merged ImportsMap, deconflict func(string)
 	}
 
 	return m
-}
-
-func assertAliasConflictMustWork(done bool, name string) {
-	if !done {
-		panic(fmt.Errorf("the package alias deconflicter should always manage to find a deconficted alias. Failed doing so for alias %q", name))
-	}
 }
 
 func (m ImportsMap) findPackage(pkg string) (AliasedImport, bool) {

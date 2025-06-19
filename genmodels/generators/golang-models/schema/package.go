@@ -13,6 +13,9 @@ import (
 // The seed is used as template to capture options and settings from the caller's context.
 //
 // A [model.TargetPackage] structure is used to build code that is produced once per package.
-func (g *Builder) GenNamedPackages(analyzed structural.AnalyzedPackage, seed model.TargetPackage) iter.Seq[model.TargetPackage] {
+func (g *Builder) GenNamedPackages(
+	analyzed structural.AnalyzedPackage,
+	seed model.TargetPackage,
+) iter.Seq[model.TargetPackage] {
 	return nil
 }

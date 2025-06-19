@@ -19,7 +19,7 @@ Several options are available to customize this app builder.
 
 ### Background and credits
 
-This package has been built after the internal tooling built for go-swagger.
+This package has been built after the internal tooling built for [go-swagger](https://goswagger.io).
 
 The motivation for this package was to factorize out that valuable component, so as to be able to build other powerful code generation
 tools independently from go-swagger. Further improvements may be added independently.

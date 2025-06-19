@@ -9,12 +9,13 @@ import (
 	"path"
 	"path/filepath"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/fredbi/core/codegen/genapp"
 	settings "github.com/fredbi/core/genmodels/generators/common-settings"
 	model "github.com/fredbi/core/genmodels/generators/golang-models/data-model"
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
 	"github.com/fredbi/core/jsonschema/analyzers/structural/bundle"
-	"golang.org/x/sync/errgroup"
 )
 
 // planLayout extracts the named elements from the analyzer and prepares a package layout.
@@ -74,12 +75,7 @@ func (g *Generator) planPackageLayout() error {
 	// This step only needs to retrieve the generatormost folders to create the entire source tree structure.
 	var numPkg int
 	for folder := range bundled.Namespaces(structural.OnlyLeaves()) {
-		osCompatiblePath, err := normalizePath(folder) // paths are sanitized URL paths
-		if err != nil {
-			return fmt.Errorf("could not normalize package path to build a valid directory: %q: %w: %w", folder, err, ErrModel)
-		}
-		const userWritableOtherReadable = 0755
-		dir := filepath.Join(g.outputPath, osCompatiblePath)
+		dir := filepath.Join(g.outputPath, normalizeOSPath(folder))
 		if err := g.baseFS.MkdirAll(dir, userWritableOtherReadable); err != nil {
 			return errors.Join(err, ErrModel)
 		}
@@ -149,7 +145,7 @@ func (g *Generator) makeGenPackage(pkg structural.AnalyzedPackage) iter.Seq[mode
 		LocationInfo: model.LocationInfo{
 			BaseImportPath:  g.BaseImportPath,
 			Package:         pkg.Name(),
-			PackageLocation: filepath.FromSlash(pkg.Path()),
+			PackageLocation: normalizeOSPath(pkg.Path()),
 			FullPackage:     path.Join(g.BaseImportPath, pkg.Path()),
 		},
 		Index:  pkg.Index,
@@ -213,20 +209,41 @@ func (g *Generator) makeGenPackage(pkg structural.AnalyzedPackage) iter.Seq[mode
 func (g *Generator) makeBundleOptions() ([]structural.Option, error) {
 	bundlingOptions := []structural.Option{
 		// configure naming callbacks to name packages and schemas during bundling
-		structural.WithBundleNameProvider(structural.NameProvider(g.nameProvider.NameSchema)),           // callback to name schemas
-		structural.WithBundleNameIdentifier(structural.UniqueIdentifier(g.nameProvider.UniqueSchema)),   // callback to detect name conflicts on named schemas
-		structural.WithBundleNameDeconflicter(structural.Deconflicter(g.nameProvider.DeconflictSchema)), // callback to name package paths
-		structural.WithBundlePathProvider(structural.PackageNameProvider(g.nameProvider.NamePackage)),   // callback to name package paths
-		structural.WithBundlePathIdentifier(structural.UniqueIdentifier(g.nameProvider.UniquePath)),     // callback to detect name conflicts on package paths
-		structural.WithBundlePathDeconflicter(structural.Deconflicter(g.nameProvider.DeconflictPath)),   // callback to name package paths
+		structural.WithBundleNameProvider(
+			structural.NameProvider(g.nameProvider.NameSchema),
+		), // callback to name schemas
+		structural.WithBundleNameIdentifier(
+			structural.UniqueIdentifier(g.nameProvider.UniqueSchema),
+		), // callback to detect name conflicts on named schemas
+		structural.WithBundleNameDeconflicter(
+			structural.Deconflicter(g.nameProvider.DeconflictSchema),
+		), // callback to name package paths
+		structural.WithBundlePathProvider(
+			structural.PackageNameProvider(g.nameProvider.NamePackage),
+		), // callback to name package paths
+		structural.WithBundlePathIdentifier(
+			structural.UniqueIdentifier(g.nameProvider.UniquePath),
+		), // callback to detect name conflicts on package paths
+		structural.WithBundlePathDeconflicter(
+			structural.Deconflicter(g.nameProvider.DeconflictPath),
+		), // callback to name package paths
 		//
 		// other layout options that affect schema bundling
-		structural.WithBundleSingleRoot(g.ModelLayout.Is(settings.ModelLayoutAllModelsOneFile)), // enforce a single root schema, so we may pack everything into one file if desired
-		structural.WithBundleEnumsPackage(g.EnumPackageName),                                    // if PackageLayoutEnums is enabled, the package name to define (e.g. "enums")
+		structural.WithBundleSingleRoot(
+			g.ModelLayout.Is(settings.ModelLayoutAllModelsOneFile),
+		), // enforce a single root schema, so we may pack everything into one file if desired
+		structural.WithBundleEnumsPackage(
+			g.EnumPackageName,
+		), // if PackageLayoutEnums is enabled, the package name to define (e.g. "enums")
 	}
 
-	if g.PackageLayoutMode.Has(settings.PackageLayoutEnums) { // allow enums to be defined in their own package
-		bundlingOptions = append(bundlingOptions, structural.WithBundleEnumsPackage(g.EnumPackageName)) // if PackageLayoutEnums is enabled, the package name to define (e.g. "enums")
+	if g.PackageLayoutMode.Has(
+		settings.PackageLayoutEnums,
+	) { // allow enums to be defined in their own package
+		bundlingOptions = append(
+			bundlingOptions,
+			structural.WithBundleEnumsPackage(g.EnumPackageName),
+		) // if PackageLayoutEnums is enabled, the package name to define (e.g. "enums")
 	}
 
 	// configure the layout strategy for bundling
@@ -239,13 +256,27 @@ func (g *Generator) makeBundleOptions() ([]structural.Option, error) {
 		switch g.PackageLayoutOptions {
 		case settings.PackageLayoutRefBased:
 			// $ref-based layout
-			bundlingOptions = append(bundlingOptions, structural.WithBundleStragegy(bundle.Hierarchical))
+			bundlingOptions = append(
+				bundlingOptions,
+				structural.WithBundleStragegy(bundle.Hierarchical),
+			)
 		case settings.PackageLayoutTagBased:
 			// tag-based layout
-			return nil, fmt.Errorf("unsupported package layout option: %v: %w", g.PackageLayout, ErrInit)
+			return nil, fmt.Errorf(
+				"unsupported package layout option: %v: %w",
+				g.PackageLayout, ErrNotImplemented,
+			)
+		default:
+			return nil, fmt.Errorf(
+				"invalid package layout option: %v: %w",
+				g.PackageLayout, ErrInit,
+			)
 		}
 	default:
-		return nil, fmt.Errorf("unsupported package layout option: %v: %w", g.PackageLayout, ErrInit)
+		return nil, fmt.Errorf(
+			"invalid package layout option: %v: %w",
+			g.PackageLayout, ErrInit,
+		)
 	}
 
 	// configure how aggressive the hierarchical layout should be, i.e. produce as many separate packages
@@ -256,7 +287,11 @@ func (g *Generator) makeBundleOptions() ([]structural.Option, error) {
 	case g.PackageLayoutMode.Has(settings.PackageLayoutLazy):
 		bundlingOptions = append(bundlingOptions, structural.WithBundleAggressiveness(bundle.Lazy))
 	default:
-		return nil, fmt.Errorf("unsupported package layout mode: %8b: %w", g.PackageLayoutMode, ErrInit)
+		return nil, fmt.Errorf(
+			"unsupported package layout mode: %8b: %w",
+			g.PackageLayoutMode,
+			ErrInit,
+		)
 	}
 
 	// probably a lot of other configurable stuff to add here...
@@ -264,10 +299,11 @@ func (g *Generator) makeBundleOptions() ([]structural.Option, error) {
 	return bundlingOptions, nil
 }
 
-func normalizePath(pth string) (string, error) {
-	u, err := url.PathUnescape(pth)
-	if err != nil {
-		return "", err
-	}
-	return filepath.FromSlash(pth)
+func normalizeOSPath(pth string) string {
+	upth, err := url.PathUnescape(
+		pth,
+	) // we may safely ignore errors here as pth is already a sanitized, clean URL path
+	assertNoPathEscapeError(err, pth)
+
+	return filepath.FromSlash(upth)
 }

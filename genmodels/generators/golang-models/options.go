@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/spf13/afero"
+
 	"github.com/fredbi/core/codegen/genapp"
 	repo "github.com/fredbi/core/codegen/templates-repo"
 	model "github.com/fredbi/core/genmodels/generators/golang-models/data-model"
@@ -17,7 +19,6 @@ import (
 	store "github.com/fredbi/core/json/stores/default-store"
 	"github.com/fredbi/core/jsonschema"
 	"github.com/fredbi/core/swag/loading"
-	"github.com/spf13/afero"
 )
 
 //go:embed templates
@@ -39,7 +40,6 @@ type options struct {
 	generatorOptions  []genapp.Option
 	baseFS            afero.Fs
 	outputPath        string // output folder
-	overlayTemplates  []string
 	wantsDumpAnalyzed bool
 	namingOptions     []providers.Option
 	dumpOutput        io.Writer
@@ -51,10 +51,16 @@ type options struct {
 
 func (o options) validateOptions() error {
 	if len(o.sourceSchemas) == 0 {
-		return fmt.Errorf("the model generator requires at least one source to load schema. Use WithSourceSchemas(): %w", ErrInit)
+		return fmt.Errorf(
+			"the model generator requires at least one source to load schema. Use WithSourceSchemas(): %w",
+			ErrInit,
+		)
 	}
 	if o.TargetDir == "" {
-		return fmt.Errorf("the model generator requires an output folder to be specified. Use configuration or WithOutputPath(): %w", ErrInit)
+		return fmt.Errorf(
+			"the model generator requires an output folder to be specified. Use configuration or WithOutputPath(): %w",
+			ErrInit,
+		)
 	}
 
 	return nil
@@ -62,11 +68,18 @@ func (o options) validateOptions() error {
 
 func (o options) genappDefaults() []genapp.Option {
 	return []genapp.Option{
-		genapp.WithOutputAferoFS(o.baseFS),                       // should be afero.OsFs for other use cases than testing
-		genapp.WithOutputPath(o.TargetDir),                       // the target location
-		genapp.WithSkipFormat(o.SkipFmt),                         // skip go fmt step (e.g. for debug)
-		genapp.WithSkipCheckImport(o.SkipCheckImport),            // skip go import step (e.g. for debug)
-		genapp.WithFormatGroupPrefixes(o.FormatGroupPrefixes...), /// specify imports grouping patterns
+		genapp.WithOutputAferoFS(
+			o.baseFS,
+		), // should be afero.OsFs for other use cases than testing
+		genapp.WithOutputPath(o.TargetDir), // the target location
+		genapp.WithSkipFormat(
+			o.SkipFmt,
+		), // skip go fmt step (e.g. for debug)
+		genapp.WithSkipCheckImport(
+			o.SkipCheckImport,
+		), // skip go import step (e.g. for debug)
+		genapp.WithFormatGroupPrefixes(
+			o.FormatGroupPrefixes...), /// specify imports grouping patterns
 		// configure the templates repo
 		genapp.WithTemplatesRepoOptions(
 			repo.WithDumpTemplate(o.DumpTemplateFormat),
@@ -98,11 +111,17 @@ func optionsWithDefaults(opts []Option) options {
 	}
 
 	if o.inputSchemas.Len() == 0 {
-		o.inputSchemas = jsonschema.MakeCollection(len(o.sourceSchemas), jsonschema.WithStore(o.store))
+		o.inputSchemas = jsonschema.MakeCollection(
+			len(o.sourceSchemas),
+			jsonschema.WithStore(o.store),
+		)
 	}
 
 	if o.overlaySchemas.Len() == 0 {
-		o.overlaySchemas = jsonschema.MakeOverlayCollection(len(o.sourceOverlays), jsonschema.WithStore(o.store))
+		o.overlaySchemas = jsonschema.MakeOverlayCollection(
+			len(o.sourceOverlays),
+			jsonschema.WithStore(o.store),
+		)
 	}
 
 	if o.l == nil {

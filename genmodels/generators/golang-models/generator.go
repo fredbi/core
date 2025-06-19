@@ -5,6 +5,8 @@ import (
 	"runtime"
 	stdsync "sync"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/fredbi/core/codegen/genapp"
 	model "github.com/fredbi/core/genmodels/generators/golang-models/data-model"
 	"github.com/fredbi/core/genmodels/generators/golang-models/ifaces"
@@ -12,11 +14,17 @@ import (
 	"github.com/fredbi/core/jsonschema/analyzers"
 	"github.com/fredbi/core/jsonschema/analyzers/structural"
 	"github.com/fredbi/core/jsonschema/analyzers/structural/order"
-	"golang.org/x/sync/errgroup"
 )
 
 // Generator builds go types from JSON schemas.
 type Generator struct {
+	// TODO: suggestion to split settings and functionality in several objects that are composed in the genrator
+	// this is already pretty much the case be we can do better.
+	// The point is to organize settings into meaningful sections.
+	//
+	// Also it would make configuration decisions more readable with something like:
+	//
+	// if g.settings.Layout.Has(settings.XYZ) { ...
 	options
 
 	generator      *genapp.GoGenApp
@@ -205,7 +213,13 @@ func (g *Generator) generate() error {
 
 	err := genGroup.Wait()
 	if err != nil {
-		g.l.Error("could not complete models generation", "processed schemas", numSchemas, "err", err)
+		g.l.Error(
+			"could not complete models generation",
+			"processed schemas",
+			numSchemas,
+			"err",
+			err,
+		)
 	}
 
 	g.l.Info("models generation done", "processed schemas", numSchemas)

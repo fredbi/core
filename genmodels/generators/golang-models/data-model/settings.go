@@ -39,7 +39,8 @@ type GenOptions struct {
 
 // Dump settings to an [io.Writer]
 func (g GenOptions) Dump(w io.Writer) error {
-	return nil // TODO
+	_ = w
+	return nil // TODO: implement Dump
 }
 
 // GenTargetOptions defines top-level generation options.
