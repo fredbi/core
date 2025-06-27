@@ -1,13 +1,5 @@
 package analyzers
 
-// InformationReport contains the audit trail of decisions made by the tools.
-type InformationReport struct {
-	DecisionType string
-	Decision     string
-	Originator   string   // program/function signature
-	Sources      []string // json pointers to source schema or config
-}
-
 type UniqueID string
 
 func (u UniqueID) String() string {
@@ -23,8 +15,26 @@ const (
 	SchemaKindTuple
 	SchemaKindPolymorphic
 	SchemaKindScalar
-	SchemaKindNull
 )
+
+func (s SchemaKind) String() string {
+	switch s {
+	case SchemaKindObject:
+		return "object"
+	case SchemaKindArray:
+		return "array"
+	case SchemaKindTuple:
+		return "tuple"
+	case SchemaKindPolymorphic:
+		return "polymorphic"
+	case SchemaKindScalar:
+		return "scalar"
+	case SchemaKindNone:
+		fallthrough
+	default:
+		return "any"
+	}
+}
 
 type PolymorphismKind uint8
 
@@ -35,6 +45,21 @@ const (
 	PolymorphismBaseType
 	// TODO: not sure about this: notice that the regular allOf (excl. base type special case) is not polymorphic
 )
+
+func (s PolymorphismKind) String() string {
+	switch s {
+	case PolymorphismOneOf:
+		return "oneOf"
+	case PolymorphismAnyOf:
+		return "anyOf"
+	case PolymorphismBaseType:
+		return "base-type"
+	case PolymorphismNone:
+		fallthrough
+	default:
+		return "none"
+	}
+}
 
 type ScalarKind uint8
 

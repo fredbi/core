@@ -9,6 +9,8 @@ require (
 	github.com/fredbi/core/swag/typeutils v0.0.0-00010101000000-000000000000
 )
 
+require github.com/hmdsefi/gograph v0.5.0
+
 require github.com/fredbi/core/swag/conv v0.0.0-00010101000000-000000000000 // indirect
 
 replace (

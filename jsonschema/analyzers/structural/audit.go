@@ -4,6 +4,29 @@ import (
 	"github.com/fredbi/core/swag/typeutils"
 )
 
+// AuditTrailEntry
+type AuditTrailEntry struct {
+	Action      AuditAction
+	Originator  string
+	Description string
+}
+
+// AuditAction categorizes the actions we want to audit.
+type AuditAction uint8
+
+const (
+	AuditActionNone AuditAction = iota
+	AuditActionRefactorSchema
+	AuditActionRenameSchema
+	AuditActionRenamePackage
+	AuditActionDeconflictName
+	AuditActionNameAnonymous
+	AuditActionNameInfo
+	AuditActionNamePackage
+	AuditActionPackageInfo
+	AuditActionMetadata
+)
+
 func (a *SchemaAnalyzer) LogAudit(s AnalyzedSchema, e AuditTrailEntry) {
 	if e.Action == AuditActionNone {
 		return
@@ -56,43 +79,21 @@ func (a *SchemaAnalyzer) MarkPackage(s AnalyzedPackage, e Extensions) {
 	schema.extensions = typeutils.MergeMaps(schema.extensions, e)
 }
 
-// AuditTrail
-type AuditTrail struct {
+// auditTrail holds all audit trail entries logged by the analyzer action or callbacks.
+type auditTrail struct {
 	originalName string
 	nameOverride string // x-go-name
 	auditEntries []AuditTrailEntry
 }
 
-func (t AuditTrail) Report() {
+func (t auditTrail) Report() {
 	// TODO
 }
 
-func (t AuditTrail) OriginalName() string {
+func (t auditTrail) OriginalName() string {
 	return t.originalName
 }
 
-func (t AuditTrail) HasNameOverride() bool {
+func (t auditTrail) HasNameOverride() bool {
 	return t.nameOverride != ""
-}
-
-// AuditAction categorizes the actions we want to audit.
-type AuditAction uint8
-
-const (
-	AuditActionNone AuditAction = iota
-	AuditActionRefactorSchema
-	AuditActionRenameSchema
-	AuditActionRenamePackage
-	AuditActionDeconflictName
-	AuditActionNameAnonymous
-	AuditActionNameInfo
-	AuditActionNamePackage
-	AuditActionPackageInfo
-	AuditActionMetadata
-)
-
-type AuditTrailEntry struct {
-	Action      AuditAction
-	Originator  string
-	Description string
 }

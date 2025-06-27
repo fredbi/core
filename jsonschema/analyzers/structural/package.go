@@ -6,11 +6,12 @@ package structural
 type AnalyzedPackage struct {
 	analyzedObject
 
-	schemas        []*AnalyzedSchema // schemas defined in this package
-	parent         *AnalyzedPackage
-	children       []*AnalyzedPackage
-	ultimateParent *AnalyzedPackage
-	extensions     Extensions
+	schemas  []*AnalyzedSchema // schemas defined in this package
+	parent   *AnalyzedPackage
+	children []*AnalyzedPackage
+
+	utltimateParent *AnalyzedPackage
+	extensions      Extensions
 }
 
 func (p AnalyzedPackage) IsEmpty() bool {

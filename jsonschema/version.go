@@ -2,6 +2,8 @@ package jsonschema
 
 type Version uint8
 
+type VersionRequirements struct{}
+
 const (
 	VersionUndefined Version = iota
 	VersionDraft4

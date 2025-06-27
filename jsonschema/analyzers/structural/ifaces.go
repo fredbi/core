@@ -33,12 +33,12 @@ type Analyzer interface {
 	// Number of analyzed schemas, with all inner sub-schemas
 	Len() int
 
-	// Namespaces iterates over the namespace of bundled package paths.
+	// PackagePaths iterates over the namespace of bundled package paths.
 	//
 	// [Filter] s may be added to restrict the scope or defined a specific ordering.
 	//
-	// [Analyzer.Namespaces] does not mutate anything and no callbacks are invoked.
-	Namespaces(...Filter) iter.Seq[string]
+	// [Analyzer.PackagePaths] does not mutate anything and no callbacks are invoked.
+	PackagePaths(...Filter) iter.Seq[string]
 
 	// Packages iterates over the namespace of bundled packages.
 	//
@@ -51,6 +51,9 @@ type Analyzer interface {
 
 	// SchemaByID yields a single schema, given its unique key ID.
 	SchemaByID(analyzers.UniqueID) (AnalyzedSchema, bool)
+
+	// PackageByID yields a single schema, given its unique key ID.
+	PackageByID(analyzers.UniqueID) (AnalyzedPackage, bool)
 
 	// LogAudit inject an audit trail entry into this [AnalyzedSchema].
 	//

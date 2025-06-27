@@ -1,13 +1,17 @@
 package structural
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"iter"
 
 	"github.com/fredbi/core/jsonschema"
 	"github.com/fredbi/core/jsonschema/analyzers"
+	"github.com/fredbi/core/jsonschema/analyzers/internal/graph/v2"
+	"github.com/fredbi/core/jsonschema/analyzers/structural/order"
 	"github.com/fredbi/core/jsonschema/analyzers/validations"
+	"github.com/fredbi/core/swag/typeutils"
 )
 
 var _ Analyzer = &SchemaAnalyzer{}
@@ -45,7 +49,7 @@ var _ Analyzer = &SchemaAnalyzer{}
 //	  named:
 //	    {...}
 //
-// We have 2 packages defined:
+// Then we get 2 packages defined:
 //
 //   - the first one in the '$defs' of the root document
 //   - the other one in 'customers/models.json/$defs'
@@ -127,21 +131,37 @@ type SchemaAnalyzer struct {
 	options
 	bundleOptions
 
-	index    map[analyzers.UniqueID]*AnalyzedSchema
-	pkgIndex map[analyzers.UniqueID]*AnalyzedPackage
+	// indexes
+	schemas  *schemasGraph // all discovered schemas
+	packages *packageTree  // all discovered packages
+	// redundant namespaces map[string]namespace                                     // all namespaces
+	// redundant contexts   map[graph.Edge[analyzers.UniqueID]]AnalyzedSchemaContext // all dependency contexts (e.g. this schema is used as property etc)
+	// redundant readOrder  *list.List                                               // the original ordering of analyzed schemas when read from the json schema (used when marshaling, dumping)
 
-	forest              []AnalyzedSchema // TODO: dependency graph
-	namespaces          map[string]Namespace
-	packages            []AnalyzedPackage
-	validationsAnalyzer *validations.Analyzer
+	// graphs
+	// schemaGraph *graph.DiGraph[analyzers.UniqueID] // dependency graph of schema. TODO: find a nice way to deal with cyclic deps
+	// packageTree *graph.Tree[analyzers.UniqueID]    //  tree of the discovered packages
+
+	validationsAnalyzer *validations.Analyzer // inner analyzer for validations (e.g. when validating zero value, enum value, default value)
 }
 
 // NewAnalyzer builds a [SchemaAnalyzer] ready to analyze JSON schemas.
 func NewAnalyzer(opts ...Option) *SchemaAnalyzer {
+	o = applyOptionsWithDefaults(opts)
+
 	a := &SchemaAnalyzer{
-		options: applyOptionsWithDefaults(opts),
+		options:  applyOptionsWithDefaults(opts),
+		schemas:  newSchemaGraph(),
+		packages: newPackageTree(),
+		// contexts:    make(map[graph.Edge[analyzers.UniqueID]]AnalyzedSchemaContext),
+		// readOrder:   list.New(),
+		// namespaces:  make(map[string]namespace),
+		// schemaGraph: graph.NewDiGraph[analyzers.UniqueID](),
+		// packageTree: graph.NewTree[analyzers.UniqueID](),
+		validationsAnalyzer: validations.New(o.validationOptions...),
 	}
 
+	// apply other defaults
 	if len(a.extensionMappers) == 0 {
 		a.extensionMappers = []ExtensionMapper{passThroughMapper}
 	}
@@ -150,73 +170,294 @@ func NewAnalyzer(opts ...Option) *SchemaAnalyzer {
 }
 
 func (a *SchemaAnalyzer) SchemaByID(id analyzers.UniqueID) (AnalyzedSchema, bool) {
-	schema, ok := a.index[id]
-
-	return *schema, ok
+	return a.schemas.SchemaByID(id)
 }
 
-func (a *SchemaAnalyzer) Namespaces(filters ...Filter) iter.Seq[string] {
-	return func(yield func(string) bool) {
-		for key := range a.namespaces {
-			// todo apply filters
-			if !yield(key) {
-				return
-			}
-		}
+func (a *SchemaAnalyzer) PackageByID(id analyzers.UniqueID) (AnalyzedPackage, bool) {
+	return a.packages.PackageByID(id)
+}
+
+func (a *SchemaAnalyzer) PackagePaths(filters ...Filter) iter.Seq[string] {
+	return typeutils.TransformIter(a.Packages(filters...), func(pkg AnalyzedPackage) (string, bool) {
+		return pkg.Path(), true
+	})
+}
+
+func (a *SchemaAnalyzer) orderedPackageIterator(f filters) iter.Seq[AnalyzedPackage] {
+	if f.WantsOnlyLeaves {
+		return a.packages.Leaves()
+	}
+
+	switch f.Ordering {
+
+	case order.BottomUp:
+		return a.packages.Inverted().TraverseBFS()
+
+	case order.TopDown:
+		fallthrough
+
+	case order.NoOrder:
+		fallthrough
+	default:
+		return a.packages.TraverseDFS()
 	}
 }
 
-func (a *SchemaAnalyzer) Packages(filters ...Filter) iter.Seq[AnalyzedPackage] {
-	return func(yield func(AnalyzedPackage) bool) {
-		for _, node := range a.packages {
-			// todo apply filters
-			if !yield(node) {
-				return
-			}
-		}
+func (a *SchemaAnalyzer) Packages(filterSpecs ...Filter) iter.Seq[AnalyzedPackage] {
+	filter := applyFiltersWithDefault(filterSpecs)
+	iterator := a.orderedPackageIterator(filter)
+
+	if filter.PkgFilterFunc != nil {
+		iterator = typeutils.FilterIter(iterator, filter.PkgFilterFunc)
 	}
 
+	// TODO: should add index, required index
+	return iterator
 }
 
 // Analyze a single JSON schema.
-func (a *SchemaAnalyzer) Analyze(jsonschema.Schema) error {
-	return nil // TODO
+func (a *SchemaAnalyzer) Analyze(schema jsonschema.Schema) error {
+	// 1. package analysis
+	for analyzed := range a.exploreSchemas(schema) { // all analyzed schemas, depth-first
+		schemaNode, err := a.schemas.AddArc(analyzed)
+		//edge := a.schemas.NewEdge(analyzed, analyzed, analyzed.Context())
+		if err != nil {
+			if errors.Is(graph.ErrCycleFound) {
+				// a cycle is found : keep the cycle for later processing
+				//a.schema.AddCycle()
+			}
+
+			return err // should not happen
+		}
+
+		pth := analyzed.Path()
+		if pth == "" {
+			continue
+		}
+
+		// found a path: add package
+		packageNode, found := a.packages.AddPath(pth)
+
+		if err = packageNode.AddDependency(analyzed); err != nil {
+			// a cycle is found in dependencies: keep the package-level cycle for later refact
+		}
+
+		if found {
+			continue
+		}
+	}
+
+	// 2. package refactoring : may invoke callback
+	if err := a.refactorPackages(); err != nil {
+		// TODO: log / audit
+		return err
+	}
+
+	// now packages form a tree and packagesDependencies is a DAG
+
+	// 3. schema cycles processing
+	if err := a.analyzeSchemaCycles(); err != nil {
+		// TODO: log / audit
+		return err
+	}
+
+	// 4. schema refactoring actions
+	if err := a.refactorSchemas(); err != nil {
+		// TODO: log / audit
+		return err
+	}
+
+	// 5. schema naming callbacks
+	if err := a.visitSchemas(); err != nil {
+		// TODO: log / audit
+		return err
+	}
+
+	return nil
 }
 
-// Analyze a collection of JSON schemas to reason about their structure.
-func (a *SchemaAnalyzer) AnalyzeCollection(jsonschema.Collection) error {
-	return nil // TODO
+func (a *SchemaAnalyzer) refPath(schema jsonschema.Schema) string {
+	return ""
 }
 
-// AnalyzedSchemas yields the analyzed schemas according to some filter expression.
-func (a *SchemaAnalyzer) AnalyzedSchemas(...Filter) iter.Seq[AnalyzedSchema] {
+func (a *SchemaAnalyzer) analyzeMetadata(schema jsonschema.Schema, analyzed *AnalyzedSchema) {
+	if !schema.HasMetadata() {
+		return
+	}
+
+	meta := Metadata{
+		//ID:
+		// Path:
+		Metadata: schema.Metadata(),
+	}
+	analyzed.meta = meta
+}
+
+func (a *SchemaAnalyzer) refIsAlreadyAnalyzed(schema jsonschema.Schema) bool {
+	if !schema.HasRef() {
+		return false
+	}
+
+	ref := schema.Ref()
+	_, found := a.schemas.SchemaByPath(ref.String())
+
+	return found
+}
+
+func (a *SchemaAnalyzer) exploreSchemas(schema jsonschema.Schema) iter.Seq[AnalyzedSchema] {
 	return func(yield func(AnalyzedSchema) bool) {
-		for _, node := range a.forest {
-			// todo apply filters
-			if !yield(node) {
+		// TODO: options if we want to explore unused stuff (e.g. subtypes in allOf)
+		var analyzed AnalyzedSchema
+
+		// TODO: do we have it already
+
+		// TODO handle extensions
+
+		if a.refIsAlreadyAnalyzed(schema) {
+			if !yield(analyzed) {
+				return
+			}
+		} else {
+			if schema.HasRef()
+
+			for subschema := range a.exploreSchemas(refSchema) {
+				if !yield(subschema) {
+					return
+				}
+			}
+		}
+
+		a.analyzeMetadata(schema, &analyzed)
+
+		for propertyName, propertySchema := range schema.Properties() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		for propertyName, propertySchema := range schema.PatternProperties() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		for propertyName, propertySchema := range schema.DependentSchemas() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		if schema.HasAdditionalProperties() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		for index, itemsSchema := range schema.TupleItems() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		if schema.HasTupleAdditionalItems() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		for index, allOfSchema := range schema.AllOf() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		for index, allOfSchema := range schema.AnyOf() {
+			if !yield(analyzed) {
+				return
+			}
+		}
+
+		for index, allOfSchema := range schema.OneOf() {
+			if !yield(analyzed) {
 				return
 			}
 		}
 	}
+}
+
+// Analyze a collection of JSON schemas to reason about their structure.
+func (a *SchemaAnalyzer) AnalyzeCollection(schemas jsonschema.Collection) error {
+	// TODO: merge collection
+	for schema := range schemas.Schemas() {
+		if err := a.Analyze(schema); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (a *SchemaAnalyzer) orderedSchemaIterator(f filters) iter.Seq[AnalyzedSchema] {
+	if f.WantsOnlyLeaves {
+		return a.schemas.Leaves()
+	}
+
+	switch f.Ordering {
+
+	case order.BottomUp:
+		return a.schemas.Inverted().TraverseTopological()
+
+	case order.TopDown:
+		return a.schemas.TraverseDFS()
+
+	case order.NoOrder:
+		fallthrough
+	default:
+		return a.schemas.Nodes()
+	}
+}
+
+// AnalyzedSchemas yields the analyzed schemas according to some filter expression.
+func (a *SchemaAnalyzer) AnalyzedSchemas(filterSpecs ...Filter) iter.Seq[AnalyzedSchema] {
+	filter := applyFiltersWithDefault(filterSpecs)
+	iterator := a.orderedSchemaIterator(filter)
+
+	if filter.FilterFunc != nil {
+		iterator = typeutils.FilterIter(iterator, filter.FilterFunc)
+	}
+
+	// TODO: add index
+	return iterator
 }
 
 // Len indicates how many unitary schemas are held by the analyzer.
 func (a *SchemaAnalyzer) Len() int {
-	return len(a.forest) // TODO
+	return a.schemas.Len()
+}
+
+func (a *SchemaAnalyzer) Encode(w io.Writer) error {
+	// TODO: options to remove extensions, etc.
+	for node := range a.schemas.Nodes() {
+		schema := node.document
+		if err := schema.document.Encode(&w); err != nil {
+			return nil, err
+		}
+	}
+
+	return nil
 }
 
 func (a *SchemaAnalyzer) MarshalJSON() ([]byte, error) {
-	return nil, errors.New("not implemented")
+	var w bytes.Buffer
+
+	if err := a.Encode(&w); err != nil {
+		return nil, err
+	}
+
+	return w.Bytes(), nil
 }
 
 // Dump writes out the analyzed JSON schema.
 func (a *SchemaAnalyzer) Dump(w io.Writer) error {
-	content, err := a.MarshalJSON()
-	if err != nil {
-		return err
-	}
-
-	_, err = w.Write(content)
-
-	return err
+	return a.Encode(w)
 }

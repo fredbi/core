@@ -1,5 +1,7 @@
 package structural
 
+import "github.com/fredbi/core/jsonschema/analyzers/validations"
+
 // Option customizes the behavior of the [SchemaAnalyzer].
 type Option func(*options)
 
@@ -21,6 +23,7 @@ type options struct {
 	refactEnums           bool
 	refactIfThenElse      bool
 	extensionMappers      []ExtensionMapper
+	validationOptions     []validations.Option
 }
 
 func applyOptionsWithDefaults(opts []Option) options {
@@ -481,5 +484,11 @@ func WithRefactorSchemas(enabled bool) Option {
 		o.splitTypes = enabled
 		o.uniqueCompositions = enabled
 		o.withValidations = enabled
+	}
+}
+
+func WithValidationOptions(opts ...validations.Option) Option {
+	return func(o *options) {
+		o.validationOptions = append(o.validationOptions, opts...)
 	}
 }

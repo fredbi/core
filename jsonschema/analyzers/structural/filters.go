@@ -12,7 +12,20 @@ type filters struct {
 	WantsRef        bool // more or less equivalent to
 	Ordering        order.SchemaOrdering
 	WantsOnlyLeaves bool
-	FilterFunc      func(*AnalyzedSchema) bool
+	FilterFunc      func(AnalyzedSchema) bool
+	PkgFilterFunc   func(AnalyzedPackage) bool
+}
+
+func applyFiltersWithDefault(opts []Filter) filters {
+	f := filters{
+		Ordering: order.TopDown,
+	}
+
+	for _, apply := range opts {
+		apply(&f)
+	}
+
+	return f
 }
 
 // OnlyNamedSchemas keeps only schemas with a name.
@@ -66,8 +79,14 @@ func OnlyLeaves() Filter {
 
 // WithFilterFunc applies the provided function on schemas, and keeps
 // only those that yield true.
-func WithFilterFunc(fn func(*AnalyzedSchema) bool) Filter {
+func WithFilterFunc(fn func(AnalyzedSchema) bool) Filter {
 	return func(f *filters) {
 		f.FilterFunc = fn
+	}
+}
+
+func WithPackageFilterFunc(fn func(AnalyzedPackage) bool) Filter {
+	return func(f *filters) {
+		f.PkgFilterFunc = fn
 	}
 }

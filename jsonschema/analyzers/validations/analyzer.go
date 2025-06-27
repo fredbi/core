@@ -13,16 +13,16 @@ type Analyzer struct {
 	tree ast.Tree
 }
 
+func New(_ ...Option) *Analyzer {
+	return &Analyzer{}
+}
+
 type AnalyzedSchema struct {
 }
 
 type Option func(*options)
 
 type options struct{}
-
-func New(_ ...Option) *Analyzer {
-	return &Analyzer{}
-}
 
 type CollectionAnalyzer struct {
 	forest ast.Forest

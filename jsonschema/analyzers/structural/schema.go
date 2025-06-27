@@ -2,28 +2,39 @@ package structural
 
 import (
 	"fmt"
+	"iter"
 
+	"github.com/fredbi/core/json/dynamic"
+	"github.com/fredbi/core/jsonschema"
 	"github.com/fredbi/core/jsonschema/analyzers"
 )
-
-// TODO: how to mock AnalyzedSchema??
 
 type analyzedObject struct {
 	// dependencies
 	Index         int64 // current index in the dependency graph
 	RequiredIndex int64 // -1 if no requirement
-	AuditTrail
 
 	// all the rest is kept private
 	id   analyzers.UniqueID // UUID of the package
 	meta Metadata
 
-	//Ref
-	refLocation string // $ref path
-
 	// naming
 	name string
 	path string
+
+	pattern string
+	format  string
+
+	defaultValue dynamic.JSON
+	enum         []dynamic.JSON
+
+	// internal
+	dollarID   string // "$id"
+	ref        string // $ref path
+	isCircular bool
+
+	// audit
+	auditTrail
 }
 
 func (p analyzedObject) ID() analyzers.UniqueID {
@@ -42,27 +53,66 @@ func (p analyzedObject) Path() string {
 	return p.path
 }
 
+type SchemaRelation uint8
+
+const (
+	SchemaRelationNone SchemaRelation = iota
+	SchemaRelationProperty
+	SchemaRelationAdditionalProperty
+	SchemaRelationPatternProperty
+	SchemaRelationItems
+	SchemaRelationTupleItems
+	SchemaRelationTupleAdditionalProperty
+	SchemaRelationAllOf
+	SchemaRelationOneOf
+	SchemaRelationAnyOf
+	// ...
+)
+
+type AnalyzedSchemaContext struct {
+	from     *AnalyzedSchema
+	to       *AnalyzedSchema
+	linkType SchemaRelation
+	key      string // linkType characterized by a key: property, patternProperty, ...
+	index    int    // linkType characterized by an index: allOf, anyOf, oneOf, tuple
+}
+
 // AnalyzedSchema is the outcome of the analysis of a JSON schema.
 type AnalyzedSchema struct {
 	analyzedObject
-	dollarID string // "$id"
+
+	document jsonschema.Schema
 
 	kind         analyzers.SchemaKind
 	polymorphism analyzers.PolymorphismKind
 	scalarKind   analyzers.ScalarKind
 
-	// layout
+	// dependency graph
+	parents  []*AnalyzedSchema // -> AnalyzedSchemaContext
+	children []*AnalyzedSchema // -> AnalyzedSchemaContext
 
-	// other extensions
 	extensions Extensions
-	namespace  Namespace
-	properties []*AnalyzedSchema
 
-	parents        []*AnalyzedSchema
-	children       []*AnalyzedSchema
-	parentProperty string
-	ultimateParent *AnalyzedSchema
-	refactors      []refactoringInfo
+	// parent information
+	parentProperty string // WRONG
+	headParent     *AnalyzedSchema
+
+	// structural validations
+
+	// object-related
+	namespace          Namespace // namespace for this schema, e.g. properties in objects
+	properties         []*AnalyzedSchema
+	implicitProperties []*AnalyzedSchema // TODO: add kind of prop
+
+	// composition-related
+	parentAllOf    *AnalyzedSchema
+	parentAnyOf    *AnalyzedSchema
+	parentOneOf    *AnalyzedSchema
+	parentBaseType *AnalyzedSchema
+
+	// extra audit
+	refactors []refactoringInfo
+	// TODO: other validations (for the moment we don't care)
 }
 
 // IsRefactored indicates if the schema has been refactored by the analyzer
@@ -71,7 +121,7 @@ func (a AnalyzedSchema) IsRefactored() bool {
 }
 
 func (a AnalyzedSchema) IsCircular() bool {
-	return false
+	return a.isCircular
 }
 
 func (a AnalyzedSchema) HasSchemaID() bool {
@@ -85,13 +135,35 @@ func (a AnalyzedSchema) SchemaID() string {
 // Parents yields all parent schemas of a given schema.
 //
 // The result is empty if the schema is a root schema.
-func (a AnalyzedSchema) Parents() []AnalyzedSchema {
-	values := make([]AnalyzedSchema, len(a.parents))
-	for i, parent := range a.parents {
-		values[i] = *parent
+//
+// Example:
+//
+//	  $defs:
+//		  A:       # <- {analyzed}
+//		    type: object
+//		  P1:
+//		    type: array
+//		    items: # <- parent #1
+//		      $ref: #/$defs/A
+//		  P2:
+//		    type: object
+//		    properties:
+//		      a:   # <- parent #2
+//		        $ref: #/$defs/A
+func (a AnalyzedSchema) Parents() iter.Seq[AnalyzedSchema] {
+	return func(yield func(AnalyzedSchema) bool) {
+		for _, parent := range a.parents {
+			value := *parent
+			if !yield(value) {
+				return
+			}
+		}
 	}
+}
 
-	return values
+// IsRoot indicates if the schema has no parent
+func (a AnalyzedSchema) IsRoot() bool {
+	return len(a.parents) == 0
 }
 
 // NumProperties counts the number of explicitly defined properties
@@ -109,14 +181,15 @@ func (a AnalyzedSchema) NumAllProperties() int {
 		return 0
 	}
 
-	return 0
+	return len(a.properties) + len(a.implicitProperties)
 }
 
-func (a AnalyzedSchema) UltimateParent() AnalyzedSchema {
-	if a.ultimateParent == nil {
-		panic("don't call ultimate parent when no single root is enforced")
+func (a AnalyzedSchema) HeadParent() AnalyzedSchema {
+	if a.headParent == nil {
+		panic("don't call head parent when no single root is enforced")
 	}
-	return *a.ultimateParent
+
+	return *a.headParent
 }
 
 func (a AnalyzedSchema) Parent() AnalyzedSchema {
@@ -146,7 +219,7 @@ func (a AnalyzedSchema) Parent() AnalyzedSchema {
 //
 // TODO: patternProperties
 func (a AnalyzedSchema) HasParentProperty() bool {
-	if len(a.parents) != 1 || !a.parents[0].IsObject() {
+	if len(a.parents) == 0 || !a.parents[0].IsObject() { // TODO: this is wrong
 		return false
 	}
 
@@ -231,13 +304,15 @@ func (a AnalyzedSchema) IsTupleAdditionalItems() bool {
 	return false // TODO
 }
 
-func (a AnalyzedSchema) Children() []AnalyzedSchema {
-	values := make([]AnalyzedSchema, len(a.children))
-	for i, child := range a.children {
-		values[i] = *child
+func (a AnalyzedSchema) Children() iter.Seq[AnalyzedSchema] {
+	return func(yield func(AnalyzedSchema) bool) {
+		for _, child := range a.children {
+			value := *child
+			if !yield(value) {
+				return
+			}
+		}
 	}
-
-	return values
 }
 
 func (a AnalyzedSchema) IsObject() bool {
@@ -245,7 +320,7 @@ func (a AnalyzedSchema) IsObject() bool {
 }
 
 func (a AnalyzedSchema) IsNull() bool {
-	return a.kind == analyzers.SchemaKindNull
+	return a.kind == analyzers.SchemaKindScalar && a.scalarKind == analyzers.ScalarKindNull
 }
 
 func (a AnalyzedSchema) IsArray() bool {
@@ -303,10 +378,6 @@ func (a AnalyzedSchema) WasAnonymous() bool {
 
 func (a AnalyzedSchema) IsNamed() bool {
 	return a.name != ""
-}
-
-func (a AnalyzedSchema) IsRoot() bool {
-	return len(a.parents) == 0
 }
 
 func (a AnalyzedSchema) HasSingleParent() bool {
