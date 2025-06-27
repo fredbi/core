@@ -13,6 +13,8 @@ const HandleZero Handle = 0
 // Resolve this [Handle] against a [Store].
 //
 // This is a shorthand to calling [Store].Get with this [Handle].
+//
+// TODO: should really find another way than option.
 func (h Handle) Resolve(s Store, opts ...Option) Value {
 	return s.Get(h, opts...)
 }

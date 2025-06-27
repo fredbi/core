@@ -6,6 +6,7 @@ import (
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/nodes"
+	nodecodes "github.com/fredbi/core/json/nodes/error-codes"
 	"github.com/fredbi/core/json/stores"
 	"github.com/fredbi/core/json/types"
 	"github.com/fredbi/core/swag/conv"
@@ -96,7 +97,10 @@ func (b *Builder) ClearChildren() *Builder {
 	}
 
 	if b.n.kind != nodes.KindArray && b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf("can't clear the children of a non-container node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't clear the children of a non-container node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
@@ -113,11 +117,15 @@ func (b *Builder) Swap(i, j int) *Builder {
 	}
 
 	if b.n.kind != nodes.KindArray && b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf("can't swap the children of a non-container node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't swap the children of a non-container node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 
+	b.ensureIndex()
 	if b.n.kind == nodes.KindObject {
 		keyi := b.n.children[i].key
 		keyj := b.n.children[j].key
@@ -136,14 +144,21 @@ func (b *Builder) AppendKey(key string, value Node) *Builder {
 	}
 
 	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf("can't add a key to a non-object node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't add a key to a non-object node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 
+	b.ensureIndex()
 	value.key = stores.MakeInternedKey(key)
 	if _, ok := b.n.keysIndex[value.key]; ok {
-		b.err = fmt.Errorf("key is already present in object: %q", key)
+		b.err = fmt.Errorf(
+			"key is already present in object: %q: %w",
+			key, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
@@ -160,15 +175,22 @@ func (b *Builder) PrependKey(key string, value Node) *Builder {
 	}
 
 	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf("can't prepend a key into a non-object node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't prepend a key into a non-object node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 
+	b.ensureIndex()
 	value.key = stores.MakeInternedKey(key)
 
 	if _, ok := b.n.keysIndex[value.key]; ok {
-		b.err = fmt.Errorf("key is already present in object: %q", key)
+		b.err = fmt.Errorf(
+			"key is already present in object: %q: %w",
+			key, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
@@ -189,7 +211,10 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 	}
 
 	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf("can't insert a key into a non-object node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't insert a key into a non-object node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
@@ -202,8 +227,12 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 		return b.AppendKey(key, value)
 	}
 
+	b.ensureIndex()
 	if _, ok := b.n.keysIndex[value.key]; ok {
-		b.err = fmt.Errorf("key is already present in object: %q", key)
+		b.err = fmt.Errorf(
+			"key is already present in object: %q: %w",
+			key, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
@@ -227,11 +256,15 @@ func (b *Builder) RemoveKey(key string) *Builder {
 	}
 
 	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf("can't remove a key from a non-object node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't remove a key from a non-object node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 
+	b.ensureIndex()
 	k := stores.MakeInternedKey(key)
 	index, ok := b.n.keysIndex[k]
 	if !ok {
@@ -251,11 +284,15 @@ func (b *Builder) AppendElem(value Node) *Builder {
 	}
 
 	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf("can't add an element to a non-array node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't add an element to a non-array node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 
+	b.ensureChildren()
 	b.n.children = append(b.n.children, value)
 
 	return b
@@ -267,11 +304,15 @@ func (b *Builder) PrependElem(value Node) *Builder {
 	}
 
 	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf("can't add an element to a non-array node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't add an element to a non-array node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 
+	b.ensureChildren()
 	b.n.children = slices.Insert(b.n.children, 0, value)
 
 	return b
@@ -283,7 +324,10 @@ func (b *Builder) InsertElem(position int, value Node) *Builder {
 	}
 
 	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf("can't add an element to a non-array node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't add an element to a non-array node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
@@ -296,6 +340,7 @@ func (b *Builder) InsertElem(position int, value Node) *Builder {
 		return b.AppendElem(value)
 	}
 
+	b.ensureChildren()
 	b.n.children = slices.Insert(b.n.children, position, value)
 
 	return b
@@ -307,16 +352,23 @@ func (b *Builder) RemoveElem(position int) *Builder {
 	}
 
 	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf("can't remove an element from a non-array node. Node kind is %v", b.n.kind)
+		b.err = fmt.Errorf(
+			"can't remove an element from a non-array node. Node kind is %v: %w",
+			b.n.kind, nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 	if position >= len(b.n.children) || position < 0 {
-		b.err = fmt.Errorf("can't remove an out of range element. %d >= %d", position, len(b.n.children))
+		b.err = fmt.Errorf(
+			"can't remove an out of range element. %d >= %d: %w",
+			position, len(b.n.children), nodecodes.ErrBuilder,
+		)
 
 		return b
 	}
 
+	b.ensureChildren()
 	b.n.children = slices.Delete(b.n.children, position, position+1)
 
 	return b
@@ -476,7 +528,25 @@ func (b *Builder) resetNode() {
 	if b.n.children != nil {
 		b.n.children = b.n.children[:0]
 	}
-	clear(b.n.keysIndex)
+	if b.n.keysIndex != nil {
+		clear(b.n.keysIndex)
+	}
+}
+
+func (b *Builder) ensureIndex() {
+	if b.n.keysIndex == nil {
+		b.n.keysIndex = make(map[stores.InternedKey]int)
+	}
+
+	if b.n.children == nil {
+		b.n.children = make([]Node, 0)
+	}
+}
+
+func (b *Builder) ensureChildren() {
+	if b.n.children == nil {
+		b.n.children = make([]Node, 0)
+	}
 }
 
 func buildFromFloat[T conv.Float](b *Builder, value T) *Builder {

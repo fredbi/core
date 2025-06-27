@@ -10,5 +10,10 @@ func (e NodeError) Error() string {
 	return string(e)
 }
 
-// ErrNode is the sentinel error for node-related errors.
-const ErrNode NodeError = "node error"
+const (
+	// ErrNode is the sentinel error for node-related errors.
+	ErrNode NodeError = "node error"
+
+	// ErrBuilder is the sentinel error for node-builder errors
+	ErrBuilder NodeError = "node builder error"
+)

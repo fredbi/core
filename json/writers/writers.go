@@ -12,7 +12,7 @@ import (
 type Writer interface {
 	Token(token.T) // write a token
 
-	DataWriter
+	DataWriter // TODO: should specialize Writers by the kind of data input, e.g. DataWriterToken, DataWriterStore, DataWriterJSON,DataWriterNative
 }
 
 // Writer is the interface for types that know how to write verbatim JSON tokens and values.

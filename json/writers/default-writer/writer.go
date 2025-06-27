@@ -56,7 +56,7 @@ func New(w io.Writer, opts ...Option) *W {
 
 // Ok tells the status of the writer.
 func (w *W) Ok() bool {
-	return w.err != nil
+	return w.err == nil
 }
 
 // Err yields the current error status of the writer.

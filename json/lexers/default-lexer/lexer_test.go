@@ -627,3 +627,17 @@ func currentDir() string {
 
 	return filepath.Dir(filename)
 }
+
+func TestAllTokens(t *testing.T) {
+	const jazon = `{"test": [null,1,2,"a","x\n\t\r"]}`
+	r := bytes.NewBufferString(jazon)
+	l := New(r)
+	for {
+		tok := l.NextToken()
+		if tok.IsEOF() {
+			break
+		}
+		t.Logf("tok: %v", tok)
+	}
+	require.NoError(t, l.Err())
+}

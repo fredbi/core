@@ -14,12 +14,12 @@ type (
 	HookTokenFunc   func(l lexers.Lexer, tok token.T) (skip bool, err error)
 )
 
-//type HookFunc func(Node) (Node, error)
+// type HookFunc func(Node) (Node, error)
 
 type decodeHooks struct {
 	NodeHook  HookTokenFunc
 	BeforeKey HookKeyFunc
 	AfterKey  HookKeyNodeFunc
 	AfterElem HookElemFunc
-	//AfterValue HookFunc
+	// AfterValue HookFunc
 }

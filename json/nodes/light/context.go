@@ -9,7 +9,7 @@ import (
 
 // Context holds the lexer's offset for every decoded token.
 //
-// Context does not apply to a [Node] built programmatically wih a [Builder].
+// Context does not apply to a [Node] built programmatically with a [Builder].
 type Context struct {
 	offset uint64
 }
@@ -28,7 +28,7 @@ type ParentContext struct {
 	W  writers.Writer
 	DO DecodeOptions
 	EO EncodeOptions
-	C  codes.ErrContext
+	C  *codes.ErrContext
 }
 
 func (p *ParentContext) Reset() {
@@ -37,5 +37,5 @@ func (p *ParentContext) Reset() {
 	p.W = nil
 	p.DO = DecodeOptions{}
 	p.EO = EncodeOptions{}
-	p.C = codes.ErrContext{}
+	p.C = nil
 }

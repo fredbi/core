@@ -1,15 +1,18 @@
 package light
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
+	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/nodes"
+	nodecodes "github.com/fredbi/core/json/nodes/error-codes"
 	"github.com/fredbi/core/json/stores"
 )
 
-var nullNode = Node{}
+var nullNode = Node{} //nolint:gochecknoglobals
 
 // Node in a JSON document.
 //
@@ -28,7 +31,7 @@ var nullNode = Node{}
 // In this "light" version of the [Node], values are [stores.Handle] references to an external [stores.Store],
 // injected by the caller.
 //
-// This makes the [Node] a very compact representation of JSON, but the interface is more complex than the interface of a JSON document.
+// This makes the [Node] a very compact representation of JSON. However the interface is more complex than the interface of a JSON document.
 type Node struct {
 	keysIndex map[stores.InternedKey]int
 	key       stores.InternedKey
@@ -153,6 +156,23 @@ func (n Node) Len() int {
 // Decode stores scalar values in the [stores.Store] provided in the [ParentContext].
 func (n *Node) Decode(ctx *ParentContext) {
 	*n = nullNode
+
+	defer func() {
+		if err := ctx.L.Err(); err != nil {
+			if contextErrorer, ok := ctx.L.(interface{ ErrInContext() *codes.ErrContext }); ok {
+				ctx.C = contextErrorer.ErrInContext()
+				ctx.C.Err = errors.Join(err, nodecodes.ErrNode)
+
+				return
+			}
+
+			ctx.C = &codes.ErrContext{
+				Err:    errors.Join(err, nodecodes.ErrNode),
+				Offset: ctx.L.Offset(),
+			}
+		}
+	}()
+
 	n.decode(ctx)
 }
 
@@ -160,12 +180,20 @@ func (n *Node) Decode(ctx *ParentContext) {
 //
 // This consumes the values stored in the provided [stores.Store].
 func (n Node) Encode(ctx *ParentContext) {
+	defer func() {
+		if err := ctx.W.Err(); err != nil {
+			ctx.C = &codes.ErrContext{
+				Err:    errors.Join(err, nodecodes.ErrNode),
+				Offset: uint64(ctx.W.Size()), //nolint:gosec // Size() is always positive.
+			}
+		}
+	}()
+
 	n.encode(ctx)
 }
 
 func (n *Node) decode(ctx *ParentContext) {
 	l := ctx.L
-	s := ctx.S
 
 	if !l.Ok() {
 		// short-circuit
@@ -175,9 +203,13 @@ func (n *Node) decode(ctx *ParentContext) {
 	for {
 		tok := l.NextToken()
 		if !l.Ok() {
-			// TODO: set error and context
 			return
 		}
+
+		if tok.IsEOF() {
+			return
+		}
+
 		if ctx.DO.NodeHook != nil {
 			// hook: callback before a node is processed
 			skip, err := ctx.DO.NodeHook(l, tok)
@@ -191,83 +223,105 @@ func (n *Node) decode(ctx *ParentContext) {
 			}
 		}
 
-		// we want an object, an array or a scalar value
-		switch {
-		case tok.IsStartObject():
-			n.keysIndex = make(map[stores.InternedKey]int)
-			n.children = make([]Node, 0)
-			n.value = s.PutNull()
-			n.kind = nodes.KindObject
-			n.ctx.offset = l.Offset()
+		n.decodeToken(ctx, tok)
+	}
+}
 
-			for key, value := range n.decodeObject(ctx) {
-				if !l.Ok() {
-					// TODO: set error and context
-					return
-				}
-				// check unique key: if the key exists, replace the previous value
-				// option: enforce unique keys
-				index, keyExists := n.keysIndex[key]
-				if keyExists {
-					if ctx.DO.uniqueKey {
-						// set error TODO
-						return
-					}
-					n.children[index] = value
+func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
+	l := ctx.L
+	s := ctx.S
 
-					continue
-				}
+	if !l.Ok() {
+		// short-circuit
+		return
+	}
 
-				n.children = append(n.children, value)
-				n.keysIndex[key] = len(n.children) - 1
+	// we want an object, an array or a scalar value
+	switch {
+	case tok.IsStartObject():
+		n.keysIndex = make(map[stores.InternedKey]int)
+		n.children = make([]Node, 0)
+		n.value = s.PutNull()
+		n.kind = nodes.KindObject
+		n.ctx.offset = l.Offset()
+
+		for key, value := range n.decodeObject(ctx) {
+			if !l.Ok() {
+				return
 			}
 
-		case tok.IsStartArray():
-			n.keysIndex = nil
-			n.children = make([]Node, 0)
-			n.value = s.PutNull()
-			n.kind = nodes.KindArray
-			n.ctx.offset = l.Offset()
-
-			for elem := range n.decodeArray(ctx) {
-				if !l.Ok() {
-					// TODO: set error and context
+			// check unique key: if the key exists, replace the previous value
+			// option: enforce unique keys
+			index, keyExists := n.keysIndex[key]
+			if keyExists {
+				// by default, duplicate keys
+				if !ctx.DO.tolerateDuplKey {
 					return
 				}
 
-				n.children = append(n.children, elem)
+				n.children[index] = value
+
+				continue
 			}
 
-		case tok.IsNull():
-			n.keysIndex = nil
-			n.children = nil
-			n.kind = nodes.KindNull
-			n.value = s.PutNull()
-			n.ctx.offset = l.Offset()
-
-		case tok.IsBool():
-			n.keysIndex = nil
-			n.children = nil
-			n.kind = nodes.KindScalar
-			n.value = s.PutBool(tok.Bool())
-			n.ctx.offset = l.Offset()
-
-		case tok.IsScalar():
-			n.keysIndex = nil
-			n.children = nil
-			n.kind = nodes.KindScalar
-			n.value = s.PutToken(tok)
-			n.ctx.offset = l.Offset()
-
-		case tok.IsEOF():
-			// TODO: for VerbatimNode, remember that we may have trailing blanks before EOF
-			return
-
-		default:
-			// wrong
-			l.SetErr(codes.ErrInvalidToken)
-			return
+			n.children = append(n.children, value)
+			n.keysIndex[key] = len(n.children) - 1
 		}
+
+		return
+
+	case tok.IsStartArray():
+		n.keysIndex = nil
+		n.children = make([]Node, 0)
+		n.value = s.PutNull()
+		n.kind = nodes.KindArray
+		n.ctx.offset = l.Offset()
+
+		for elem := range n.decodeArray(ctx) {
+			if !l.Ok() {
+				return
+			}
+
+			n.children = append(n.children, elem)
+		}
+
+		return
+
+	case tok.IsNull():
+		n.keysIndex = nil
+		n.children = nil
+		n.kind = nodes.KindNull
+		n.value = s.PutNull()
+		n.ctx.offset = l.Offset()
+
+		return
+
+	case tok.IsBool():
+		n.keysIndex = nil
+		n.children = nil
+		n.kind = nodes.KindScalar
+		n.value = s.PutBool(tok.Bool())
+		n.ctx.offset = l.Offset()
+
+		return
+
+	case tok.IsScalar():
+		n.keysIndex = nil
+		n.children = nil
+		n.kind = nodes.KindScalar
+		n.value = s.PutToken(tok)
+		n.ctx.offset = l.Offset()
+
+		return
+
+	case tok.IsEOF():
+		// TODO: for VerbatimNode, remember that we may have trailing blanks before EOF
+		return
+
+	default:
+		// wrong token
+		l.SetErr(codes.ErrInvalidToken)
+		return
 	}
 }
 
@@ -291,18 +345,18 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[stores.InternedKey, No
 				return
 			}
 
-			if tok.IsKey() {
+			if !tok.IsKey() {
 				l.SetErr(codes.ErrMissingKey)
 				return
 			}
+
+			key := stores.MakeInternedKey(string(tok.Value()))
 
 			tok = l.NextToken() // skip the colon separator following the key
 			if !tok.IsColon() {
 				l.SetErr(codes.ErrKeyColon)
 				return
 			}
-
-			key := stores.MakeInternedKey(string(tok.Value()))
 
 			if ctx.DO.BeforeKey != nil {
 				// hook: callback before key is processed
@@ -316,11 +370,17 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[stores.InternedKey, No
 				}
 			}
 
-			var value Node
-			value.decode(ctx)
+			tok = l.NextToken() // decode the next value
 			if !l.Ok() {
 				return
 			}
+
+			var value Node
+			value.decodeToken(ctx, tok)
+			if !l.Ok() {
+				return
+			}
+
 			value.key = key
 
 			if ctx.DO.AfterKey != nil {
@@ -380,7 +440,7 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 			}
 
 			var elem Node
-			elem.decode(ctx)
+			elem.decodeToken(ctx, tok) // decode next value
 			if !l.Ok() {
 				return
 			}
@@ -477,14 +537,15 @@ func (n Node) encode(ctx *ParentContext) {
 
 		return
 
-	case nodes.KindScalar:
-		w.Value(s.Get(n.value))
-
 	case nodes.KindNull:
 		w.Null()
 
+	case nodes.KindScalar:
+		w.Value(s.Get(n.value))
+
 	default:
-		w.SetErr(fmt.Errorf("invalid node: %v", n.kind)) // TODO: wrap package-level sentinel error
+		w.SetErr(fmt.Errorf("invalid node: %v: %w", n.kind, nodecodes.ErrNode))
+
 		return
 	}
 }
