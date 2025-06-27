@@ -8,34 +8,7 @@ import (
 	"github.com/fredbi/core/json/types"
 )
 
-// Writer is the interface for types that know how to write JSON tokens and values.
-type Writer interface {
-	Token(token.T) // write a token
-
-	DataWriter // TODO: should specialize Writers by the kind of data input, e.g. DataWriterToken, DataWriterStore, DataWriterJSON,DataWriterNative
-}
-
-// Writer is the interface for types that know how to write verbatim JSON tokens and values.
-type VerbatimWriter interface {
-	VerbatimToken(token.VT)             // write a verbatim token
-	VerbatimValue(stores.VerbatimValue) // write a verbatim value
-
-	DataWriter
-}
-
-type Flusher interface {
-	Flush() error
-}
-
-// DataWriter is the common interface for [Writer] and [VerbatimWriter].
-//
-// It knows how to write JSON data from a [stores.Store], JSON types as well as go values.
-type DataWriter interface {
-	// write data from a [stores.Store]
-	Key(stores.InternedKey)
-	Value(stores.Value)
-	Null()
-
+type BaseWriter interface {
 	// write delimiters
 	StartObject()
 	EndObject()
@@ -44,12 +17,59 @@ type DataWriter interface {
 	Comma()
 	Colon()
 
+	// Size yields the number of bytes written so far
+	Size() int64
+
+	types.ErrStateSetter
+	types.Resettable
+	types.WithErrState
+}
+
+type TokenWriter interface {
+	Token(token.T) // write a token
+
+	BaseWriter
+}
+
+// Writer is the interface for types that know how to write JSON tokens and values.
+type Writer interface {
+	TokenWriter
+
+	DataWriter
+}
+
+// Writer is the interface for types that know how to write verbatim JSON tokens and values.
+type VerbatimWriter interface {
+	VerbatimToken(token.VT)             // write a verbatim token
+	VerbatimValue(stores.VerbatimValue) // write a verbatim value
+
+	BaseWriter
+}
+
+type Flusher interface {
+	Flush() error
+}
+
+type StoreWriter interface {
+	// write data from a [stores.Store]
+	Key(stores.InternedKey)
+	Value(stores.Value)
+	Null()
+
+	BaseWriter
+}
+
+type JSONWriter interface {
 	// write JSON types
 	JSONString(types.String)
 	JSONNumber(types.Number)
 	JSONBoolean(types.Boolean)
 	JSONNull(types.NullType)
 
+	BaseWriter
+}
+
+type NativeWriter interface {
 	// write native go types
 	String(string)
 	StringBytes([]byte)
@@ -65,10 +85,16 @@ type DataWriter interface {
 
 	Bool(bool)
 
-	// Size yields the number of bytes written so far
-	Size() int64
+	BaseWriter
+}
 
-	types.ErrStateSetter
-	types.Resettable
-	types.WithErrState
+// DataWriter is the common interface for [Writer] and [VerbatimWriter].
+//
+// It knows how to write JSON data from a [stores.Store], JSON types as well as go values.
+type DataWriter interface {
+	StoreWriter
+	JSONWriter
+	NativeWriter
+
+	BaseWriter
 }

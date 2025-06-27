@@ -1,11 +1,12 @@
 package json
 
 import (
+	"encoding"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"iter"
+	"slices"
 
 	"github.com/fredbi/core/json/lexers"
 	"github.com/fredbi/core/json/nodes"
@@ -15,8 +16,9 @@ import (
 )
 
 var (
-	_ json.Marshaler   = Document{}
-	_ json.Unmarshaler = &Document{}
+	_ json.Marshaler        = Document{}
+	_ json.Unmarshaler      = &Document{}
+	_ encoding.TextAppender = Document{}
 )
 
 // EmptyDocument is the JSON document of the null type.
@@ -205,32 +207,60 @@ func (d Document) Encode(w io.Writer) error {
 	return d.encode(jw)
 }
 
-// MarshalJSON writes the [Document] as JSON bytes.
-func (d Document) MarshalJSON() ([]byte, error) {
-	jw, redeem := d.writerFactory()
-	defer redeem()
+// AppendText appends the JSON bytes to the provided buffer and returns the resulting slice.
+func (d Document) AppendText(b []byte) ([]byte, error) {
+	w := poolOfAppendWriters.Borrow()
+	w.b = b
+	jw, redeem := d.writerToWriterFactory(w)
+	defer func() {
+		poolOfAppendWriters.Redeem(w)
+		redeem()
+	}()
 
 	err := d.encode(jw)
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, errors.New("not implemented")
+	return w.b, nil
+}
+
+// MarshalJSON writes the [Document] as JSON bytes.
+func (d Document) MarshalJSON() ([]byte, error) {
+	buf := poolOfBuffers.Borrow()
+	jw, redeem := d.writerToWriterFactory(buf)
+	defer func() {
+		poolOfBuffers.Redeem(buf)
+		redeem()
+	}()
+
+	err := d.encode(jw)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func (d Document) String() string {
-	switch d.root.Kind() {
-	case nodes.KindScalar:
+	if d.root.Kind() == nodes.KindScalar {
 		v, _ := d.root.Value(d.store)
 		return v.String()
-	default:
-		buf, err := d.MarshalJSON()
-		if err != nil {
-			panic(fmt.Errorf("cannot marshal JSON: %w", err))
-		}
-
-		return string(buf)
 	}
+
+	buf := poolOfBuffers.Borrow()
+	jw, redeem := d.writerToWriterFactory(buf)
+	defer func() {
+		poolOfBuffers.Redeem(buf)
+		redeem()
+	}()
+
+	err := d.encode(jw)
+	if err != nil {
+		return fmt.Errorf("cannot marshal JSON: %w", err).Error()
+	}
+
+	return buf.String()
 }
 
 func (d *Document) decode(lex lexers.Lexer) error {
@@ -254,4 +284,21 @@ func (d Document) encode(jw writers.Writer) error {
 	light.RedeemParentContext(context)
 
 	return jw.Err()
+}
+
+var _ io.Writer = &appendWriter{}
+
+type appendWriter struct {
+	b []byte
+}
+
+func (a *appendWriter) Write(p []byte) (int, error) {
+	a.b = slices.Grow(a.b, len(p))
+	a.b = append(a.b, p...)
+
+	return len(p), nil
+}
+
+func (a *appendWriter) Reset() {
+	a.b = a.b[:0]
 }

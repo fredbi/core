@@ -2,6 +2,7 @@ package light
 
 import (
 	"fmt"
+	"log"
 	"slices"
 
 	"github.com/fredbi/core/json/lexers/token"
@@ -41,6 +42,12 @@ func (b *Builder) SetErr(err error) {
 func (b *Builder) Reset() {
 	b.err = nil
 	b.n = nullNode
+}
+
+func (b *Builder) WithStore(s stores.Store) *Builder {
+	b.s = s
+
+	return b
 }
 
 // Node returns the [Node] produced by the [Builder].
@@ -398,6 +405,7 @@ func (b *Builder) StringValue(value string) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
+	log.Printf("DEBUG: b.s= %T", b.s)
 	b.n.value = b.s.PutValue(stores.MakeStringValue(value))
 
 	return b

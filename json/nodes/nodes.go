@@ -15,3 +15,18 @@ const (
 	// KindArray is an array container node
 	KindArray
 )
+
+func (k Kind) String() string {
+	switch k {
+	case KindObject:
+		return "object"
+	case KindArray:
+		return "array"
+	case KindScalar:
+		return "scalar"
+	case KindNull:
+		fallthrough
+	default:
+		return "null"
+	}
+}

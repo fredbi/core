@@ -18,23 +18,18 @@ import (
 // as soon as an error is encountered.
 type Builder struct {
 	doc         Document
-	nodeBuilder light.Builder
+	nodeBuilder *light.Builder
 }
 
-func MakeBuilder(s stores.Store) Builder {
-	b := Builder{
-		doc: EmptyDocument,
+func NewBuilder(s stores.Store) *Builder {
+	b := &Builder{
+		doc:         EmptyDocument,
+		nodeBuilder: light.NewBuilder(s),
 	}
 
 	b.doc.store = s
 
 	return b
-}
-
-func NewBuilder(s stores.Store) *Builder {
-	b := MakeBuilder(s)
-
-	return &b
 }
 
 func (b Builder) Err() error {
@@ -56,6 +51,7 @@ func (b *Builder) Reset() {
 
 func (b *Builder) WithStore(s stores.Store) *Builder {
 	b.doc.store = s
+	b.nodeBuilder = b.nodeBuilder.WithStore(s)
 
 	return b
 }
@@ -108,6 +104,21 @@ func (b *Builder) AppendElem(value Document) *Builder {
 	bn := b.nodeBuilder
 	bn.Reset()
 	b.doc.root = bn.From(b.doc.root).AppendElem(value.root).Node()
+
+	return b
+}
+
+func (b *Builder) AppendElems(values ...Document) *Builder {
+	if !b.Ok() {
+		return b
+	}
+
+	for _, value := range values {
+		_ = b.AppendElem(value)
+		if !b.Ok() {
+			break
+		}
+	}
 
 	return b
 }

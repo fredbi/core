@@ -1,10 +1,16 @@
 package json
 
-import "github.com/fredbi/core/swag/pools"
+import (
+	"bytes"
+
+	"github.com/fredbi/core/swag/pools"
+)
 
 var (
-	poolOfBuilders  = pools.New[Builder]()
-	poolOfDocuments = pools.New[Document]()
+	poolOfBuilders      = pools.New[Builder]()
+	poolOfDocuments     = pools.New[Document]()
+	poolOfBuffers       = pools.New[bytes.Buffer]()
+	poolOfAppendWriters = pools.New[appendWriter]()
 )
 
 func BorrowBuilder() *Builder {

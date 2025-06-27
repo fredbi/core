@@ -4,19 +4,19 @@ This `go` library processes JSON streams and buffers.
 
 It is intended to provide a low-level toolkit for functionally demanding use-cases involving JSON data.
 
-It brings JSON support for go-openapi packages.
+It brings JSON support for the go-openapi packages.
 
 It is not a replacement for the standard library `encoding/json`.
 As such, it does not marshal or unmarshal your favorite go `struct` to or from JSON.
 
-It does not compete with _blazingly fast_ JSON codec libraries, which essentially target the
+It does not compete with these _blazingly fast_ JSON codec libraries, which target the
 marshal/unmarshal feature.
 
-Instead, it provides structures and types that keep the dynamic nature of JSON, deferring the
-resolution of values to native `go` types.
+Instead, it provides structures and types that keep the dynamic nature of JSON.
+The resolution of individual JSON values to native `go` types may be deferred.
 
-Essentially, it provides ways to work with JSON documents _without_ the need of some pre-specified `go`
-data structures.
+Essentially, it provides ways to work with a JSON document _without_ the need for a pre-defined `go`
+data structure.
 
 ## What's inside?
 
@@ -24,8 +24,8 @@ The module `github.com/fredbi/core/json` provides the following tools:
 
 * a [JSON lexer/parser](./lexers/README.md) for buffers or streams (TODO: add support for ld-json)
 * a [JSON writer](./writers/README.md) to JSON buffers or streams
-* a [compacted memory store](./stores/README.md) for JSON values
-* a Document that holds the hierachical structure of JSON documents
+* a [JSON store](./stores/README.md) to store JSON values in a compact memory area
+* a Document that holds the hierarchical structure of JSON documents
 * a [dynamic JSON](./dynamic/README.md) structure that dynamically maps JSON to familiar go types
 * [types that support JSON tweaks](./types/README.md) such as undefined or null values.
 
@@ -33,12 +33,12 @@ The module `github.com/fredbi/core/json` provides the following tools:
 
 * functionality like `json.Unmarshal` or `json.Marshal` that shuffles JSON to/from `go` data structures.
 * JSON schema support is provided by [`github.com/fredbi/core/jsonschema`](https://github.com/fredbi/core/tree/master/jsonschema).
-  This library focuses on low-level aspects of JSON only.
+  This library focuses on the low-level aspects of JSON only.
 * OpenAPI support is provided by [`github.com/fredbi/core/spec`](https://github.com/fredbi/core/tree/master/spec). This is far beyond the scope of mere JSON processing.
 
 ## How does this lib compare to others?
 
-We designed this library with the goal to serve advanced use cases such as JSON schema analysis and OpenAPI spec handling.
+We designed this library to serve advanced use cases such as JSON schema analysis and OpenAPI spec handling.
 
 Besides, we wanted the core of `go-openapi` to avoid external dependencies for this kind of work.
 
