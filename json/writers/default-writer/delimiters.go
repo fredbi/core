@@ -1,21 +1,61 @@
 package writer
 
+// Comma writes a comma separator, ','.
 func (w *W) Comma() {
-	w.buffer.AppendByte(',')
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte(',')
+	w.err = w.buffer.Err()
 }
 
+// Colon writes a colon separator, ':'.
+func (w *W) Colon() {
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte(':')
+	w.err = w.buffer.Err()
+}
+
+// EndArray writes an end-of-array separator, i.e. ']'.
 func (w *W) EndArray() {
-	w.buffer.AppendByte(']')
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte(']')
+	w.err = w.buffer.Err()
 }
 
+// EndObject writes an end-of-object separator, i.e. '}'.
 func (w *W) EndObject() {
-	w.buffer.AppendByte('}')
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte('}')
+	w.err = w.buffer.Err()
 }
 
-func (w *W) StartObject() {
-	w.buffer.AppendByte('{')
-}
-
+// StartArray writes a start-of-array separator, i.e. '['.
 func (w *W) StartArray() {
-	w.buffer.AppendByte('[')
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte('[')
+	w.err = w.buffer.Err()
+}
+
+// StartObject writes a start-of-object separator, i.e. '{'.
+func (w *W) StartObject() {
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte('{')
+	w.err = w.buffer.Err()
 }

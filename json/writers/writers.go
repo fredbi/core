@@ -23,6 +23,10 @@ type VerbatimWriter interface {
 	DataWriter
 }
 
+type Flusher interface {
+	Flush() error
+}
+
 // DataWriter is the common interface for [Writer] and [VerbatimWriter].
 //
 // It knows how to write JSON data from a [stores.Store], JSON types as well as go values.
@@ -38,30 +42,31 @@ type DataWriter interface {
 	StartArray()
 	EndArray()
 	Comma()
+	Colon()
 
 	// write JSON types
 	JSONString(types.String)
 	JSONNumber(types.Number)
 	JSONBoolean(types.Boolean)
+	JSONNull(types.NullType)
 
 	// write native go types
 	String(string)
 	StringBytes([]byte)
 	StringRunes([]rune)
 	StringCopy(io.Reader)
+
 	Raw([]byte)
 	RawCopy(io.Reader)
 
+	Number(any)
 	NumberBytes([]byte)
 	NumberCopy(io.Reader)
-	Float64(float64)
-	Int64(int64)
-	Uint64(uint64)
 
 	Bool(bool)
 
 	// Size yields the number of bytes written so far
-	Size() int
+	Size() int64
 
 	types.ErrStateSetter
 	types.Resettable

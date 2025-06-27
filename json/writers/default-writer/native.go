@@ -2,119 +2,117 @@ package writer
 
 import (
 	"io"
-	"unicode/utf8"
 )
 
-// Bool writes a boolean value.
+func trueBytes() []byte  { return []byte("true") }
+func falseBytes() []byte { return []byte("false") }
+
+// Bool writes a boolean value as JSON.
 func (w *W) Bool(v bool) {
-	w.buffer.EnsureSpace(5)
+	if w.err != nil {
+		return
+	}
+
 	if v {
-		w.buffer.Buf = append(w.buffer.Buf, "true"...)
-	} else {
-		w.buffer.Buf = append(w.buffer.Buf, "false"...)
+		w.buffer.WriteBinary(trueBytes())
+		w.err = w.buffer.Err()
+
+		return
 	}
+
+	w.buffer.WriteBinary(falseBytes())
+	w.err = w.buffer.Err()
 }
 
-// Raw appends raw data to the buffer
+// Raw appends raw bytes to the buffer, without quotes and without escaping.
 func (w *W) Raw(data []byte) {
-	if data == nil {
-		w.buffer.AppendString(null)
+	if w.err != nil || len(data) == 0 {
 		return
 	}
 
-	w.buffer.AppendBytes(data)
+	w.buffer.WriteBinary(data)
+	w.err = w.buffer.Err()
 }
 
-func (w *W) StringBytes(data []byte) {
-	if data == nil {
-		w.buffer.AppendString(null)
-		return
-	}
-	// TODO
-}
-
-func (w *W) StringRunes(data []rune) {
-	// TODO
-}
-
-func (w *W) NumberBytes(data []byte) {
-	w.Raw(data)
-}
-
-func (w *W) StringCopy(r io.Reader) {
-	// TODO
-}
-
-func (w *W) NumberCopy(r io.Reader) {
-	// TODO
-}
-
-func (w *W) RawCopy(r io.Reader) {
-	// TODO
-}
-
-// String writes a JSON string value enclosed by double quotes.
+// String writes a string as a JSON string value enclosed by double quotes, with escaping.
+//
+// The empty string is a legit input.
 func (w *W) String(s string) {
-	w.buffer.AppendByte('"')
-
-	// Portions of the string that contain no escapes are appended as
-	// byte slices.
-
-	p := 0 // last non-escape symbol
-
-	for i := 0; i < len(s); {
-		c := s[i]
-
-		if isNotEscapedSingleChar(c, !w.noEscapeHTML) {
-			// single-width character, no escaping is required
-			i++
-			continue
-		} else if c < utf8.RuneSelf {
-			// single-with character, need to escape
-			w.buffer.AppendString(s[p:i])
-			switch c {
-			case '\t':
-				w.buffer.AppendString(`\t`)
-			case '\r':
-				w.buffer.AppendString(`\r`)
-			case '\n':
-				w.buffer.AppendString(`\n`)
-			case '\\':
-				w.buffer.AppendString(`\\`)
-			case '"':
-				w.buffer.AppendString(`\"`)
-			default:
-				w.buffer.AppendString(`\u00`)
-				w.buffer.AppendByte(chars[c>>4])
-				w.buffer.AppendByte(chars[c&0xf])
-			}
-
-			i++
-			p = i
-			continue
-		}
-
-		// broken utf
-		runeValue, runeWidth := utf8.DecodeRuneInString(s[i:])
-		if runeValue == utf8.RuneError && runeWidth == 1 {
-			w.buffer.AppendString(s[p:i])
-			w.buffer.AppendString(`\ufffd`)
-			i++
-			p = i
-			continue
-		}
-
-		// jsonp stuff - tab separator and line separator
-		if runeValue == '\u2028' || runeValue == '\u2029' {
-			w.buffer.AppendString(s[p:i])
-			w.buffer.AppendString(`\u202`)
-			w.buffer.AppendByte(chars[runeValue&0xf])
-			i += runeWidth
-			p = i
-			continue
-		}
-		i += runeWidth
+	if w.err != nil {
+		return
 	}
-	w.buffer.AppendString(s[p:])
-	w.buffer.AppendByte('"')
+
+	w.buffer.WriteSingleByte('"')
+	w.buffer.WriteString(s)
+	w.buffer.WriteSingleByte('"')
+	w.err = w.buffer.Err()
+}
+
+// StringBytes writes a slice of bytes as a JSON string enclosed by double quotes ('"'), with escaping.
+//
+// An empty slice is a legit input.
+func (w *W) StringBytes(data []byte) {
+	if w.err != nil || data == nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte('"')
+	w.buffer.WriteText(data)
+	w.buffer.WriteSingleByte('"')
+	w.err = w.buffer.Err()
+}
+
+// StringRunes writes a slice of bytes as a JSON string enclosed by double quotes ('"'), with escaping.
+//
+// An empty slice is a legit input.
+func (w *W) StringRunes(data []rune) {
+	if w.err != nil || data == nil {
+		return
+	}
+	s := string(data)
+	w.buffer.WriteSingleByte('"')
+	w.buffer.WriteString(s)
+	w.buffer.WriteSingleByte('"')
+	w.err = w.buffer.Err()
+}
+
+// NumberBytes writes a slice of bytes as a JSON number.
+//
+// No check is carried out.
+func (w *W) NumberBytes(data []byte) {
+	if w.err != nil || len(data) == 0 {
+		return
+	}
+
+	w.buffer.WriteBinary(data)
+	w.err = w.buffer.Err()
+}
+
+// StringCopy writes the bytes consumed from an [io.Reader] as a JSON string enclosed by double quotes ('"'), with escaping.
+func (w *W) StringCopy(r io.Reader) {
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteSingleByte('"')
+	w.buffer.WriteTextFrom(r)
+	w.buffer.WriteSingleByte('"')
+	w.err = w.buffer.Err()
+}
+
+// NumberCopy writes the bytes consumed from an [io.Reader] as a JSON number.
+//
+// No check is carried out.
+func (w *W) NumberCopy(r io.Reader) {
+	w.RawCopy(r)
+}
+
+// RawCopy writes the bytes consumed from an [io.Reader], without quotes and without escaping.
+func (w *W) RawCopy(r io.Reader) {
+	if w.err != nil {
+		return
+	}
+
+	w.buffer.WriteBinaryFrom(r)
+	w.err = w.buffer.Err()
 }
