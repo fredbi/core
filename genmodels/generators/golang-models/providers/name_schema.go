@@ -523,8 +523,8 @@ func (p *NameProvider) nameAnonymousSchemaInArray(
 					p.mangler.ToGoName(parentName),
 				)
 
-				metaBuilder := structural.NewMetadataBuilder().From(analyzed).WithTitle(title)
-				p.annotator.AnnotateSchema(analyzed, metaBuilder.Metadata())
+				p.annotator.AnnotateSchema(analyzed,
+					structural.MakeMetadataBuilder().From(analyzed).WithTitle(title).Metadata())
 			}
 		}()
 	}

@@ -72,16 +72,8 @@ func (g *Generator) planPackageLayout() error {
 
 	// 2. prepare the output folders according to plan
 	//
-	// This step only needs to retrieve the generatormost folders to create the entire source tree structure.
+	// metrics
 	var numPkg int
-	for folder := range bundled.Namespaces(structural.OnlyLeaves()) {
-		dir := filepath.Join(g.outputPath, normalizeOSPath(folder))
-		if err := g.baseFS.MkdirAll(dir, userWritableOtherReadable); err != nil {
-			return errors.Join(err, ErrModel)
-		}
-		numPkg++
-	}
-	g.l.Info("package folders created", "packages", numPkg)
 
 	if g.WantsPkgArtifact() {
 		// 3. generate package-level source files (e.g. doc.go, README.md, utils.go...)
@@ -91,15 +83,19 @@ func (g *Generator) planPackageLayout() error {
 		// Code generation may run concurrently.
 		genGroup, _ := errgroup.WithContext(context.Background())
 		genGroup.SetLimit(g.maxParallel())
-		numPkg = 0
 
 		for pkg := range bundled.Packages( /* sort option */ ) { // at this moment, package-level code doesn't require any specific ordering
 			for genPkg := range g.makeGenPackage(pkg) {
 				pkgTemplate := genPkg.Template
+				// TODO: need testing - maybe we have some contention on the implied MkdirAll operation carried out under the hood by afero.
 
 				genGroup.Go(func() error {
-					return g.generator.Render(pkgTemplate, genPkg.FileName(), genPkg)
+					target := genPkg.FileName()
+					g.l.Debug("generating package-level artifact", "target_file", target)
+
+					return g.generator.Render(pkgTemplate, target, genPkg)
 				})
+
 				numPkg++
 			}
 		}
@@ -108,21 +104,36 @@ func (g *Generator) planPackageLayout() error {
 		}
 
 		g.l.Info("package-level artifacts created", "packages", numPkg)
-
-		if g.WantsGoMod {
-			if err := g.generator.GoMod(
-				genapp.WithModulePath(g.BaseImportPath),
-				genapp.WithGoVersion(g.MinGoVersion), // if empty, will apply go mod defaults, i.e. latest install go version
-			); err != nil {
+	} else {
+		// 3. (alternative setup) Only create folders
+		//
+		// This step only needs to retrieve the generator leaf folders to create the entire source tree structure.
+		for folder := range bundled.PackagePaths(structural.OnlyLeaves()) {
+			dir := filepath.Join(g.outputPath, normalizeOSPath(folder))
+			g.l.Debug("creating package folder", "target_dir", dir)
+			if err := g.baseFS.MkdirAll(dir, userWritableOtherReadable); err != nil {
 				return errors.Join(err, ErrModel)
 			}
 
-			g.l.Info(
-				"go module updated",
-				"target_package", g.BaseImportPath,
-				"target_dir", g.outputPath,
-			)
+			numPkg++
 		}
+
+		g.l.Info("package folders created", "packages", numPkg)
+	}
+
+	if g.WantsGoMod {
+		if err := g.generator.GoMod(
+			genapp.WithModulePath(g.BaseImportPath),
+			genapp.WithGoVersion(g.MinGoVersion), // if empty, will apply go mod defaults, i.e. latest install go version
+		); err != nil {
+			return errors.Join(err, ErrModel)
+		}
+
+		g.l.Info(
+			"go module updated",
+			"target_package", g.BaseImportPath,
+			"target_dir", g.outputPath,
+		)
 	}
 
 	// 4. supersede the analyzer with the bundled version

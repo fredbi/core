@@ -328,11 +328,11 @@ func (g *Generator) makeGenModel(analyzed structural.AnalyzedSchema) targetModel
 	case g.ModelLayout.Is(settings.ModelLayoutAllModelsOneFile):
 		// in this layout, all models are packed in a single source file
 		//
-		// When an UltimateParent is defined, the model with be stashed for later merge and rendering in a single file,
+		// When an HeadParent is defined, the model with be stashed for later merge and rendering in a single file,
 		// which naming will be decided by the root schema (or pseudo-root if the dependency graph is multi-rooted).
-		parent := analyzed.UltimateParent()
+		parent := analyzed.HeadParent()
 		parentID := parent.ID()
-		seed.UltimateParent = parentID
+		seed.HeadParent = parentID
 
 	default:
 		// nothing to do otherwise
@@ -368,7 +368,7 @@ func (g *Generator) shouldStashModel(genModel model.TargetModel) (analyzers.Uniq
 		return parent, true
 	}
 
-	ultimateParent := genModel.UltimateParent
+	ultimateParent := genModel.HeadParent
 	if ultimateParent.String() != "" && g.ModelLayout.Is(settings.ModelLayoutAllModelsOneFile) {
 		return ultimateParent, true
 	}
