@@ -75,8 +75,6 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 		return token.VNone
 	}
 
-	defer l.setErrContext() // TODO: get rid of defer, which consumes extra CPU
-
 	if l.next.Kind() != token.Unknown {
 		// we have already looked ahead: return the Look-Ahead token
 		l.current = l.next

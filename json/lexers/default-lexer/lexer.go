@@ -105,6 +105,10 @@ func (l *L) ErrInContext() *codes.ErrContext {
 		return nil
 	}
 
+	if l.errContext == nil {
+		l.setErrContext()
+	}
+
 	return l.errContext
 }
 
@@ -129,8 +133,6 @@ func (l *L) NextToken() token.T { //nolint: gocognit
 	if l.err != nil {
 		return token.None
 	}
-
-	defer l.setErrContext() // TODO: get rid of defer, which consumes extra CPU
 
 	if l.next.Kind() != token.Unknown {
 		// we have already looked ahead: return the Look-Ahead token

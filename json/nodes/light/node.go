@@ -158,6 +158,7 @@ func (n *Node) Decode(ctx *ParentContext) {
 	*n = nullNode
 
 	defer func() {
+		// capture the full context of any error if the lexer supports that
 		if err := ctx.L.Err(); err != nil {
 			if contextErrorer, ok := ctx.L.(interface{ ErrInContext() *codes.ErrContext }); ok {
 				ctx.C = contextErrorer.ErrInContext()
@@ -166,6 +167,7 @@ func (n *Node) Decode(ctx *ParentContext) {
 				return
 			}
 
+			// otherwise, keep minimal context: error and offset
 			ctx.C = &codes.ErrContext{
 				Err:    errors.Join(err, nodecodes.ErrNode),
 				Offset: ctx.L.Offset(),
@@ -210,19 +212,6 @@ func (n *Node) decode(ctx *ParentContext) {
 			return
 		}
 
-		if ctx.DO.NodeHook != nil {
-			// hook: callback before a node is processed
-			skip, err := ctx.DO.NodeHook(l, tok)
-			if err != nil {
-				l.SetErr(err)
-				return
-			}
-
-			if skip {
-				continue
-			}
-		}
-
 		n.decodeToken(ctx, tok)
 	}
 }
@@ -234,6 +223,19 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 	if !l.Ok() {
 		// short-circuit
 		return
+	}
+
+	if ctx.DO.NodeHook != nil {
+		// hook: callback before a node is processed
+		skip, err := ctx.DO.NodeHook(l, tok)
+		if err != nil {
+			l.SetErr(err)
+			return
+		}
+
+		if skip {
+			return
+		}
 	}
 
 	// we want an object, an array or a scalar value
