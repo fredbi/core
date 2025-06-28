@@ -1,8 +1,9 @@
 package light
 
 import (
+	"errors"
 	"fmt"
-	"log"
+	"math/big"
 	"slices"
 
 	"github.com/fredbi/core/json/lexers/token"
@@ -405,7 +406,6 @@ func (b *Builder) StringValue(value string) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	log.Printf("DEBUG: b.s= %T", b.s)
 	b.n.value = b.s.PutValue(stores.MakeStringValue(value))
 
 	return b
@@ -480,9 +480,76 @@ func (b *Builder) NumericalValue(value any) *Builder {
 		return buildFromUinteger(b, v)
 	case uint:
 		return buildFromUinteger(b, v)
+	case *big.Int:
+		if v == nil {
+			return b
+		}
+		return buildFromTextAppender(b, v)
+	case big.Int:
+		return buildFromTextAppender(b, &v)
+
+	case *big.Float:
+		if v == nil {
+			return b
+		}
+		return buildFromTextAppender(b, v)
+	case big.Float:
+		return buildFromTextAppender(b, &v)
+
+	case *big.Rat:
+		if v == nil {
+			return b
+		}
+		f, _ := v.Float64()
+
+		return buildFromFloat(b, f)
+
+	case big.Rat:
+		f, _ := v.Float64()
+
+		return buildFromFloat(b, f)
+
+	case []byte:
+		if len(v) == 0 {
+			return b
+		}
+
+		var bf big.Float
+		if err := bf.UnmarshalText(v); err != nil {
+			b.err = fmt.Errorf(
+				"method NumericalValue could not convert the input %T to a JSON number: %q: %w",
+				value, value, nodecodes.ErrBuilder,
+			)
+
+			return b
+		}
+
+		return buildFromTextAppender(b, &bf)
+
+	case string:
+		if v == "" {
+			return b
+		}
+
+		var bf big.Float
+		if err := bf.UnmarshalText([]byte(v)); err != nil {
+			b.err = fmt.Errorf(
+				"method NumericalValue could not convert the input %T to a JSON number: %q: %w",
+				value, value, nodecodes.ErrBuilder,
+			)
+
+			return b
+		}
+
+		return buildFromTextAppender(b, &bf)
+
 	default:
-		// TODO set err
-		panic("yay")
+		b.err = fmt.Errorf(
+			"method NumericalValue could not convert the input of type %T to a JSON number: %w",
+			value, nodecodes.ErrBuilder,
+		)
+
+		return b
 	}
 }
 
@@ -577,6 +644,26 @@ func buildFromUinteger[T conv.Unsigned](b *Builder, value T) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 	b.n.value = b.s.PutValue(stores.MakeUintegerValue(value))
+
+	return b
+}
+
+func buildFromTextAppender(b *Builder, v interface{ AppendText([]byte) ([]byte, error) }) *Builder {
+	const (
+		sensibleNumberLength = 20
+	)
+
+	buf := make([]byte, 0, sensibleNumberLength)
+	value, err := v.AppendText(buf)
+	if err != nil {
+		b.err = errors.Join(err, nodecodes.ErrBuilder)
+
+		return b
+	}
+
+	b.n.kind = nodes.KindScalar
+	b.resetNode()
+	b.n.value = b.s.PutValue(stores.MakeNumberValue(types.Number{Value: value}))
 
 	return b
 }

@@ -40,6 +40,10 @@ func (b Builder) Ok() bool {
 	return b.nodeBuilder.Ok()
 }
 
+func (b Builder) Store() stores.Store {
+	return b.doc.store
+}
+
 func (b *Builder) SetErr(err error) {
 	b.nodeBuilder.SetErr(err)
 }
@@ -54,6 +58,33 @@ func (b *Builder) WithStore(s stores.Store) *Builder {
 	b.nodeBuilder = b.nodeBuilder.WithStore(s)
 
 	return b
+}
+
+// MakeNull is a shorthand for NewBuilder(b.Store()).Null().Document().
+func (b *Builder) MakeNull() Document {
+	return NewBuilder(b.Store()).Null().Document()
+}
+
+// MakeBool is a shorthand for NewBuilder(b.Store()).BoolValue(value).Document().
+func (b *Builder) MakeBool(value bool) Document {
+	return NewBuilder(b.Store()).BoolValue(value).Document()
+}
+
+// MakeString is a shorthand for NewBuilder(b.Store()).StringValue(value).Document().
+func (b *Builder) MakeString(value string) Document {
+	return NewBuilder(b.Store()).StringValue(value).Document()
+}
+
+// MakeNumber is a shorthand for NewBuilder(b.Store()).NumericalValue(value).Document().
+func (b *Builder) MakeNumber(value any) Document {
+	v := NewBuilder(b.Store()).NumericalValue(value)
+	if v.Ok() {
+		return v.Document()
+	}
+
+	b.SetErr(v.Err())
+
+	return v.Document()
 }
 
 // Document returns the [Document] produced by the [Builder].
@@ -133,22 +164,33 @@ func (b *Builder) StringValue(value string) *Builder {
 }
 
 func (b *Builder) BoolValue(value bool) *Builder {
-	// TODO
-	return b
-}
-
-func (b *Builder) FloatValue(value types.Number) *Builder {
-	// TODO
+	bn := b.nodeBuilder
+	bn.Reset()
+	b.doc.root = bn.BoolValue(value).Node()
 
 	return b
 }
 
 func (b *Builder) NumberValue(value types.Number) *Builder {
-	// TODO
+	bn := b.nodeBuilder
+	bn.Reset()
+	b.doc.root = bn.NumberValue(value).Node()
+
+	return b
+}
+
+func (b *Builder) NumericalValue(value any) *Builder {
+	bn := b.nodeBuilder
+	bn.Reset()
+	b.doc.root = bn.NumericalValue(value).Node()
+
 	return b
 }
 
 func (b *Builder) Null() *Builder {
-	// TODO
+	bn := b.nodeBuilder
+	bn.Reset()
+	b.doc.root = bn.Null().Node()
+
 	return b
 }

@@ -16,8 +16,10 @@ func TestBuilder(t *testing.T) {
 	t.Run("should build a Document from scratch", func(t *testing.T) {
 		b.Object().AppendKey("test",
 			NewBuilder(s).Array().AppendElems(
-				NewBuilder(s).BoolValue(true).Document(),
-				NewBuilder(s).StringValue("abc").Document(),
+				b.MakeNull(),
+				b.MakeBool(true),
+				b.MakeString("abc"),
+				b.MakeNumber(123.45),
 			).Document(),
 		)
 
@@ -29,6 +31,6 @@ func TestBuilder(t *testing.T) {
 		require.NoError(t, doc.Encode(w))
 
 		t.Logf("output: %s", w.String())
-		assert.Equal(t, `{"test":[null,"abc"]}`, w.String())
+		assert.Equal(t, `{"test":[null,true,"abc",123.45]}`, w.String())
 	})
 }
