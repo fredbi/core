@@ -2,16 +2,16 @@ package dynamic
 
 import (
 	"errors"
-	"fmt"
+	"io"
 	"iter"
+	"slices"
 
 	"github.com/fredbi/core/json"
+	"github.com/fredbi/core/json/internal"
 	"github.com/fredbi/core/json/lexers"
-	lexer "github.com/fredbi/core/json/lexers/default-lexer"
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/writers"
-	writer "github.com/fredbi/core/json/writers/default-writer"
 	"github.com/fredbi/core/swag/conv"
 )
 
@@ -21,31 +21,37 @@ import (
 // The inner structure is built from a JSON string using map[string]any for objects,
 // []any for arrays, string for strings and float64 for numbers.
 type JSON struct {
+	options
 	inner any
 }
 
 // Make a new [JSON] object.
-//
-// TODO: options: support other numeric types than float64, use OrderedMap instead of map
-func Make() JSON {
+func Make(opts ...Option) JSON {
 	var inner any
+
 	return JSON{
-		inner: &inner,
+		options: optionsWithDefaults(opts),
+		inner:   &inner,
 	}
 }
 
-// ToJSON converts a document into a "dynamic JSON" data structure.
-func ToJSON(d json.Document) JSON {
-	//return d.root.ToJSON(d.store, d.EncodeOptions)
+// TODO: data navigation methods (iterators) like for Document.
+
+// ToJSON converts a [json.Document] into a dynamic [JSON] data structure.
+func ToJSON(d json.Document, opts ...Option) JSON {
+	//	j := Make(opts...)
+
 	return JSON{} // TODO
 }
 
-// FromJSON builds a [Document] from a dynamic [JSON] data structure,
+// ToDocument builds a [json.Document] from a dynamic [JSON] data structure,
+//
 // i.e. akin to what you get when the standard library unmarshals into a "any" type.
 // TODO
 // Options: specify Store
-func FromJSON(value JSON) (json.Document, error) {
-	//return d.root.FromJSON(d.store, value, d.DecodeOptions)
+func ToDocument(value JSON, opts ...json.Option) (json.Document, error) {
+	b := json.NewBuilder()
+
 	return json.EmptyDocument, errors.New("not imlemented")
 }
 
@@ -59,30 +65,70 @@ func (d *JSON) Reset() {
 	d.inner = &inner
 }
 
+func (d *JSON) Decode(r io.Reader) error {
+	lex, redeem := d.lexerFromReaderFactory(r)
+	defer redeem()
+
+	return d.decodeInner(lex)
+}
+
 func (d *JSON) UnmarshalJSON(data []byte) error {
-	l := lexer.BorrowLexerWithBytes(data)
-	defer func() {
-		lexer.RedeemLexer(l)
-	}()
+	lex, redeem := d.lexerFactory(data)
+	defer redeem()
 
-	d.inner = d.decode(l)
+	return d.decodeInner(lex)
+}
 
-	return l.Err()
+func (d *JSON) decodeInner(lex lexers.Lexer) error {
+	d.inner = d.decode(lex)
+
+	return lex.Err()
+}
+
+func (d JSON) Encode(w io.Writer) error {
+	jw, redeem := d.writerToWriterFactory(w)
+	defer redeem()
+
+	return d.encodeInner(jw)
 }
 
 func (d JSON) MarshalJSON() ([]byte, error) {
-	w := writer.BorrowWriter()
+	buf := internal.BorrowBytesBuffer()
+	jw, redeem := d.writerToWriterFactory(buf)
 	defer func() {
-		writer.RedeemWriter(w)
+		internal.RedeemBytesBuffer(buf)
+		redeem()
 	}()
 
-	d.encode(w)
-
-	if !w.Ok() {
-		return nil, w.Err()
+	err := d.encodeInner(jw)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, nil // TODO: BuildBytes()
+	return buf.Bytes(), nil
+}
+
+func (d JSON) AppendText(b []byte) ([]byte, error) {
+	w := internal.BorrowAppendWriter()
+	w.Set(b)
+	jw, redeem := d.writerToWriterFactory(w)
+	defer func() {
+		internal.RedeemAppendWriter(w)
+		redeem()
+	}()
+
+	err := d.encodeInner(jw)
+	if err != nil {
+		return nil, err
+	}
+
+	return w.Bytes(), nil
+}
+
+func (d JSON) encodeInner(jw writers.Writer) error {
+	d.encode(jw)
+
+	return jw.Err()
 }
 
 func (d *JSON) decode(l lexers.Lexer) any {
@@ -109,13 +155,15 @@ func (d *JSON) decode(l lexers.Lexer) any {
 			return node
 
 		case tok.IsStartArray():
-			node := make([]any, 1)
+			node := make([]any, 0, 10)
 			for elem := range d.decodeArray(l) {
 				node = append(node, elem)
 				if !l.Ok() {
 					return nil
 				}
 			}
+			slices.Clip(node)
+
 			return node
 
 		case tok.IsNull():
@@ -127,6 +175,7 @@ func (d *JSON) decode(l lexers.Lexer) any {
 			case token.String:
 				return string(tok.Value())
 			case token.Number:
+				// TODO: smarter number conversion
 				f, err := conv.ConvertFloat64(string(tok.Value()))
 				if err != nil {
 					l.SetErr(err)
@@ -252,89 +301,5 @@ func (d *JSON) decodeArray(l lexers.Lexer) iter.Seq[any] {
 			l.SetErr(codes.ErrMissingComma)
 			return
 		}
-	}
-}
-
-func (d *JSON) encode(w writers.Writer) {
-	if !w.Ok() {
-		return
-	}
-
-	if d.inner == nil {
-		w.Null()
-
-		return
-	}
-
-	switch inner := d.inner.(type) {
-	case map[string]any:
-		w.StartObject()
-		if !w.Ok() {
-			return
-		}
-
-		l := len(inner)
-
-		if l == 0 {
-			w.EndObject()
-
-			return
-		}
-
-		i := 0
-		for key, value := range inner {
-			w.String(key)
-
-			v := JSON{inner: value}
-			v.encode(w)
-			if i < l {
-				w.Comma()
-			}
-			i++
-		}
-
-		w.EndObject()
-
-		return
-
-	case []any:
-		w.StartArray()
-		if !w.Ok() {
-			return
-		}
-
-		l := len(inner)
-		if l == 0 {
-			w.EndArray()
-
-			return
-		}
-
-		v0 := JSON{inner: inner[0]}
-		v0.encode(w)
-
-		for _, elem := range inner[1:] {
-			w.Comma()
-			v := JSON{inner: elem}
-			v.encode(w)
-		}
-
-		w.EndArray()
-
-		return
-
-	case string:
-		w.String(inner)
-	case bool:
-		w.Bool(inner)
-	case float64:
-		w.Float64(inner)
-	case int64:
-		w.Int64(inner)
-	case uint64:
-		w.Uint64(inner)
-	default:
-		w.SetErr(fmt.Errorf("invalid dynamic JSON type: %T", d.inner))
-		return
 	}
 }

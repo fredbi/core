@@ -6,6 +6,7 @@ import (
 	"io"
 	"iter"
 
+	"github.com/fredbi/core/json/internal"
 	"github.com/fredbi/core/json/stores"
 )
 
@@ -144,11 +145,11 @@ func (c Collection) Encode(w io.Writer) error {
 
 // AppendText appends the JSON bytes to the provided buffer and returns the resulting slice.
 func (c Collection) AppendText(b []byte) ([]byte, error) {
-	w := poolOfAppendWriters.Borrow()
-	w.b = b
+	w := internal.BorrowAppendWriter()
+	w.Set(b)
 	jw, redeem := c.writerToWriterFactory(w)
 	defer func() {
-		poolOfAppendWriters.Redeem(w)
+		internal.RedeemAppendWriter(w)
 		redeem()
 	}()
 
@@ -157,7 +158,7 @@ func (c Collection) AppendText(b []byte) ([]byte, error) {
 	if len(c.documents) == 0 {
 		jw.EndArray()
 
-		return w.b, nil
+		return w.Bytes(), nil
 	}
 
 	doc := Document{
@@ -179,15 +180,15 @@ func (c Collection) AppendText(b []byte) ([]byte, error) {
 
 	jw.EndArray()
 
-	return w.b, nil
+	return w.Bytes(), nil
 }
 
 // MarshalJSON marshals the [Collection] as an array of JSON documents.
 func (c Collection) MarshalJSON() ([]byte, error) {
-	buf := poolOfBuffers.Borrow()
+	buf := internal.BorrowBytesBuffer()
 	jw, redeem := c.writerToWriterFactory(buf)
 	defer func() {
-		poolOfBuffers.Redeem(buf)
+		internal.RedeemBytesBuffer(buf)
 		redeem()
 	}()
 

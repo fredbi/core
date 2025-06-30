@@ -1,29 +1,21 @@
-package json
+package dynamic
 
 import (
 	"io"
 
 	"github.com/fredbi/core/json/lexers"
 	lexer "github.com/fredbi/core/json/lexers/default-lexer"
-	"github.com/fredbi/core/json/nodes/light"
-	"github.com/fredbi/core/json/stores"
-	store "github.com/fredbi/core/json/stores/default-store"
 	"github.com/fredbi/core/json/writers"
 	writer "github.com/fredbi/core/json/writers/default-writer"
 )
 
 type Option func(*options)
 
+// TODO: options: support other numeric types than float64, use OrderedMap instead of map
 type options struct {
-	store                  stores.Store
 	lexerFactory           func([]byte) (lexers.Lexer, func())
 	lexerFromReaderFactory func(io.Reader) (lexers.Lexer, func())
-	//writerFactory          func() (writers.Writer, func())
-	writerToWriterFactory func(io.Writer) (writers.Writer, func())
-
-	// for light nodes
-	light.DecodeOptions
-	light.EncodeOptions
+	writerToWriterFactory  func(io.Writer) (writers.Writer, func())
 }
 
 func defaultLexerFactory(data []byte) (lexers.Lexer, func()) {
@@ -54,10 +46,6 @@ func optionsWithDefaults(opts []Option) options {
 		apply(&o)
 	}
 
-	if o.store == nil {
-		o.store = store.New()
-	}
-
 	if o.lexerFactory == nil {
 		o.lexerFactory = defaultLexerFactory
 	}
@@ -71,12 +59,6 @@ func optionsWithDefaults(opts []Option) options {
 	}
 
 	return o
-}
-
-func WithStore(s stores.Store) Option {
-	return func(o *options) {
-		o.store = s
-	}
 }
 
 func noop() {

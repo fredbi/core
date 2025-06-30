@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"slices"
 
+	"github.com/fredbi/core/json/internal"
 	"github.com/fredbi/core/json/lexers"
 	"github.com/fredbi/core/json/nodes"
 	"github.com/fredbi/core/json/nodes/light"
@@ -209,11 +209,11 @@ func (d Document) Encode(w io.Writer) error {
 
 // AppendText appends the JSON bytes to the provided buffer and returns the resulting slice.
 func (d Document) AppendText(b []byte) ([]byte, error) {
-	w := poolOfAppendWriters.Borrow()
-	w.b = b
+	w := internal.BorrowAppendWriter()
+	w.Set(b)
 	jw, redeem := d.writerToWriterFactory(w)
 	defer func() {
-		poolOfAppendWriters.Redeem(w)
+		internal.RedeemAppendWriter(w)
 		redeem()
 	}()
 
@@ -222,20 +222,19 @@ func (d Document) AppendText(b []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return w.b, nil
+	return w.Bytes(), nil
 }
 
 // MarshalJSON writes the [Document] as JSON bytes.
 func (d Document) MarshalJSON() ([]byte, error) {
-	buf := poolOfBuffers.Borrow()
+	buf := internal.BorrowBytesBuffer()
 	jw, redeem := d.writerToWriterFactory(buf)
 	defer func() {
-		poolOfBuffers.Redeem(buf)
+		internal.RedeemBytesBuffer(buf)
 		redeem()
 	}()
 
-	err := d.encode(jw)
-	if err != nil {
+	if err := d.encode(jw); err != nil {
 		return nil, err
 	}
 
@@ -248,15 +247,14 @@ func (d Document) String() string {
 		return v.String()
 	}
 
-	buf := poolOfBuffers.Borrow()
+	buf := internal.BorrowBytesBuffer()
 	jw, redeem := d.writerToWriterFactory(buf)
 	defer func() {
-		poolOfBuffers.Redeem(buf)
+		internal.RedeemBytesBuffer(buf)
 		redeem()
 	}()
 
-	err := d.encode(jw)
-	if err != nil {
+	if err := d.encode(jw); err != nil {
 		return fmt.Errorf("cannot marshal JSON: %w", err).Error()
 	}
 
@@ -284,21 +282,4 @@ func (d Document) encode(jw writers.Writer) error {
 	light.RedeemParentContext(context)
 
 	return jw.Err()
-}
-
-var _ io.Writer = &appendWriter{}
-
-type appendWriter struct {
-	b []byte
-}
-
-func (a *appendWriter) Write(p []byte) (int, error) {
-	a.b = slices.Grow(a.b, len(p))
-	a.b = append(a.b, p...)
-
-	return len(p), nil
-}
-
-func (a *appendWriter) Reset() {
-	a.b = a.b[:0]
 }

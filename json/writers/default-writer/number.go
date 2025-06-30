@@ -46,28 +46,34 @@ func (w *W) Number(v any) {
 	case float64:
 		w.buffer.WriteString(conv.FormatFloat(n))
 	case []byte:
+		// TODO: check  // TODO: case string
 		w.buffer.WriteBinary(n)
 	case *big.Int:
+		if n == nil {
+			return
+		}
 		w.append(n)
-
 		return
 	case big.Int:
 		w.append(&n)
-
 		return
 	case *big.Rat:
+		if n == nil {
+			return
+		}
 		f, _ := n.Float64()
 		w.buffer.WriteString(conv.FormatFloat(f))
 	case big.Rat:
 		f, _ := n.Float64()
 		w.buffer.WriteString(conv.FormatFloat(f))
 	case *big.Float:
+		if n == nil {
+			return
+		}
 		w.append(n)
-
 		return
 	case big.Float:
 		w.append(&n)
-
 		return
 	default:
 		panic(fmt.Errorf(
@@ -75,6 +81,7 @@ func (w *W) Number(v any) {
 			v, ErrDefaultWriter,
 		))
 	}
+
 	w.err = w.buffer.Err()
 }
 
