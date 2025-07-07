@@ -5,6 +5,8 @@ import (
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
+	"github.com/fredbi/core/json/writers"
 )
 
 // ConcurrentStore is a [stores.Store] just like [Store] and may be used concurrently.
@@ -14,7 +16,7 @@ import (
 // It safe to retrieve values concurrently with [store.Get],
 // and have several go routines storing content concurrently.
 //
-// Although it is safe to use [store.Write] concurrently, it should not be used that way, as the result is not deterministic.
+// Although it is safe to use [store.WriteTo] concurrently, it should not be used that way, as the result is not deterministic.
 type ConcurrentStore struct {
 	rwx sync.RWMutex
 	*Store
@@ -36,17 +38,17 @@ func (s *ConcurrentStore) Len() int {
 	return len(s.arena)
 }
 
-// Get a [stores.Value] from a [stores.Handle].
-func (s *ConcurrentStore) Get(h stores.Handle) stores.Value {
+// Get a [values.Value] from a [stores.Handle].
+func (s *ConcurrentStore) Get(h stores.Handle) values.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	switch header {
 	case headerNull:
-		return stores.NullValue
+		return values.NullValue
 	case headerFalse:
-		return stores.FalseValue
+		return values.FalseValue
 	case headerTrue:
-		return stores.TrueValue
+		return values.TrueValue
 	case headerInlinedNumber: // small number inlined
 		return s.getInlinedNumber(h)
 	case headerInlinedASCII: // small ascii string inlined: 8 bytes exactly
@@ -73,20 +75,16 @@ func (s *ConcurrentStore) Get(h stores.Handle) stores.Value {
 		return s.getInlinedCompressedString(h)
 	default:
 		assertValidHeader(header)
-		return stores.NullValue
+		return values.NullValue
 	}
 }
 
-// Write the value pointed to be the [stores.Handle] to a JSON [writers.StoreWriter].
+// WriteTo writes the value pointed to be the [stores.Handle] to a JSON [writers.StoreWriter].
 //
 // This avoids unnessary allocations when transferring the value to the writer.
-//
-// The [ConcurrentStore] must be configured with [WithWriter] beforehand or this function will panic.
-//
-// The [ConcurrentStore] ensures exclusive access to the underlying [writers.StoreWriter].
-func (s *ConcurrentStore) Write(h stores.Handle) {
+func (s *ConcurrentStore) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 	s.rwx.Lock()
-	s.Store.Write(h)
+	s.Store.WriteTo(writer, h)
 	s.rwx.Unlock()
 }
 
@@ -111,8 +109,8 @@ func (s *ConcurrentStore) PutToken(tok token.T) stores.Handle {
 	}
 }
 
-// PutValue puts a [stores.Value] and returns its [stores.Handle] for later retrieval.
-func (s *ConcurrentStore) PutValue(v stores.Value) stores.Handle {
+// PutValue puts a [values.Value] and returns its [stores.Handle] for later retrieval.
+func (s *ConcurrentStore) PutValue(v values.Value) stores.Handle {
 	switch v.Kind() {
 	case token.Null:
 		return s.PutNull()

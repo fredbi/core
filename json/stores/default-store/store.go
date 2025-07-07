@@ -3,6 +3,8 @@ package store
 import (
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
+	"github.com/fredbi/core/json/writers"
 )
 
 const (
@@ -31,7 +33,7 @@ const (
 // It safe to retrieve values concurrently with [store.Get], but it is unsafe to have
 // several go routines storing content concurrently.
 //
-// [store.Write] should not be used concurrently.
+// [store.WriteTo] should not be used concurrently.
 type Store struct {
 	options
 	arena []byte
@@ -57,17 +59,17 @@ func (s *Store) Len() int {
 	return len(s.arena)
 }
 
-// Get a [stores.Value] from a [stores.Handle].
-func (s *Store) Get(h stores.Handle) stores.Value {
+// Get a [values.Value] from a [stores.Handle].
+func (s *Store) Get(h stores.Handle) values.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	switch header {
 	case headerNull:
-		return stores.NullValue
+		return values.NullValue
 	case headerFalse:
-		return stores.FalseValue
+		return values.FalseValue
 	case headerTrue:
-		return stores.TrueValue
+		return values.TrueValue
 	case headerInlinedNumber: // small number inlined
 		return s.getInlinedNumber(h)
 	case headerInlinedASCII: // small ascii string inlined: 8 bytes exactly
@@ -85,54 +87,45 @@ func (s *Store) Get(h stores.Handle) stores.Value {
 		return s.getInlinedCompressedString(h)
 	default:
 		assertValidHeader(header)
-		return stores.NullValue
+		return values.NullValue
 	}
 }
 
-func (s *Store) HasWriter() bool {
-	return s.writer != nil
-}
-
-// Write the value pointed to be the [stores.Handle] to a JSON [writers.StoreWriter].
+// WriteTo writes the value pointed to be the [stores.Handle] to a JSON [writers.StoreWriter].
 //
 // This avoids unnessary buffering when transferring the value down to the writer.
-//
-// The [Store] must be configured with [WithWriter] beforehand or this function will panic.
-//
-// You may check [Store.HasWriter] beforehand to assert that this is the case.
-func (s *Store) Write(h stores.Handle) {
+func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 	header := uint8(h & headerMask) //nolint:gosec
-	assertWriterEnabled(s.writer)
 
 	switch header {
 	case headerNull:
-		s.writer.Null()
+		writer.Null()
 	case headerFalse:
-		s.writer.Bool(false)
+		writer.Bool(false)
 	case headerTrue:
-		s.writer.Bool(true)
+		writer.Bool(true)
 	case headerInlinedNumber: // small number inlined
 		size, payload := inlined(h)
 		buffer, redeem := borrowBytesWithRedeem(
 			size * digitsPerByte,
 		) // amortize the allocation of this temporary buffer
 		buffer = unpackBCD(size, payload, buffer)
-		s.writer.NumberBytes(buffer) // sends the buffer directly to the writer
+		writer.NumberBytes(buffer) // sends the buffer directly to the writer
 		redeem()
 	case headerInlinedASCII: // small ascii string inlined: 8 bytes exactly
 		size, payload := inlined(h) // 7 bytes
 		var buffer [8]byte
 		out := unpackASCII(size, payload, buffer[:])
-		s.writer.StringBytes(out)
+		writer.StringBytes(out)
 	case headerInlinedString: // small string inlined
 		size, payload := inlined(h) // 0-7 bytes (0-8 packed characters)
 		if size == 0 {
-			s.writer.String("")
+			writer.String("")
 			return
 		}
 		var buffer [8]byte
 		out := unpackString(size, payload, buffer[:])
-		s.writer.StringBytes(out)
+		writer.StringBytes(out)
 	case headerNumber: // large number
 		size, offset := withOffset(h)
 		assertOffsetInArena(offset, len(s.arena))
@@ -140,20 +133,20 @@ func (s *Store) Write(h stores.Handle) {
 		nibbles := s.arena[offset : offset+size]
 		buffer, redeem := borrowBytesWithRedeem(size * digitsPerByte)
 		buffer = decodeBCDAsNumber(nibbles, buffer)
-		s.writer.NumberBytes(buffer)
+		writer.NumberBytes(buffer)
 		redeem()
 	case headerString: // large string
 		size, offset := withOffset(h)
 		assertOffsetInArena(offset, len(s.arena))
 
 		strBytes := s.arena[offset : offset+size]
-		s.writer.StringBytes(strBytes)
+		writer.StringBytes(strBytes)
 	case headerCompressedString: // large compressed string
 		size, offset := withOffset(h)
 		assertOffsetInArena(offset, len(s.arena))
 
 		inflater, redeem := s.uncompressStringReader(s.arena[offset : offset+size])
-		s.writer.StringCopy(inflater)
+		writer.StringCopy(inflater)
 		redeem()
 	case headerInlinedCompressedString: // small compressed string
 		// this case is not active: flate's minimum size is 9 bytes
@@ -161,7 +154,7 @@ func (s *Store) Write(h stores.Handle) {
 		var buffer [8]byte
 		out := unpackString(size, payload, buffer[:])
 		inflater, redeem := s.uncompressStringReader(out)
-		s.writer.StringCopy(inflater)
+		writer.StringCopy(inflater)
 		redeem()
 	default:
 		assertValidHeader(header)
@@ -189,8 +182,8 @@ func (s *Store) PutToken(tok token.T) stores.Handle {
 	}
 }
 
-// PutValue puts a [stores.Value] and returns its [stores.Handle] for later retrieval.
-func (s *Store) PutValue(v stores.Value) stores.Handle {
+// PutValue puts a [values.Value] and returns its [stores.Handle] for later retrieval.
+func (s *Store) PutValue(v values.Value) stores.Handle {
 	switch v.Kind() {
 	case token.Null:
 		return s.PutNull()
@@ -207,7 +200,7 @@ func (s *Store) PutValue(v stores.Value) stores.Handle {
 	default:
 		assertValidValue(
 			v,
-		) // moved to guards: it is normally not possible to build an invalid stores.Value
+		) // moved to guards: it is normally not possible to build an invalid values.Value
 		return stores.Handle(headerNull)
 	}
 }
@@ -235,71 +228,71 @@ func (s *Store) Reset() {
 	s.options.Reset()
 }
 
-func (s *Store) getInlinedNumber(h stores.Handle) stores.Value {
+func (s *Store) getInlinedNumber(h stores.Handle) values.Value {
 	size, payload := inlined(h)
 	buffer := s.getBuffer(maxInlineBytes + 1)
 
-	return stores.MakeRawValue(token.MakeWithValue(token.Number, unpackBCD(size, payload, buffer)))
+	return values.MakeRawValue(token.MakeWithValue(token.Number, unpackBCD(size, payload, buffer)))
 }
 
-func (s *Store) getInlinedASCII(h stores.Handle) stores.Value {
+func (s *Store) getInlinedASCII(h stores.Handle) values.Value {
 	size, payload := inlined(h) // 7 bytes (0-8 packed characters)
 	// convention: in this case, size is always equal to 8
 	buffer := s.getBuffer(maxInlineBytes + 1)
 
-	return stores.MakeRawValue(
+	return values.MakeRawValue(
 		token.MakeWithValue(token.String, unpackASCII(size, payload, buffer)),
 	)
 }
 
-func (s *Store) getInlinedString(h stores.Handle) stores.Value {
+func (s *Store) getInlinedString(h stores.Handle) values.Value {
 	size, payload := inlined(h) // 0-7 bytes
 	if size == 0 {
-		return stores.EmptyStringValue
+		return values.EmptyStringValue
 	}
 	buffer := s.getBuffer(maxInlineBytes + 1)
 
-	return stores.MakeRawValue(
+	return values.MakeRawValue(
 		token.MakeWithValue(token.String, unpackString(size, payload, buffer)),
 	)
 }
 
-func (s *Store) getLargeNumber(h stores.Handle) stores.Value {
+func (s *Store) getLargeNumber(h stores.Handle) values.Value {
 	size, offset := withOffset(h)
 	assertOffsetInArena(offset, len(s.arena))
 	nibbles := s.arena[offset : offset+size]
 	buffer := s.getBuffer(digitsPerByte * size)
 
-	return stores.MakeRawValue(
+	return values.MakeRawValue(
 		token.MakeWithValue(token.Number, decodeBCDAsNumber(nibbles, buffer)),
 	)
 }
 
-func (s *Store) getLargeString(h stores.Handle, _ ...[]byte) stores.Value {
+func (s *Store) getLargeString(h stores.Handle, _ ...[]byte) values.Value {
 	size, offset := withOffset(h)
 	assertOffsetInArena(offset, len(s.arena))
 	strBytes := s.arena[offset : offset+size]
 
-	return stores.MakeRawValue(token.MakeWithValue(token.String, strBytes))
+	return values.MakeRawValue(token.MakeWithValue(token.String, strBytes))
 }
 
-func (s *Store) getInlinedCompressedString(h stores.Handle) stores.Value {
+func (s *Store) getInlinedCompressedString(h stores.Handle) values.Value {
 	size, payload := inlined(h) // 0-7 bytes
 	var buf [8]byte
 	out := unpackString(size, payload, buf[:])
 	uncompressed := s.uncompressString(out) // if we manage to get there some day, provide buffer
 
-	return stores.MakeRawValue(token.MakeWithValue(token.String, uncompressed))
+	return values.MakeRawValue(token.MakeWithValue(token.String, uncompressed))
 }
 
-func (s *Store) getCompressedString(h stores.Handle) stores.Value {
+func (s *Store) getCompressedString(h stores.Handle) values.Value {
 	size, offset := withOffset(h)
 	assertOffsetInArena(offset, len(s.arena))
 
 	buffer := s.getBuffer(s.uncompressRatioHeuristic(size))
 	uncompressed := s.uncompressString(s.arena[offset:offset+size], buffer)
 
-	return stores.MakeRawValue(token.MakeWithValue(token.String, uncompressed))
+	return values.MakeRawValue(token.MakeWithValue(token.String, uncompressed))
 }
 
 func (s *Store) putNumber(value []byte) stores.Handle {

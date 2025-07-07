@@ -1,4 +1,4 @@
-package stores
+package values
 
 import (
 	"math/big"
@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	// NullValue represents the (unique) value of the null type
+	// NullValue represents the (unique) value of the null type.
 	NullValue = Value{kind: token.Null, z: types.Null}
 
 	// EmptyStringValue represents the (unique) value for the empty string.
@@ -28,7 +28,7 @@ var (
 
 // Value represents a JSON scalar value to be used in a [Store]. It is immutable.
 //
-// [Value] s are used to tie a general purpose value with JSON [types].
+// [Value] s are used to tie a general purpose value type to the more specialized JSON [types].
 //
 // A [Value] may contain either a [types.String], a [types.Number], a [types.Boolean] or a [types.NullType] (i.e. the unique [NullValue]).
 //
@@ -157,7 +157,7 @@ func MakeFloatValue[T conv.Float](value T) Value {
 	}
 }
 
-// MakeBigIntValue builds an integer value from a [big.Int]
+// MakeBigIntValue builds an integer value from a [big.Int].
 func MakeBigIntValue(value *big.Int) Value {
 	return Value{
 		kind: token.Number,
@@ -167,14 +167,13 @@ func MakeBigIntValue(value *big.Int) Value {
 	}
 }
 
-// MakeBigRatValue builds a decimal value from a [big.Rat]
+// MakeBigRatValue builds a decimal value from a [big.Rat].
+//
+// There may be a loss of precision on rational numbers with an infinite decimal representation (e.g. 1/3).
 func MakeBigRatValue(value *big.Rat) Value {
-	return Value{
-		kind: token.Number,
-		n: types.Number{
-			Value: []byte(value.RatString()),
-		},
-	}
+	f, _ := value.Float64()
+
+	return MakeFloatValue(f)
 }
 
 // MakeBigFloatValue builds a decimal value from a [big.Float], without loss of precision.
@@ -202,7 +201,8 @@ func MakeBoolValue(value bool) Value {
 //
 // Passing other JSON tokens, such as delimiters will result in a [NullValue].
 //
-// This assumes that the token has been provided with temporary content and clones the value.
+// This assumes that the token has been provided with temporary content: it clones the token value.
+//
 // See [MakeRawValue] for a version that doesn't clone the content.
 func MakeScalarValue(t token.T) Value {
 	k := t.Kind()

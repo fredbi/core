@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/fredbi/core/json/lexers/token"
-	"github.com/fredbi/core/json/writers"
 )
 
 // code assertions are enforced to check input (handles or values).
@@ -17,13 +16,6 @@ import (
 func assertOffsetInArena(offset, length int) {
 	if offset >= length {
 		panic(fmt.Errorf("out of range offset: %d >= %d: %w", offset, length, ErrStore))
-	}
-}
-
-// assertWriterEnabled verifies that a writer has been configured before calling Write.
-func assertWriterEnabled(writer writers.StoreWriter) {
-	if writer == nil {
-		panic(fmt.Errorf("you must configure a JSON writer with WithWriter(): %w", ErrStore))
 	}
 }
 

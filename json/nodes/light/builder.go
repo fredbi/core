@@ -10,6 +10,7 @@ import (
 	"github.com/fredbi/core/json/nodes"
 	nodecodes "github.com/fredbi/core/json/nodes/error-codes"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 	"github.com/fredbi/core/json/types"
 	"github.com/fredbi/core/swag/conv"
 )
@@ -161,7 +162,7 @@ func (b *Builder) AppendKey(key string, value Node) *Builder {
 	}
 
 	b.ensureIndex()
-	value.key = stores.MakeInternedKey(key)
+	value.key = values.MakeInternedKey(key)
 	if _, ok := b.n.keysIndex[value.key]; ok {
 		b.err = fmt.Errorf(
 			"key is already present in object: %q: %w",
@@ -192,7 +193,7 @@ func (b *Builder) PrependKey(key string, value Node) *Builder {
 	}
 
 	b.ensureIndex()
-	value.key = stores.MakeInternedKey(key)
+	value.key = values.MakeInternedKey(key)
 
 	if _, ok := b.n.keysIndex[value.key]; ok {
 		b.err = fmt.Errorf(
@@ -245,7 +246,7 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 		return b
 	}
 
-	value.key = stores.MakeInternedKey(key)
+	value.key = values.MakeInternedKey(key)
 	b.n.children = slices.Insert(b.n.children, position, value)
 
 	for k, index := range b.n.keysIndex {
@@ -273,7 +274,7 @@ func (b *Builder) RemoveKey(key string) *Builder {
 	}
 
 	b.ensureIndex()
-	k := stores.MakeInternedKey(key)
+	k := values.MakeInternedKey(key)
 	index, ok := b.n.keysIndex[k]
 	if !ok {
 		// key is not present: no error
@@ -406,7 +407,7 @@ func (b *Builder) StringValue(value string) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutValue(stores.MakeStringValue(value))
+	b.n.value = b.s.PutValue(values.MakeStringValue(value))
 
 	return b
 }
@@ -419,7 +420,7 @@ func (b *Builder) BytesValue(value []byte) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutValue(stores.MakeScalarValue(token.MakeWithValue(token.String, value)))
+	b.n.value = b.s.PutValue(values.MakeScalarValue(token.MakeWithValue(token.String, value)))
 
 	return b
 }
@@ -445,7 +446,7 @@ func (b *Builder) NumberValue(value types.Number) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutValue(stores.MakeNumberValue(value))
+	b.n.value = b.s.PutValue(values.MakeNumberValue(value))
 
 	return b
 }
@@ -610,7 +611,7 @@ func (b *Builder) resetNode() {
 
 func (b *Builder) ensureIndex() {
 	if b.n.keysIndex == nil {
-		b.n.keysIndex = make(map[stores.InternedKey]int)
+		b.n.keysIndex = make(map[values.InternedKey]int)
 	}
 
 	if b.n.children == nil {
@@ -627,7 +628,7 @@ func (b *Builder) ensureChildren() {
 func buildFromFloat[T conv.Float](b *Builder, value T) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(stores.MakeFloatValue(value))
+	b.n.value = b.s.PutValue(values.MakeFloatValue(value))
 
 	return b
 }
@@ -635,7 +636,7 @@ func buildFromFloat[T conv.Float](b *Builder, value T) *Builder {
 func buildFromInteger[T conv.Signed](b *Builder, value T) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(stores.MakeIntegerValue(value))
+	b.n.value = b.s.PutValue(values.MakeIntegerValue(value))
 
 	return b
 }
@@ -643,7 +644,7 @@ func buildFromInteger[T conv.Signed](b *Builder, value T) *Builder {
 func buildFromUinteger[T conv.Unsigned](b *Builder, value T) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(stores.MakeUintegerValue(value))
+	b.n.value = b.s.PutValue(values.MakeUintegerValue(value))
 
 	return b
 }
@@ -663,7 +664,7 @@ func buildFromTextAppender(b *Builder, v interface{ AppendText([]byte) ([]byte, 
 
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(stores.MakeNumberValue(types.Number{Value: value}))
+	b.n.value = b.s.PutValue(values.MakeNumberValue(types.Number{Value: value}))
 
 	return b
 }

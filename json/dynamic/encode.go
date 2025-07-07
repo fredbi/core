@@ -7,7 +7,7 @@ import (
 	"github.com/fredbi/core/json/writers"
 )
 
-func (d *JSON) encode(w writers.Writer) {
+func (d *JSON) encode(w writers.JSONWriter) {
 	if !w.Ok() {
 		return
 	}

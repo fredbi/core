@@ -15,7 +15,7 @@ type Option func(*options)
 type options struct {
 	lexerFactory           func([]byte) (lexers.Lexer, func())
 	lexerFromReaderFactory func(io.Reader) (lexers.Lexer, func())
-	writerToWriterFactory  func(io.Writer) (writers.Writer, func())
+	writerToWriterFactory  func(io.Writer) (writers.JSONWriter, func())
 }
 
 func defaultLexerFactory(data []byte) (lexers.Lexer, func()) {
@@ -32,7 +32,7 @@ func defaultLexerFromReaderFactory(r io.Reader) (lexers.Lexer, func()) {
 	return jl, func() { lexer.RedeemLexer(jl) } // TODO: use redeemable lexer to avoid the alloc of the closure
 }
 
-func defaultWriterToWriterFactory(w io.Writer) (writers.Writer, func()) {
+func defaultWriterToWriterFactory(w io.Writer) (writers.JSONWriter, func()) {
 	// using default writer from pool
 	jw := writer.BorrowWriter(w)
 
@@ -76,9 +76,9 @@ func WithLexer(l lexers.Lexer) Option {
 	}
 }
 
-func WithWriter(w writers.Writer) Option {
+func WithWriter(w writers.JSONWriter) Option {
 	return func(o *options) {
-		o.writerToWriterFactory = func(_ io.Writer) (writers.Writer, func()) {
+		o.writerToWriterFactory = func(_ io.Writer) (writers.JSONWriter, func()) {
 			return w, noop
 		}
 	}

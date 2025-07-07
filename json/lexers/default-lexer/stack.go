@@ -131,7 +131,9 @@ func (l *L) popContainer() {
 	stack := l.nestingLevel[len(l.nestingLevel)-1]
 	if stack <= 1 {
 		if len(l.nestingLevel) < 2 {
-			panic("dev error: nestingLevel should be initialized with a single element with value 1")
+			panic(
+				"dev error: nestingLevel should be initialized with a single element with value 1",
+			)
 		}
 
 		l.nestingLevel = l.nestingLevel[:len(l.nestingLevel)-1]

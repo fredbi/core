@@ -10,6 +10,7 @@ import (
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 	"github.com/fredbi/core/json/types"
 )
 
@@ -160,7 +161,7 @@ func testGetPutValue(s stores.Store) func(*testing.T) {
 				assert.Less(t, s.Len(), l+len(str))
 			})
 			t.Run("handle header should be large compressed string", func(t *testing.T) {
-				input := stores.MakeStringValue(str)
+				input := values.MakeStringValue(str)
 				h := s.PutValue(input)
 				assert.Equal(t, stores.Handle(headerCompressedString), h&headerMask)
 			})
@@ -176,7 +177,7 @@ func testGetPutValue(s stores.Store) func(*testing.T) {
 				assert.Less(t, s.Len(), l+len(str))
 			})
 			t.Run("handle header should be large compressed string", func(t *testing.T) {
-				input := stores.MakeStringValue(str)
+				input := values.MakeStringValue(str)
 				h := s.PutValue(input)
 				assert.Equal(t, stores.Handle(headerCompressedString), h&headerMask)
 			})
@@ -199,7 +200,7 @@ func testGetPutValue(s stores.Store) func(*testing.T) {
 				})
 
 				t.Run("handle header should be large compressed string", func(t *testing.T) {
-					input := stores.MakeStringValue(str)
+					input := values.MakeStringValue(str)
 					h := s.PutValue(input)
 					assert.Equal(t, stores.Handle(headerCompressedString), h&headerMask)
 				})
@@ -218,7 +219,7 @@ func testGetPutValue(s stores.Store) func(*testing.T) {
 						assert.Less(t, len(s.arena), l+len(str))
 					})
 					t.Run("handle header should be inlined compressed string", func(t *testing.T) {
-						input := stores.MakeStringValue(str)
+						input := values.MakeStringValue(str)
 						h := s.PutValue(input)
 						assert.Equal(t, stores.Handle(headerInlinedCompressedString), h&headerMask)
 					})
@@ -230,7 +231,7 @@ func testGetPutValue(s stores.Store) func(*testing.T) {
 
 func checkNull(s stores.Store) func(*testing.T) {
 	return func(t *testing.T) {
-		input := stores.NullValue
+		input := values.NullValue
 		h := s.PutValue(input)
 		outcome := s.Get(h)
 		assert.Equal(t, input, outcome)
@@ -242,13 +243,13 @@ func checkNullToken(s stores.Store) func(*testing.T) {
 		input := token.NullToken
 		h := s.PutToken(input)
 		outcome := s.Get(h)
-		assert.Equal(t, stores.NullValue, outcome)
+		assert.Equal(t, values.NullValue, outcome)
 	}
 }
 
 func checkBool(s stores.Store, b bool) func(*testing.T) {
 	return func(t *testing.T) {
-		input := stores.MakeBoolValue(b)
+		input := values.MakeBoolValue(b)
 		h := s.PutValue(input)
 		outcome := s.Get(h)
 		assert.Equal(t, input, outcome)
@@ -260,13 +261,13 @@ func checkBoolToken(s stores.Store, b bool) func(*testing.T) {
 		input := token.MakeBoolean(b)
 		h := s.PutToken(input)
 		outcome := s.Get(h)
-		assert.Equal(t, stores.MakeBoolValue(b), outcome)
+		assert.Equal(t, values.MakeBoolValue(b), outcome)
 	}
 }
 
 func checkNumber(s stores.Store, n string) func(*testing.T) {
 	return func(t *testing.T) {
-		input := stores.MakeNumberValue(types.Number{Value: []byte(n)})
+		input := values.MakeNumberValue(types.Number{Value: []byte(n)})
 		h := s.PutValue(input)
 		require.NotEmpty(t, h)
 		outcome := s.Get(h)
@@ -282,17 +283,17 @@ func checkNumberToken(s stores.Store, n string) func(*testing.T) {
 		require.NotEmpty(t, h)
 		outcome := s.Get(h)
 
-		expected := stores.MakeNumberValue(types.Number{Value: []byte(n)})
+		expected := values.MakeNumberValue(types.Number{Value: []byte(n)})
 		assert.Equal(t, expected, outcome)
 	}
 }
 
 func checkString(s stores.Store, str string) func(*testing.T) {
 	return func(t *testing.T) {
-		input := stores.MakeStringValue(str)
+		input := values.MakeStringValue(str)
 		h := s.PutValue(input)
 		outcome := s.Get(h)
-		expected := stores.MakeStringValue(str)
+		expected := values.MakeStringValue(str)
 		assert.Equal(t, expected, outcome)
 	}
 }
@@ -302,7 +303,7 @@ func checkStringToken(s stores.Store, str string) func(*testing.T) {
 		input := token.MakeWithValue(token.String, []byte(str))
 		h := s.PutToken(input)
 		outcome := s.Get(h)
-		expected := stores.MakeStringValue(str)
+		expected := values.MakeStringValue(str)
 		assert.Equal(t, expected, outcome)
 	}
 }

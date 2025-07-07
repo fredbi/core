@@ -25,10 +25,7 @@ func (l *L) consumeString() token.T {
 			return token.None
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			if l.maxValueBytes > 0 && len(l.currentValue) > l.maxValueBytes {
 				l.err = codes.ErrMaxValueBytes
@@ -62,7 +59,9 @@ func (l *L) consumeString() token.T {
 				}
 
 				if l.expectKey {
-					l.current, l.next = l.expectColon(token.MakeWithValue(token.Key, l.currentValue))
+					l.current, l.next = l.expectColon(
+						token.MakeWithValue(token.Key, l.currentValue),
+					)
 					l.expectKey = false
 
 					return l.current

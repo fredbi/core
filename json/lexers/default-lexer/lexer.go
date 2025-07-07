@@ -148,10 +148,7 @@ func (l *L) NextToken() token.T { //nolint: gocognit
 			return l.errCheck(err)
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			b := l.buffer[l.consumed]
 			l.offset++
@@ -280,7 +277,8 @@ func (l *L) NextToken() token.T { //nolint: gocognit
 					}
 
 					if l.isInArray() {
-						if l.current.Delimiter() != token.OpeningSquareBracket && l.current.Delimiter() != token.Comma {
+						if l.current.Delimiter() != token.OpeningSquareBracket &&
+							l.current.Delimiter() != token.Comma {
 							l.err = codes.ErrMissingComma
 							l.next = token.None
 
@@ -547,10 +545,7 @@ func (l *L) expectColon(current token.T) (token.T, token.T) {
 			return token.None, token.None
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			b = l.buffer[l.consumed]
 			l.consumed++

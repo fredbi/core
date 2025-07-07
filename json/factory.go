@@ -1,6 +1,8 @@
 package json
 
 // DocumentFactory is a factory that produces [Document] s with the same settings.
+//
+// TODO: the idea with a factory is to be able to keep track of all things generated so we may recycle them
 type DocumentFactory struct {
 	options
 }

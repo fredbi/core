@@ -1,10 +1,10 @@
-package stores
+package values
 
 import "unique"
 
-// InternedKey is a JSON key string, interned in memory.
+// InternedKey is a key in a JSON object, interned in memory.
 //
-// The current implementation of [InternedKey] wraps the standard [unique] package.
+// The current implementation of [InternedKey] merely wraps the standard [unique] package.
 // Therefore, interning occurs on global memory.
 type InternedKey struct {
 	unique.Handle[string]

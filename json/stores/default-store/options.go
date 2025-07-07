@@ -3,7 +3,6 @@ package store
 import (
 	"slices"
 
-	"github.com/fredbi/core/json/writers"
 	"github.com/fredbi/core/swag/pools"
 )
 
@@ -19,7 +18,6 @@ type options struct {
 	compressionOptions
 	enableCompression  bool
 	minArenaSize       int
-	writer             writers.StoreWriter
 	bytesFactory       func() []byte
 	pooledBytesFactory func() *pools.Slice[byte]
 }
@@ -39,15 +37,6 @@ func applyOptionsWithDefaults(opts []Option) options {
 	}
 
 	return o
-}
-
-// WithWriter enables the [Store.Write] methods, sending retrieved values directly to the configured [writers.StoreWriter].
-//
-// Using [Store.Write] without this setting will panic.
-func WithWriter(w writers.StoreWriter) Option {
-	return func(o *options) {
-		o.writer = w
-	}
 }
 
 // WithArenaSize sets the initial capacity of the inner arena that stores large values.

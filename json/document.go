@@ -12,6 +12,7 @@ import (
 	"github.com/fredbi/core/json/nodes"
 	"github.com/fredbi/core/json/nodes/light"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 	"github.com/fredbi/core/json/writers"
 )
 
@@ -116,7 +117,8 @@ func (d Document) Context() Context {
 	return Context{Context: d.root.Context()}
 }
 
-func (d Document) Value() (stores.Value, bool) {
+// Value of a scalar document (single node).
+func (d Document) Value() (values.Value, bool) {
 	return d.root.Value(d.store)
 }
 
@@ -272,7 +274,7 @@ func (d *Document) decode(lex lexers.Lexer) error {
 	return lex.Err()
 }
 
-func (d Document) encode(jw writers.Writer) error {
+func (d Document) encode(jw writers.StoreWriter) error {
 	context := light.BorrowParentContext()
 	context.W = jw
 	context.S = d.store
@@ -280,6 +282,12 @@ func (d Document) encode(jw writers.Writer) error {
 
 	d.root.Encode(context)
 	light.RedeemParentContext(context)
+
+	if flusher, ok := jw.(writers.Flusher); ok {
+		if err := flusher.Flush(); err != nil {
+			return err
+		}
+	}
 
 	return jw.Err()
 }

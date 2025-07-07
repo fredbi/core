@@ -14,16 +14,52 @@ import (
 
 type Option func(*options)
 
+func WithStore(s stores.Store) Option {
+	return func(o *options) {
+		o.store = s
+	}
+}
+
+func WithLexer(l lexers.Lexer) Option {
+	return func(o *options) {
+		o.lexerFactory = func(_ []byte) (lexers.Lexer, func()) {
+			return l, noop
+		}
+		o.lexerFromReaderFactory = func(_ io.Reader) (lexers.Lexer, func()) {
+			return l, noop
+		}
+	}
+}
+
+func WithWriter(w writers.StoreWriter) Option {
+	return func(o *options) {
+		o.writerToWriterFactory = func(_ io.Writer) (writers.StoreWriter, func()) {
+			return w, noop
+		}
+	}
+}
+
 type options struct {
 	store                  stores.Store
 	lexerFactory           func([]byte) (lexers.Lexer, func())
 	lexerFromReaderFactory func(io.Reader) (lexers.Lexer, func())
-	//writerFactory          func() (writers.Writer, func())
-	writerToWriterFactory func(io.Writer) (writers.Writer, func())
+	writerToWriterFactory  func(io.Writer) (writers.StoreWriter, func())
 
 	// for light nodes
 	light.DecodeOptions
 	light.EncodeOptions
+}
+
+func (o options) LexerFromReaderFactory() func(io.Reader) (lexers.Lexer, func()) {
+	return o.lexerFromReaderFactory
+}
+
+func (o options) LexerFactory() func([]byte) (lexers.Lexer, func()) {
+	return o.lexerFactory
+}
+
+func (o options) WriterToWriterFactory() func(io.Writer) (writers.StoreWriter, func()) {
+	return o.writerToWriterFactory
 }
 
 func defaultLexerFactory(data []byte) (lexers.Lexer, func()) {
@@ -40,7 +76,7 @@ func defaultLexerFromReaderFactory(r io.Reader) (lexers.Lexer, func()) {
 	return jl, func() { lexer.RedeemLexer(jl) } // TODO: use redeemable lexer to avoid the alloc of the closure
 }
 
-func defaultWriterToWriterFactory(w io.Writer) (writers.Writer, func()) {
+func defaultWriterToWriterFactory(w io.Writer) (writers.StoreWriter, func()) {
 	// using default writer from pool
 	jw := writer.BorrowWriter(w)
 
@@ -73,31 +109,6 @@ func optionsWithDefaults(opts []Option) options {
 	return o
 }
 
-func WithStore(s stores.Store) Option {
-	return func(o *options) {
-		o.store = s
-	}
-}
-
 func noop() {
 	// no operation func
-}
-
-func WithLexer(l lexers.Lexer) Option {
-	return func(o *options) {
-		o.lexerFactory = func(_ []byte) (lexers.Lexer, func()) {
-			return l, noop
-		}
-		o.lexerFromReaderFactory = func(_ io.Reader) (lexers.Lexer, func()) {
-			return l, noop
-		}
-	}
-}
-
-func WithWriter(w writers.Writer) Option {
-	return func(o *options) {
-		o.writerToWriterFactory = func(_ io.Writer) (writers.Writer, func()) {
-			return w, noop
-		}
-	}
 }

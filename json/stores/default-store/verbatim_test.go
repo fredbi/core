@@ -8,6 +8,7 @@ import (
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 )
 
 func TestVerbatimStore(t *testing.T) {
@@ -39,7 +40,7 @@ func testGetPutVerbatimToken(s stores.VerbatimStore) func(*testing.T) {
 func checkBlanks(s stores.VerbatimStore, str string) func(*testing.T) {
 	return func(t *testing.T) {
 		input := []byte(str)
-		expected := stores.MakeStringValue(str)
+		expected := values.MakeStringValue(str)
 		h := s.PutBlanks(input)
 		outcome := s.Get(h)
 		assert.Equal(t, expected, outcome)
@@ -52,10 +53,10 @@ func checkVerbatimToken(s stores.VerbatimStore, str string) func(*testing.T) {
 		input := token.MakeVerbatimBoolean(true, blanks)
 		vh := s.PutVerbatimToken(input)
 		outcomeBlanks := s.Get(vh.Blanks())
-		expectedBlanks := stores.MakeStringValue(str)
+		expectedBlanks := values.MakeStringValue(str)
 		assert.Equal(t, expectedBlanks, outcomeBlanks)
 		outcomeValue := s.Get(vh.Value())
-		expectedValue := stores.MakeBoolValue(true)
+		expectedValue := values.MakeBoolValue(true)
 		assert.Equal(t, expectedValue, outcomeValue)
 	}
 }

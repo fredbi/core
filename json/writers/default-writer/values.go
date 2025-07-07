@@ -2,13 +2,13 @@ package writer
 
 import (
 	"github.com/fredbi/core/json/lexers/token"
-	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 )
 
 func nullToken() []byte { return []byte("null") }
 
-// Value writes a [stores.Value]
-func (w *W) Value(v stores.Value) {
+// Value writes a [values.Value]
+func (w *W) Value(v values.Value) {
 	switch v.Kind() {
 	case token.String:
 		w.StringBytes(v.StringValue().Value)
@@ -35,8 +35,8 @@ func (w *W) Null() {
 	w.err = w.buffer.Err()
 }
 
-// Key write a key [stores.InternedKey] followed by a colon (":").
-func (w *W) Key(key stores.InternedKey) {
+// Key write a key [values.InternedKey] followed by a colon (":").
+func (w *W) Key(key values.InternedKey) {
 	w.String(key.String())
 	w.Colon()
 }

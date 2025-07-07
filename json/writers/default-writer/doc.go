@@ -1,6 +1,6 @@
 // Package writer exposes an implementation of the JSON writer interface [writers.Writer].
 //
-// It knows how to write JSON tokens [token.T] or [token.VT], JSON values [stores.Value] and [stores.InternedKey],
+// It knows how to write JSON tokens [token.T] or [token.VT], JSON values [values.Value] and [values.InternedKey],
 // JSON scalar types ([types.Boolean], [types.String], [types.Number], [types.NullType])
 // or any go scalar value that fits as JSON.
 //

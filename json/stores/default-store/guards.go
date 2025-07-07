@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 )
 
 const (
@@ -120,6 +120,6 @@ func assertBlankHeader(header uint8) {
 }
 
 // assertValidValue verifies that the passed value is legit and not malformed.
-func assertValidValue(v stores.Value) {
+func assertValidValue(v values.Value) {
 	panic(fmt.Errorf("invalid value kind passed to PutValue. Must be a scalar value. Got %v: %w", v.Kind(), ErrStore))
 }

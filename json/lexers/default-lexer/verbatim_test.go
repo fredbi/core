@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/token"
-	"github.com/stretchr/testify/require"
 )
 
 func TestVerbatimExample(t *testing.T) {
@@ -90,7 +91,11 @@ func TestVerbatim(t *testing.T) {
 	t.Logf("last -> %q", tok.Blanks())
 }
 
-func errorDetails(t testing.TB, err error, reporter interface{ ErrInContext() *codes.ErrContext }) string {
+func errorDetails(
+	t testing.TB,
+	err error,
+	reporter interface{ ErrInContext() *codes.ErrContext },
+) string {
 	t.Helper()
 
 	if err == nil {

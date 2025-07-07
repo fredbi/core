@@ -10,6 +10,7 @@ import (
 	"github.com/fredbi/core/json/nodes"
 	nodecodes "github.com/fredbi/core/json/nodes/error-codes"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 )
 
 var nullNode = Node{} //nolint:gochecknoglobals
@@ -33,22 +34,22 @@ var nullNode = Node{} //nolint:gochecknoglobals
 //
 // This makes the [Node] a very compact representation of JSON. However the interface is more complex than the interface of a JSON document.
 type Node struct {
-	keysIndex map[stores.InternedKey]int
-	key       stores.InternedKey
+	keysIndex map[values.InternedKey]int
+	key       values.InternedKey
 	children  []Node
 	value     stores.Handle
 	kind      nodes.Kind
 	ctx       Context
 }
 
-func (n Node) Value(s stores.Store) (stores.Value, bool) {
+func (n Node) Value(s stores.Store) (values.Value, bool) {
 	switch n.kind {
 	case nodes.KindScalar:
 		return s.Get(n.value), true
 	case nodes.KindObject, nodes.KindArray:
 		fallthrough
 	default:
-		return stores.NullValue, false
+		return values.NullValue, false
 	}
 }
 
@@ -66,7 +67,7 @@ func (n Node) AtKey(k string) (Node, bool) {
 		return nullNode, false
 	}
 
-	index, found := n.keysIndex[stores.MakeInternedKey(k)]
+	index, found := n.keysIndex[values.MakeInternedKey(k)]
 
 	if !found {
 		return nullNode, false
@@ -77,7 +78,7 @@ func (n Node) AtKey(k string) (Node, bool) {
 
 // KeyIndex returns the index of a key, or false if not found.
 func (n Node) KeyIndex(k string) (int, bool) {
-	index, found := n.keysIndex[stores.MakeInternedKey(k)]
+	index, found := n.keysIndex[values.MakeInternedKey(k)]
 
 	return index, found
 }
@@ -100,12 +101,12 @@ func (n Node) Key() string {
 }
 
 // Pairs return all (key,Node) pairs inside an object.
-func (n Node) Pairs() iter.Seq2[stores.InternedKey, Node] {
+func (n Node) Pairs() iter.Seq2[values.InternedKey, Node] {
 	if n.kind != nodes.KindObject {
 		return nil
 	}
 
-	return func(yield func(stores.InternedKey, Node) bool) {
+	return func(yield func(values.InternedKey, Node) bool) {
 		for _, pair := range n.children {
 			if !yield(pair.key, pair) {
 				return
@@ -178,7 +179,7 @@ func (n *Node) Decode(ctx *ParentContext) {
 	n.decode(ctx)
 }
 
-// Encode the [Node] hierarchy to a [writers.Writer].
+// Encode the [Node] hierarchy to a [writers.StoreWriter].
 //
 // This consumes the values stored in the provided [stores.Store].
 func (n Node) Encode(ctx *ParentContext) {
@@ -241,7 +242,7 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 	// we want an object, an array or a scalar value
 	switch {
 	case tok.IsStartObject():
-		n.keysIndex = make(map[stores.InternedKey]int)
+		n.keysIndex = make(map[values.InternedKey]int)
 		n.children = make([]Node, 0)
 		n.value = s.PutNull()
 		n.kind = nodes.KindObject
@@ -327,7 +328,7 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 	}
 }
 
-func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[stores.InternedKey, Node] {
+func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, Node] {
 	l := ctx.L
 
 	if !l.Ok() {
@@ -335,7 +336,7 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[stores.InternedKey, No
 		return nil
 	}
 
-	return func(yield func(stores.InternedKey, Node) bool) {
+	return func(yield func(values.InternedKey, Node) bool) {
 		for {
 			tok := l.NextToken()
 			if !l.Ok() {
@@ -352,7 +353,7 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[stores.InternedKey, No
 				return
 			}
 
-			key := stores.MakeInternedKey(string(tok.Value()))
+			key := values.MakeInternedKey(string(tok.Value()))
 
 			tok = l.NextToken() // skip the colon separator following the key
 			if !tok.IsColon() {
@@ -543,7 +544,8 @@ func (n Node) encode(ctx *ParentContext) {
 		w.Null()
 
 	case nodes.KindScalar:
-		w.Value(s.Get(n.value))
+		// short-circuit with s.Write(n.value) (no need to allocate memory to keep the value)
+		s.WriteTo(w, n.value)
 
 	default:
 		w.SetErr(fmt.Errorf("invalid node: %v: %w", n.kind, nodecodes.ErrNode))

@@ -3,6 +3,8 @@ package store
 import (
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
+	"github.com/fredbi/core/json/writers"
 )
 
 var _ stores.VerbatimStore = &VerbatimStore{} // [VerbatimStore] implements [stores.VerbatimStore]
@@ -56,8 +58,8 @@ func (s *VerbatimStore) Reset() {
 	s.blankArena = s.blankArena[:0]
 }
 
-// Get a [stores.Value] from a [stores.Handle].
-func (s *VerbatimStore) Get(h stores.Handle) stores.Value {
+// Get a [values.Value] from a [stores.Handle].
+func (s *VerbatimStore) Get(h stores.Handle) values.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	if header != headerInlinedBlank && header != headerCompressedBlank { // not a blank string
@@ -67,29 +69,28 @@ func (s *VerbatimStore) Get(h stores.Handle) stores.Value {
 	return s.getBlankValue(header, h)
 }
 
-func (s *VerbatimStore) GetVerbatim(h stores.VerbatimHandle) stores.VerbatimValue {
+func (s *VerbatimStore) GetVerbatim(h stores.VerbatimHandle) values.VerbatimValue {
 	blanks := s.Get(h.Blanks())
 	value := s.Get(h.Value())
 
-	return stores.MakeVerbatimValue(blanks.Bytes(), value)
+	return values.MakeVerbatimValue(blanks.Bytes(), value)
 }
 
-func (s *VerbatimStore) Write(h stores.Handle) {
+func (s *VerbatimStore) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 	header := uint8(h & headerMask) //nolint:gosec
-	assertWriterEnabled(s.writer)
 
 	switch header {
 	case headerInlinedBlank:
 		var buffer [maxInlineBlanks]byte
-		s.writer.Raw(s.getInlinedBlanks(h, buffer[:]))
+		writer.Raw(s.getInlinedBlanks(h, buffer[:]))
 	case headerCompressedBlank:
 		size, offset := withOffset(h)
 		assertOffsetInArena(offset, len(s.blankArena))
 		inflater, redeem := s.uncompressStringReader(s.blankArena[offset : offset+size])
-		s.writer.RawCopy(inflater)
+		writer.RawCopy(inflater)
 		redeem()
 	default: // not a blank string
-		s.Store.Write(h)
+		s.Store.WriteTo(writer, h)
 	}
 }
 
@@ -100,7 +101,7 @@ func (s *VerbatimStore) PutVerbatimToken(tok token.VT) stores.VerbatimHandle {
 	return stores.MakeVerbatimHandle(blanks, value)
 }
 
-func (s *VerbatimStore) PutVerbatimValue(v stores.VerbatimValue) stores.VerbatimHandle {
+func (s *VerbatimStore) PutVerbatimValue(v values.VerbatimValue) stores.VerbatimHandle {
 	blanks := s.putBlanks(v.Blanks())
 	value := s.PutValue(v.Value)
 
@@ -111,8 +112,8 @@ func (s *VerbatimStore) PutBlanks(blanks []byte) stores.Handle {
 	return s.putBlanks(blanks)
 }
 
-func (s *VerbatimStore) getBlankValue(header uint8, h stores.Handle) stores.Value {
-	return stores.MakeRawValue(token.MakeWithValue(token.String, s.getBlanks(header, h)))
+func (s *VerbatimStore) getBlankValue(header uint8, h stores.Handle) values.Value {
+	return values.MakeRawValue(token.MakeWithValue(token.String, s.getBlanks(header, h)))
 }
 
 func (s *VerbatimStore) getBlanks(header uint8, h stores.Handle) []byte {

@@ -25,7 +25,7 @@ func (c Context) Offset() uint64 {
 type ParentContext struct {
 	S  stores.Store
 	L  lexers.Lexer
-	W  writers.Writer
+	W  writers.StoreWriter
 	DO DecodeOptions
 	EO EncodeOptions
 	C  *codes.ErrContext

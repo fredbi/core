@@ -52,23 +52,23 @@ type VT struct {
 }
 
 // None is a preallocated placeholder for any invalid or unrecognized JSON token.
-var None = T{
+var None = T{ //nolint:gochecknoglobals
 	kind: Unknown,
 }
 
 // VNone is a preallocated placeholder for any invalid or unrecognized verbatim JSON token.
-var VNone = VT{
+var VNone = VT{ //nolint:gochecknoglobals
 	T: None,
 }
 
 // EOFToken is a preallocated placeholder returned whenever the lexer has reached
 // the end of the input stream.
-var EOFToken = T{
+var EOFToken = T{ //nolint:gochecknoglobals
 	kind: EOF,
 }
 
 // NullToken is a preallocated placeholder for "null" tokens.
-var NullToken = T{
+var NullToken = T{ //nolint:gochecknoglobals
 	kind: Null,
 }
 
@@ -163,7 +163,7 @@ func (d KindDelimiter) String() string {
 
 // IsClosing returns true for closing delimiters such as "}" or "]"
 func (d KindDelimiter) IsClosing() bool {
-	switch d { //nolint:exhaustive
+	switch d {
 	case ClosingBracket, ClosingSquareBracket:
 		return true
 	default:
@@ -180,7 +180,7 @@ func (d KindDelimiter) IsClosing() bool {
 //
 // Notice that {123 or {true are accepted: more context is needed to reject such constructs.
 func (d KindDelimiter) AcceptValue() bool {
-	switch d { //nolint:exhaustive
+	switch d {
 	case OpeningBracket, OpeningSquareBracket, Comma, Colon:
 		return true
 	default:
@@ -223,7 +223,13 @@ func Make(kind Kind, value []byte, delimiter KindDelimiter, valueBool bool) T {
 }
 
 // MakeVerbatim builds a verbatim token [VT].
-func MakeVerbatim(kind Kind, value []byte, delimiter KindDelimiter, valueBool bool, blanks []byte) VT {
+func MakeVerbatim(
+	kind Kind,
+	value []byte,
+	delimiter KindDelimiter,
+	valueBool bool,
+	blanks []byte,
+) VT {
 	return VT{
 		T:      Make(kind, value, delimiter, valueBool),
 		blanks: blanks,

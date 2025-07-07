@@ -11,6 +11,7 @@ import (
 	"go.step.sm/crypto/randutil"
 
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 )
 
 const (
@@ -68,7 +69,7 @@ type fixtureType uint8
 
 type verifyHandle struct {
 	h stores.Handle
-	v stores.Value
+	v values.Value
 }
 
 type testHandlesMap struct {
@@ -81,7 +82,7 @@ func (m *testHandlesMap) Get() verifyHandle {
 	defer m.Unlock()
 
 	if len(m.handles) == 0 {
-		return verifyHandle{stores.Handle(0), stores.NullValue}
+		return verifyHandle{stores.Handle(0), values.NullValue}
 	}
 
 	i := rand.IntN(len(m.handles))
@@ -89,14 +90,14 @@ func (m *testHandlesMap) Get() verifyHandle {
 	return m.handles[i]
 }
 
-func (m *testHandlesMap) Put(h stores.Handle, v stores.Value) {
+func (m *testHandlesMap) Put(h stores.Handle, v values.Value) {
 	m.Lock()
 	defer m.Unlock()
 
 	m.handles = append(m.handles, verifyHandle{h: h, v: v})
 }
 
-func generateValueSample(sampleSize int) [][]stores.Value {
+func generateValueSample(sampleSize int) [][]values.Value {
 	const (
 		maxShortStringSize = 9
 		maxStringSize      = 255
@@ -104,7 +105,7 @@ func generateValueSample(sampleSize int) [][]stores.Value {
 		floatMagnitude     = float64(1_000_000_000_000_000_000_000)
 	)
 
-	sample := make([][]stores.Value, maxTypesInSample)
+	sample := make([][]values.Value, maxTypesInSample)
 
 	sample[sampleShortStrings] = randomStringValues(sampleSize, 1, maxShortStringSize)
 	sample[sampleShortNumbers] = randomUintegerValues(sampleSize, maxShortNumberSize)
@@ -115,8 +116,8 @@ func generateValueSample(sampleSize int) [][]stores.Value {
 	return sample
 }
 
-func randomStringValues(n, minSize, maxSize int) []stores.Value {
-	s := make([]stores.Value, 0, n)
+func randomStringValues(n, minSize, maxSize int) []values.Value {
+	s := make([]values.Value, 0, n)
 
 	for range n {
 		s = append(s, randomStringValue(minSize, maxSize))
@@ -125,8 +126,8 @@ func randomStringValues(n, minSize, maxSize int) []stores.Value {
 	return s
 }
 
-func randomStringValue(minSize, maxSize int) stores.Value {
-	return stores.MakeStringValue(randomString(minSize, maxSize))
+func randomStringValue(minSize, maxSize int) values.Value {
+	return values.MakeStringValue(randomString(minSize, maxSize))
 }
 
 func randomString(minSize, maxSize int) string {
@@ -140,8 +141,8 @@ func randomString(minSize, maxSize int) string {
 	return s
 }
 
-func randomNumberValues(n int, magnitude float64) []stores.Value {
-	s := make([]stores.Value, 0, n)
+func randomNumberValues(n int, magnitude float64) []values.Value {
+	s := make([]values.Value, 0, n)
 
 	for range n {
 		s = append(s, randomNumberValue(magnitude))
@@ -150,8 +151,8 @@ func randomNumberValues(n int, magnitude float64) []stores.Value {
 	return s
 }
 
-func randomNumberValue(magnitude float64) stores.Value {
-	return stores.MakeFloatValue(randomFloat(magnitude))
+func randomNumberValue(magnitude float64) values.Value {
+	return values.MakeFloatValue(randomFloat(magnitude))
 }
 
 func randomFloat(magnitude float64) float64 {
@@ -160,8 +161,8 @@ func randomFloat(magnitude float64) float64 {
 	return f * magnitude
 }
 
-func randomUintegerValues(n int, magnitude uint64) []stores.Value {
-	s := make([]stores.Value, 0, n)
+func randomUintegerValues(n int, magnitude uint64) []values.Value {
+	s := make([]values.Value, 0, n)
 
 	for range n {
 		s = append(s, randomUintegerValue(magnitude))
@@ -170,16 +171,16 @@ func randomUintegerValues(n int, magnitude uint64) []stores.Value {
 	return s
 }
 
-func randomUintegerValue(magnitude uint64) stores.Value {
-	return stores.MakeUintegerValue(randomUint(magnitude))
+func randomUintegerValue(magnitude uint64) values.Value {
+	return values.MakeUintegerValue(randomUint(magnitude))
 }
 
 func randomUint(magnitude uint64) uint64 {
 	return rand.Uint64N(magnitude)
 }
 
-func randomBoolValues(n int) []stores.Value {
-	s := make([]stores.Value, 0, n)
+func randomBoolValues(n int) []values.Value {
+	s := make([]values.Value, 0, n)
 
 	for range n {
 		s = append(s, randomBoolValue())
@@ -188,8 +189,8 @@ func randomBoolValues(n int) []stores.Value {
 	return s
 }
 
-func randomBoolValue() stores.Value {
-	return stores.MakeBoolValue(randomBool())
+func randomBoolValue() values.Value {
+	return values.MakeBoolValue(randomBool())
 }
 
 func randomBool() bool {

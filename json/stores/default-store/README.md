@@ -1,5 +1,18 @@
 # Default JSON store
 
+## Summary
+
+The Default JSON Store is designed to efficiently pack values in memory,
+allowing shared memory for JSON documents and their clones.
+
+When a value is added, a `Handle` (a 64-bit integer) is returned as a reference,
+which can either inline small values or point to larger ones stored in a separate slice.
+
+The store uses various packing methods, including BCD encoding for numbers and DEFLATE compression for large strings.
+
+It also optimizes storage for blank spaces in JSON.
+The store supports serialization for later reuse through gob encoding.
+
 ## Goals
 
 A JSON store aims to pack values in memory so that a JSON document

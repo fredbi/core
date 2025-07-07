@@ -25,7 +25,7 @@
 // # Immutability
 //
 // Another design goal of this package is immutability: all provided objects [Document], [light.Node], [token.Token],
-// [stores.Value] etc are all immutable, and designed to be cheap to clone instead.
+// [values.Value] etc are all immutable, and designed to be cheap to clone instead.
 //
 // Mutating or constructing a JSON [Document] programmatically requires a [Builder] to carry out a series of fluent
 // building methods and produce a modified clone of the original [Document].

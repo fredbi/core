@@ -9,7 +9,7 @@ import (
 //
 // Lexer enforces the JSON grammar, and may ignore non-significant space and transform escaped unicode sequences as UTF8.
 //
-// Notice that NextToken() never returns any error: errors are transfered to the lexer's internal error state.
+// Notice that NextToken() never returns any error: errors are transferred to the lexer's internal error state.
 //
 // The special token [token.EOF] indicates that the end of the input stream has been reached.
 type Lexer interface {
@@ -39,7 +39,7 @@ type Lexer interface {
 //
 // Lexer enforces the JSON grammar, and maintains non-significant space and escaped UTF8 sequences.
 //
-// Notice that NextToken() never returns any error: errors are transfered to the lexer's internal error state.
+// Notice that NextToken() never returns any error: errors are transferred to the lexer's internal error state.
 //
 // The special token [token.EOF] indicates that the end of the input stream has been reached.
 type VerbatimLexer interface {

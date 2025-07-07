@@ -2,7 +2,7 @@
 
 package store
 
-import "github.com/fredbi/core/json/stores"
+import "github.com/fredbi/core/json/stores/values"
 
 // code assertions turned off
 
@@ -22,6 +22,6 @@ func assertOffsetAddressable(_ int)        {}
 func assertVerbatimOnlyBlanks(_ []byte)    {}
 func assertBlankHeader(_ uint8)            {}
 func assertVerbatimIsBlank(_ byte)         {}
-func assertValidValue(_ stores.Value)      {}
+func assertValidValue(_ values.Value)      {}
 
 // func assertInlineASCIIBufferLength(_ []byte) {}

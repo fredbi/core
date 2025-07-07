@@ -50,7 +50,7 @@ func ToJSON(d json.Document, opts ...Option) JSON {
 // TODO
 // Options: specify Store
 func ToDocument(value JSON, opts ...json.Option) (json.Document, error) {
-	b := json.NewBuilder()
+	// TODO b := json.NewBuilder()
 
 	return json.EmptyDocument, errors.New("not imlemented")
 }
@@ -125,7 +125,7 @@ func (d JSON) AppendText(b []byte) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func (d JSON) encodeInner(jw writers.Writer) error {
+func (d JSON) encodeInner(jw writers.JSONWriter) error {
 	d.encode(jw)
 
 	return jw.Err()

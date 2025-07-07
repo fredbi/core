@@ -1,6 +1,9 @@
 package stores
 
-import "github.com/fredbi/core/json/lexers/token"
+import (
+	"github.com/fredbi/core/json/lexers/token"
+	"github.com/fredbi/core/json/stores/values"
+)
 
 // VerbatimStore is like [Store], and supports verbatim tokens [token.VT], [VerbatimHandle] s,
 // and [VerbatimValue] s.
@@ -12,11 +15,7 @@ type VerbatimStore interface {
 	// GetVerbatim returns a [VerbatimValue] given a [VerbatimHandle].
 	//
 	// These are actually pairs of [Handle] s and [Value] s.
-	//
-	// Using [Option], an optional []byte buffer may be provided by the caller to keep control of any possible inner allocations
-	// when creating the returned [Value]. This is useful when the returned [Value] is not intended to be kept and
-	// allows the caller to recycle the provided buffer.
-	GetVerbatim(VerbatimHandle, ...Option) VerbatimValue
+	GetVerbatim(VerbatimHandle) values.VerbatimValue
 
 	// PutVerbatimToken returns a pair of [Handle] s, in the order of appearance in the JSON stream.
 	//
@@ -30,7 +29,7 @@ type VerbatimStore interface {
 	PutVerbatimToken(token.VT) VerbatimHandle
 
 	// Put a [VerbatimValue] and return the inner [VerbatimHandle].
-	PutVerbatimValue(VerbatimValue) VerbatimHandle
+	PutVerbatimValue(values.VerbatimValue) VerbatimHandle
 
 	// PutBlanks returns a [Handle] to a slice of blank characters.
 	//
@@ -67,26 +66,5 @@ func MakeVerbatimHandle(blanks, value Handle) VerbatimHandle {
 	return VerbatimHandle{
 		blanks: blanks,
 		value:  value,
-	}
-}
-
-// VerbatimValue represents a JSON scalar value together with any non-significant blank space
-// that occurred before the value token.
-type VerbatimValue struct {
-	Value
-	blanks []byte
-}
-
-func (v VerbatimValue) Blanks() []byte {
-	return v.blanks
-}
-
-// MakeVerbatimValue builds a [VerbatimValue] from blanks and a [Value].
-//
-// The caller should make sure that the blanks slice only contain legit JSON blank characters (i.e. ' ', '\t', '\n', '\r').
-func MakeVerbatimValue(blanks []byte, value Value) VerbatimValue {
-	return VerbatimValue{
-		Value:  value,
-		blanks: blanks,
 	}
 }

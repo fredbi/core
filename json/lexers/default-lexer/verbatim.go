@@ -93,10 +93,7 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 			return l.errCheck(err)
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			b := l.buffer[l.consumed]
 			l.offset++
@@ -228,7 +225,8 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 					}
 
 					if l.isInArray() {
-						if l.current.Delimiter() != token.OpeningSquareBracket && l.current.Delimiter() != token.Comma {
+						if l.current.Delimiter() != token.OpeningSquareBracket &&
+							l.current.Delimiter() != token.Comma {
 							l.err = codes.ErrMissingComma
 							l.next = token.VNone
 
@@ -438,10 +436,7 @@ func (l *VL) consumeString() token.VT {
 			return token.VNone
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			if l.maxValueBytes > 0 && len(l.currentValue) > l.maxValueBytes {
 				l.err = codes.ErrMaxValueBytes
@@ -475,7 +470,9 @@ func (l *VL) consumeString() token.VT {
 				}
 
 				if l.expectKey {
-					l.current, l.next = l.expectColon(token.MakeVerbatimWithValue(token.Key, l.currentValue, l.blanks))
+					l.current, l.next = l.expectColon(
+						token.MakeVerbatimWithValue(token.Key, l.currentValue, l.blanks),
+					)
 					l.expectKey = false
 
 					return l.current
@@ -587,10 +584,7 @@ NUMBER:
 			return token.VNone, token.VNone
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			if l.maxValueBytes > 0 && len(l.currentValue) > l.maxValueBytes {
 				l.err = codes.ErrMaxValueBytes
@@ -797,10 +791,7 @@ func (l *VL) expectColon(current token.VT) (token.VT, token.VT) {
 			return token.VNone, token.VNone
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			b = l.buffer[l.consumed]
 			l.consumed++
@@ -908,7 +899,10 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 				l.lastStack = l.nestingLevel[len(l.nestingLevel)-1] // save the current stack for the current token
 				l.popContainer()
 
-				return current, token.MakeVerbatimDelimiter(token.ClosingSquareBracket, l.nextBlanks)
+				return current, token.MakeVerbatimDelimiter(
+					token.ClosingSquareBracket,
+					l.nextBlanks,
+				)
 
 			default:
 				l.err = codes.ErrInvalidToken

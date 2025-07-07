@@ -51,10 +51,7 @@ NUMBER:
 			return token.None, token.None
 		}
 
-		for {
-			if l.consumed >= l.bufferized {
-				break
-			}
+		for l.consumed < l.bufferized {
 
 			if l.maxValueBytes > 0 && len(l.currentValue) > l.maxValueBytes {
 				l.err = codes.ErrMaxValueBytes

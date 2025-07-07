@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
 )
 
 func TestGob(t *testing.T) {
@@ -16,7 +16,7 @@ func TestGob(t *testing.T) {
 		WithArenaSize(8192),
 	)
 
-	value := stores.MakeStringValue(strings.Repeat("xyz", 100))
+	value := values.MakeStringValue(strings.Repeat("xyz", 100))
 	h := s.PutValue(value)
 
 	t.Run("should serialize the Store", func(t *testing.T) {

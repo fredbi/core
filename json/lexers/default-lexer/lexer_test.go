@@ -10,10 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	codes "github.com/fredbi/core/json/lexers/error-codes"
-	"github.com/fredbi/core/json/lexers/token"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	codes "github.com/fredbi/core/json/lexers/error-codes"
+	"github.com/fredbi/core/json/lexers/token"
 )
 
 func TestNextToken(t *testing.T) {
@@ -39,7 +40,6 @@ func testNextToken(newLexer func(string) *L) func(*testing.T) {
 					require.Less(t, i, 20)
 				}
 				assert.Equal(t, 18, i)
-
 			})
 
 			t.Run("with array", func(t *testing.T) {
@@ -60,7 +60,9 @@ func testNextToken(newLexer func(string) *L) func(*testing.T) {
 			})
 
 			t.Run("with nested", func(t *testing.T) {
-				lex := newLexer(`{"a": {"x": [1,2,3], "y": [true, false], "z": ["b", 123 , "c", true,  "d", null, {"w": true}]}}`)
+				lex := newLexer(
+					`{"a": {"x": [1,2,3], "y": [true, false], "z": ["b", 123 , "c", true,  "d", null, {"w": true}]}}`,
+				)
 
 				var (
 					token token.T

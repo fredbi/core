@@ -10,7 +10,11 @@ import (
 	"github.com/fredbi/core/json/writers"
 )
 
-var _ writers.Writer = &W{}
+var (
+	_ writers.StoreWriter = &W{}
+	_ writers.JSONWriter  = &W{}
+	_ writers.TokenWriter = &W{}
+)
 
 // W is a JSON writer that implements [writers.Writer].
 //
@@ -108,14 +112,18 @@ func (w *W) AppendText(b []byte) ([]byte, error) {
 //
 // This method yields an error when the writer goes unbuffered.
 func (w *W) Flush() error {
-	if writerTo, ok := w.buffer.(io.WriterTo); ok {
-		_, err := writerTo.WriteTo(w.w)
+	// TODO: separate object type
+	return nil
+	/*
+		if writerTo, ok := w.buffer.(io.WriterTo); ok {
+			_, err := writerTo.WriteTo(w.w)
 
-		return fmt.Errorf("error flushing writer: %w: %w", err, ErrDefaultWriter)
-	}
+			return fmt.Errorf("error flushing writer: %w: %w", err, ErrDefaultWriter)
+		}
 
-	return fmt.Errorf(
-		"Flush is called, but the selected buffer is not compatible: %T: %w",
-		w.buffer, ErrUnsupportedInterface,
-	)
+		return fmt.Errorf(
+			"Flush is called, but the selected buffer is not compatible: %T: %w",
+			w.buffer, ErrUnsupportedInterface,
+		)
+	*/
 }
