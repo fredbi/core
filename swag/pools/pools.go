@@ -16,13 +16,6 @@ type redeemable[T any] struct {
 	redeemer func()
 }
 
-/*
-// Redeemer returns the self-redeeming closure for a previously borrowed T.
-func (r *redeemable[T]) Redeemer() func() {
-	return r.redeemer
-}
-*/
-
 // Pool wraps a [sync.Pool] to make it available for any type.
 type Pool[T any] struct {
 	sync.Pool

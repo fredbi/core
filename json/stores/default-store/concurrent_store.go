@@ -37,11 +37,7 @@ func (s *ConcurrentStore) Len() int {
 }
 
 // Get a [stores.Value] from a [stores.Handle].
-func (s *ConcurrentStore) Get(h stores.Handle, opts ...stores.Option) stores.Value {
-	o := stores.BorrowOptions()
-	defer stores.RedeemOptions(o)
-	o.Apply(opts)
-	buffer := o.Buffer()
+func (s *ConcurrentStore) Get(h stores.Handle) stores.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	switch header {
@@ -52,42 +48,42 @@ func (s *ConcurrentStore) Get(h stores.Handle, opts ...stores.Option) stores.Val
 	case headerTrue:
 		return stores.TrueValue
 	case headerInlinedNumber: // small number inlined
-		return s.getInlinedNumber(h, buffer)
+		return s.getInlinedNumber(h)
 	case headerInlinedASCII: // small ascii string inlined: 8 bytes exactly
-		return s.getInlinedASCII(h, buffer)
+		return s.getInlinedASCII(h)
 	case headerInlinedString: // small string inlined
-		return s.getInlinedString(h, buffer)
+		return s.getInlinedString(h)
 	case headerNumber: // large number
 		s.rwx.RLock()
 		defer s.rwx.RUnlock()
-		return s.getLargeNumber(h, buffer)
+		return s.getLargeNumber(h)
 	case headerString: // large string
 		s.rwx.RLock()
 		defer s.rwx.RUnlock()
-		return s.getLargeString(h, buffer)
+		return s.getLargeString(h)
 	case headerCompressedString: // large compressed string
 		// we get a new reader (from a pool) rather than locking
 		s.rwx.RLock()
 		defer s.rwx.RUnlock()
-		return s.getCompressedString(h, buffer)
+		return s.getCompressedString(h)
 	case headerInlinedCompressedString: // small compressed string
 		s.rwx.RLock()
 		defer s.rwx.RUnlock()
 		// this case is not active: flate's minimum size is 9 bytes
-		return s.getInlinedCompressedString(h, buffer)
+		return s.getInlinedCompressedString(h)
 	default:
 		assertValidHeader(header)
 		return stores.NullValue
 	}
 }
 
-// Write the value pointed to be the [stores.Handle] to a JSON [writers.Writer].
+// Write the value pointed to be the [stores.Handle] to a JSON [writers.StoreWriter].
 //
-// This avoids unnessary allocations just to transfer the value to the writer.
+// This avoids unnessary allocations when transferring the value to the writer.
 //
 // The [ConcurrentStore] must be configured with [WithWriter] beforehand or this function will panic.
 //
-// The [ConcurrentStore] ensures exclusive access to the underlying [stores.Writer].
+// The [ConcurrentStore] ensures exclusive access to the underlying [writers.StoreWriter].
 func (s *ConcurrentStore) Write(h stores.Handle) {
 	s.rwx.Lock()
 	s.Store.Write(h)
@@ -96,7 +92,7 @@ func (s *ConcurrentStore) Write(h stores.Handle) {
 
 // PutToken puts a value inside a [token.T] and returns its [stores.Handle] for later retrieval.
 func (s *ConcurrentStore) PutToken(tok token.T) stores.Handle {
-	switch tok.Kind() { //nolint:exhaustive
+	switch tok.Kind() {
 	case token.Null:
 		return s.PutNull()
 
@@ -117,7 +113,7 @@ func (s *ConcurrentStore) PutToken(tok token.T) stores.Handle {
 
 // PutValue puts a [stores.Value] and returns its [stores.Handle] for later retrieval.
 func (s *ConcurrentStore) PutValue(v stores.Value) stores.Handle {
-	switch v.Kind() { //nolint:exhaustive
+	switch v.Kind() {
 	case token.Null:
 		return s.PutNull()
 

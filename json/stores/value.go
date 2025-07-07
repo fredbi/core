@@ -189,9 +189,10 @@ func MakeBigFloatValue(value *big.Float) Value {
 
 // MakeBoolValue builds a value from a go bool.
 func MakeBoolValue(value bool) Value {
+	var b types.Boolean
 	return Value{
 		kind: token.Boolean,
-		b:    types.Boolean{Value: value},
+		b:    b.With(value),
 	}
 }
 

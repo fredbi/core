@@ -1,6 +1,11 @@
 package store
 
-import "github.com/fredbi/core/json/writers"
+import (
+	"slices"
+
+	"github.com/fredbi/core/json/writers"
+	"github.com/fredbi/core/swag/pools"
+)
 
 const (
 	defaultMinArenaSize      = 4096
@@ -12,9 +17,11 @@ type Option = func(*options)
 
 type options struct {
 	compressionOptions
-	enableCompression bool
-	minArenaSize      int
-	writer            writers.Writer
+	enableCompression  bool
+	minArenaSize       int
+	writer             writers.StoreWriter
+	bytesFactory       func() []byte
+	pooledBytesFactory func() *pools.Slice[byte]
 }
 
 func applyOptionsWithDefaults(opts []Option) options {
@@ -34,10 +41,10 @@ func applyOptionsWithDefaults(opts []Option) options {
 	return o
 }
 
-// WithWriter enables the [Store.Write] methods, sending retrieved values directly to the configured [writers.Writer].
+// WithWriter enables the [Store.Write] methods, sending retrieved values directly to the configured [writers.StoreWriter].
 //
 // Using [Store.Write] without this setting will panic.
-func WithWriter(w writers.Writer) Option {
+func WithWriter(w writers.StoreWriter) Option {
 	return func(o *options) {
 		o.writer = w
 	}
@@ -73,8 +80,42 @@ func WithCompressionOptions(opts ...CompressionOption) Option {
 	}
 }
 
+// WithBytesFactory affects how Get allocates the returned buffer.
+func WithBytesFactory(bytesFactory func() []byte) Option {
+	return func(o *options) {
+		o.bytesFactory = bytesFactory
+	}
+}
+
+func WithPooledBytesFactory(pooledBytesFactory func() *pools.Slice[byte]) Option {
+	return func(o *options) {
+		o.pooledBytesFactory = pooledBytesFactory
+	}
+}
+
+// TODO: SetWriter method to clone existing store with a writer?
+
 func (o *options) Reset() {
 	if o.enableCompression {
 		o.compressionOptions.Reset()
+	}
+}
+
+func (o *options) getBuffer(capacity int) []byte {
+	switch {
+	case o.pooledBytesFactory != nil: // preferred, because the pools.Slice may recycle capacity from previous growths
+		buffer := o.pooledBytesFactory()
+		buffer.Grow(capacity)
+
+		return buffer.Slice()
+
+	case o.bytesFactory != nil:
+		buffer := o.bytesFactory()
+		buffer = slices.Grow(buffer, capacity)
+
+		return buffer[:0]
+
+	default:
+		return make([]byte, 0, capacity)
 	}
 }

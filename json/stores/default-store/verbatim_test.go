@@ -4,9 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestVerbatimStore(t *testing.T) {
@@ -19,7 +20,13 @@ func testGetPutVerbatimValue(s stores.VerbatimStore) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Run("with inlined Blank", checkBlanks(s, "  \t\n\r\n\n"))
 		t.Run("with max inlined Blank", checkBlanks(s, strings.Repeat("\t", maxInlineBlanks)))
-		t.Run("with compressed Blank", checkBlanks(s, strings.Repeat("\t", maxInlineBlanks)+strings.Repeat("\n", maxInlineBlanks)))
+		t.Run(
+			"with compressed Blank",
+			checkBlanks(
+				s,
+				strings.Repeat("\t", maxInlineBlanks)+strings.Repeat("\n", maxInlineBlanks),
+			),
+		)
 	}
 }
 

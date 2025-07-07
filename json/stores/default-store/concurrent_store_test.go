@@ -7,9 +7,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/fredbi/core/json/stores"
 	"github.com/stretchr/testify/assert"
 	"go.step.sm/crypto/randutil"
+
+	"github.com/fredbi/core/json/stores"
 )
 
 const (
@@ -48,13 +49,16 @@ func TestConcurrentStore(t *testing.T) {
 					handles.Put(h, v)
 				})
 
-				t.Run(fmt.Sprintf("[%d] get value from previously picked handle", n), func(*testing.T) {
-					verify := handles.Get()
-					v := s.Get(verify.h)
+				t.Run(
+					fmt.Sprintf("[%d] get value from previously picked handle", n),
+					func(*testing.T) {
+						verify := handles.Get()
+						v := s.Get(verify.h)
 
-					// check the returned value against the original
-					assert.Equal(t, verify.v, v)
-				})
+						// check the returned value against the original
+						assert.Equal(t, verify.v, v)
+					},
+				)
 			})
 		}
 	}

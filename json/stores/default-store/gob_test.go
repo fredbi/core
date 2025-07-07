@@ -4,9 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fredbi/core/json/stores"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/fredbi/core/json/stores"
 )
 
 func TestGob(t *testing.T) {

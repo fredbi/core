@@ -21,7 +21,7 @@ func assertOffsetInArena(offset, length int) {
 }
 
 // assertWriterEnabled verifies that a writer has been configured before calling Write.
-func assertWriterEnabled(writer writers.Writer) {
+func assertWriterEnabled(writer writers.StoreWriter) {
 	if writer == nil {
 		panic(fmt.Errorf("you must configure a JSON writer with WithWriter(): %w", ErrStore))
 	}
@@ -36,5 +36,11 @@ func assertValidHeader(header uint8) {
 
 // assertValidToken verifies that the passed token holds a valid value, i.e. not a delimiter token or EOF.
 func assertValidToken(tok token.T) {
-	panic(fmt.Errorf("invalid token kind passed to PutToken. Must be a scalar value. Got %v: %w", tok.Kind(), ErrStore))
+	panic(
+		fmt.Errorf(
+			"invalid token kind passed to PutToken. Must be a scalar value. Got %v: %w",
+			tok.Kind(),
+			ErrStore,
+		),
+	)
 }

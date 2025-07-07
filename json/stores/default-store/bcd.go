@@ -9,7 +9,7 @@ const (
 	nibbleBits = 4
 )
 
-//nolint:mnd
+//nolint:mnd,gochecknoglobals
 var bcdEncoding = map[byte]byte{
 	'0': 0x0,
 	'1': 0x1,
@@ -27,6 +27,7 @@ var bcdEncoding = map[byte]byte{
 	'-': 0xd,
 }
 
+//nolint:gochecknoglobals
 var bcdDecoding = map[byte]byte{
 	0x0: '0',
 	0x1: '1',

@@ -13,10 +13,8 @@ const HandleZero Handle = 0
 // Resolve this [Handle] against a [Store].
 //
 // This is a shorthand to calling [Store].Get with this [Handle].
-//
-// TODO: should really find another way than option.
-func (h Handle) Resolve(s Store, opts ...Option) Value {
-	return s.Get(h, opts...)
+func (h Handle) Resolve(s Store) Value {
+	return s.Get(h)
 }
 
 // Store is the interface for JSON value stores.
@@ -31,11 +29,10 @@ type Store interface {
 	//
 	// Whenever used in the context of a [VerbatimStore], a [Handle] representing non-significant blank space
 	// returns a string [Value].
-	//
-	// Using [Option], an optional []byte buffer may be provided by the caller to keep control of any possible inner allocations
-	// when creating the returned [Value]. This is useful when the returned [Value] is not intended to be kept and
-	// allows the caller to recycle the provided buffer.
-	Get(Handle, ...Option) Value
+	Get(Handle) Value
+
+	// HasWriter indicates if a [writers.StoreWriter] is configured for this store.
+	HasWriter() bool
 
 	// Write the value pointed to by the [Handle] directly passed to a [writers.Writer].
 	//

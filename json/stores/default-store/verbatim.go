@@ -57,23 +57,19 @@ func (s *VerbatimStore) Reset() {
 }
 
 // Get a [stores.Value] from a [stores.Handle].
-func (s *VerbatimStore) Get(h stores.Handle, opts ...stores.Option) stores.Value {
-	o := stores.BorrowOptions()
-	defer stores.RedeemOptions(o)
-	o.Apply(opts)
-	buffer := o.Buffer()
+func (s *VerbatimStore) Get(h stores.Handle) stores.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	if header != headerInlinedBlank && header != headerCompressedBlank { // not a blank string
-		return s.Store.Get(h, opts...)
+		return s.Store.Get(h)
 	}
 
-	return s.getBlankValue(header, h, buffer)
+	return s.getBlankValue(header, h)
 }
 
-func (s *VerbatimStore) GetVerbatim(h stores.VerbatimHandle, opts ...stores.Option) stores.VerbatimValue {
-	blanks := s.Get(h.Blanks(), opts...)
-	value := s.Get(h.Value(), opts...)
+func (s *VerbatimStore) GetVerbatim(h stores.VerbatimHandle) stores.VerbatimValue {
+	blanks := s.Get(h.Blanks())
+	value := s.Get(h.Value())
 
 	return stores.MakeVerbatimValue(blanks.Bytes(), value)
 }
@@ -115,17 +111,18 @@ func (s *VerbatimStore) PutBlanks(blanks []byte) stores.Handle {
 	return s.putBlanks(blanks)
 }
 
-func (s *VerbatimStore) getBlankValue(header uint8, h stores.Handle, buffer ...[]byte) stores.Value {
-	return stores.MakeRawValue(token.MakeWithValue(token.String, s.getBlanks(header, h, buffer...)))
+func (s *VerbatimStore) getBlankValue(header uint8, h stores.Handle) stores.Value {
+	return stores.MakeRawValue(token.MakeWithValue(token.String, s.getBlanks(header, h)))
 }
 
-func (s *VerbatimStore) getBlanks(header uint8, h stores.Handle, buffer ...[]byte) []byte {
+func (s *VerbatimStore) getBlanks(header uint8, h stores.Handle) []byte {
 	switch header {
 	case headerInlinedBlank:
-		return s.getInlinedBlanks(h, buffer...)
+		buffer := s.getBuffer(maxInlineBlanks)
+		return s.getInlinedBlanks(h, buffer)
 
 	case headerCompressedBlank:
-		return s.getCompressedBlanks(h, buffer...)
+		return s.getCompressedBlanks(h)
 	default:
 		assertBlankHeader(header)
 	}
@@ -143,13 +140,13 @@ func (s *VerbatimStore) putBlanks(blanks []byte) stores.Handle {
 	return s.putCompressedBlanks(blanks)
 }
 
-func (s *VerbatimStore) getInlinedBlanks(h stores.Handle, buffer ...[]byte) []byte {
+func (s *VerbatimStore) getInlinedBlanks(h stores.Handle, buffer []byte) []byte {
 	size, payload := inlinedBlanks(h) // 7 bytes (0-28 packed 2-bit blank signs)
 	if size == 0 {
 		return nil
 	}
 
-	return unpackBlanks(size, payload, buffer...)
+	return unpackBlanks(size, payload, buffer)
 }
 
 func (s *VerbatimStore) putInlinedBlanks(value []byte) stores.Handle {
@@ -158,13 +155,13 @@ func (s *VerbatimStore) putInlinedBlanks(value []byte) stores.Handle {
 	payloadPart := packBlanks(value) << (headerBits + blankBits)
 
 	return stores.Handle(headerPart | sizePart | payloadPart)
-
 }
 
-func (s *VerbatimStore) getCompressedBlanks(h stores.Handle, buffer ...[]byte) []byte {
+func (s *VerbatimStore) getCompressedBlanks(h stores.Handle) []byte {
 	size, offset := withOffset(h)
 	assertOffsetInArena(offset, len(s.blankArena))
-	return s.uncompressString(s.blankArena[offset:offset+size], buffer...)
+	buffer := s.getBuffer(s.uncompressRatioHeuristic(size))
+	return s.uncompressString(s.blankArena[offset:offset+size], buffer)
 }
 
 func (s *VerbatimStore) putCompressedBlanks(value []byte) stores.Handle {

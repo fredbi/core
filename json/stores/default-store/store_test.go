@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
 	"github.com/fredbi/core/json/types"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStores(t *testing.T) {
@@ -311,7 +312,9 @@ func testEdgeCases(s stores.Store) func(*testing.T) {
 		t.Run("with Put", func(t *testing.T) {
 			t.Run("PutToken: providing an invalid token should panic", func(t *testing.T) {
 				assert.Panics(t, func() {
-					s.PutToken(token.MakeDelimiter(token.ClosingBracket)) // invalid token for a value
+					s.PutToken(
+						token.MakeDelimiter(token.ClosingBracket),
+					) // invalid token for a value
 				})
 			})
 		})
@@ -323,9 +326,18 @@ func testEdgeCases(s stores.Store) func(*testing.T) {
 				})
 			})
 
-			t.Run("providing a number handle that refer to an uncharted arena part should panic", testOutOfRangeHandle(s, headerNumber))
-			t.Run("providing a string handle that refer to an uncharted arena part should panic", testOutOfRangeHandle(s, headerString))
-			t.Run("providing a compressed string handle that refer to an uncharted arena part should panic", testOutOfRangeHandle(s, headerCompressedString))
+			t.Run(
+				"providing a number handle that refer to an uncharted arena part should panic",
+				testOutOfRangeHandle(s, headerNumber),
+			)
+			t.Run(
+				"providing a string handle that refer to an uncharted arena part should panic",
+				testOutOfRangeHandle(s, headerString),
+			)
+			t.Run(
+				"providing a compressed string handle that refer to an uncharted arena part should panic",
+				testOutOfRangeHandle(s, headerCompressedString),
+			)
 		})
 	}
 }
@@ -338,7 +350,11 @@ func testOutOfRangeHandle(s stores.Store, headerPart uint8) func(*testing.T) {
 		)
 
 		assert.Panics(t, func() {
-			h := stores.Handle(uint64(headerPart) | (dummySize << headerBits) | (outOfRangeOffset << (headerBits + lengthBits)))
+			h := stores.Handle(
+				uint64(
+					headerPart,
+				) | (dummySize << headerBits) | (outOfRangeOffset << (headerBits + lengthBits)),
+			)
 			_ = s.Get(h)
 		})
 	}

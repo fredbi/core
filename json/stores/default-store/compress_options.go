@@ -11,6 +11,9 @@ const (
 	defaultCompressionThreshold = 128
 	defaultDictSize             = 512
 	defaultCompressionLevel     = flate.DefaultCompression // i.e. level 6
+	stdCompressionLevel         = 6                        // corresponds to the default in compress/flate
+	maxCompressionLevel         = 9
+	minCompressedSize           = 9 // flate never produces compressed strings smaller then 9 bytes
 )
 
 // CompressionOption alter default settings from string compression inside the [Store].
@@ -42,6 +45,13 @@ func applyCompressionOptionsWithDefaults(opts []CompressionOption) compressionOp
 
 	for _, apply := range opts {
 		apply(&o)
+	}
+
+	if o.compressionLevel < 0 {
+		o.compressionLevel = stdCompressionLevel
+	}
+	if o.compressionLevel > maxCompressionLevel {
+		o.compressionLevel = 9
 	}
 
 	if o.cw == nil {
