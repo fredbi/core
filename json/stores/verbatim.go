@@ -8,7 +8,7 @@ import (
 // VerbatimStore is like [Store], and supports verbatim tokens [token.VT], [VerbatimHandle] s,
 // and [VerbatimValue] s.
 //
-// It adds the capability to store separately non-significant blank space strings in a memory-efficient way.
+// It adds the capability to store aside non-significant blank space strings in a memory-efficient way.
 //
 // The [VerbatimStore] may be used to store and reconstruct JSON documents unaltered.
 type VerbatimStore interface {

@@ -1,16 +1,87 @@
 # Default JSON writer
 
+## Performance
+
+* Allocations
+
+* CPU profiling
+  * appendFloatG vs appendFloat
+
+  |   | appendFloatG | appendFloat |
+  |---|--------------|-------------|
+  |w/ | 3668
+  |wo/
+
+
+ go test -v -bench . -run Bench -benchmem -benchtime 30s -cpuprofile=cpu.pprof 
+goos: linux
+goarch: amd64
+pkg: github.com/fredbi/core/json/writers/default-writer
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+BenchmarkProfile
+BenchmarkProfile/with_unbuffered
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values-16         	 9823088	      3662 ns/op	     498 B/op	      10 allocs/op
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values-16      	11984888	      3008 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProfile/with_buffered
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values-16           	10152925	      3491 ns/op	     498 B/op	      10 allocs/op
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values-16        	12769054	      2810 ns/op	       1 B/op	       0 allocs/op
+PASS
+ok  	github.com/fredbi/core/json/writers/default-writer	143.520s
+fred@fred-dev2:~/src/github.com/fredbi/core/json/writers/default-writer$ ppro
+
+
+goos: linux
+goarch: amd64
+pkg: github.com/fredbi/core/json/writers/default-writer
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+BenchmarkProfile
+BenchmarkProfile/with_unbuffered
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values-16         	 9644301	      3668 ns/op	     510 B/op	      10 allocs/op
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values-16      	12169294	      2981 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProfile/with_buffered
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values-16           	10176492	      3479 ns/op	     485 B/op	      10 allocs/op
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values-16        	12731281	      2811 ns/op	       1 B/op	       0 allocs/op
+PASS
+ok  	github.com/fredbi/core/json/writers/default-writer	143.028s
+
+generics.xs
+goos: linux
+goarch: amd64
+pkg: github.com/fredbi/core/json/writers/default-writer
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+BenchmarkProfile
+BenchmarkProfile/with_unbuffered
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values-16         	 9555480	      3703 ns/op	     530 B/op	      10 allocs/op
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values-16      	12313472	      2949 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProfile/with_buffered
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values-16           	10174920	      3497 ns/op	     493 B/op	      10 allocs/op
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values-16        	12660932	      2805 ns/op	       1 B/op	       0 allocs/op
+PASS
+ok  	github.com/fredbi/core/json/writers/default-writer	143.020s
+
 
 ## Background and credits
 
 This JSON writer has been largely inspired by the work from https://github.com/mailru/easyjson.
 
-We've maintained the concept of a writer to proces JSON tokens and escape strings, 
+We've kept the concept of a writer to proces JSON tokens and escape strings, 
 very much like in https://github.com/mailru/easyjson/blob/master/jwriter/writer.go.
 
 However, this implementation introduces a few significant differences:
 
-  * many implementations of [writers.Writer] may be proposed, possibly optimized for different use-cases
+  * several implementations of the writers interfaces may be proposed, possibly optimized for different use-cases
   * unlike the easyjson version, we don't want to support complex types such as objects or arrays, only scalar values
   * this implementation supports the types defined to support JSON et JSON tokens by the other modules exposed
     in [github.com/fredbi/core](https://github.com/fredbi/core)

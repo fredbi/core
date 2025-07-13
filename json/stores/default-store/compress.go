@@ -29,7 +29,7 @@ func compressionRatio(level int) int {
 	case 9:
 		return 12
 	default:
-		return 8
+		return 9
 	}
 }
 

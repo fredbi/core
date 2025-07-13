@@ -105,7 +105,8 @@ func (p *PoolRedeemable[T]) BorrowWithRedeem() (*T, func()) {
 // This is useful to borrow and redeem slices from a pool, without having to constantly manipulate
 // pointers to the slice.
 type Slice[T any] struct {
-	inner []T
+	length int
+	inner  []T
 }
 
 // Slice returns the inner slice.
@@ -118,6 +119,14 @@ func (s *Slice[T]) Grow(size int) []T {
 	s.inner = slices.Grow(s.inner, size)
 
 	return s.inner
+}
+
+func (s *Slice[T]) Len() int {
+	return len(s.inner)
+}
+
+func (s *Slice[T]) Cap() int {
+	return cap(s.inner)
 }
 
 // Append elements to the inner slice.
@@ -150,7 +159,11 @@ func (s *Slice[T]) IndexedElems() iter.Seq2[int, T] {
 
 // Reset the inner slice, but keep allocated memory
 func (s *Slice[T]) Reset() {
-	s.inner = s.inner[:0]
+	if s.length > cap(s.inner) {
+		s.inner = slices.Grow(s.inner, s.length)
+	}
+
+	s.inner = s.inner[:s.length]
 }
 
 // Clip removes unused capacity from the inner slice.
@@ -173,11 +186,21 @@ type PoolSliceOption func(*poolSliceOptions)
 
 type poolSliceOptions struct {
 	minCapacity int
+	length      int
 }
 
 func WithMinimumCapacity(size int) PoolSliceOption {
 	return func(o *poolSliceOptions) {
 		o.minCapacity = size
+	}
+}
+
+// WithLength ensures that the borrowed slices have a fixed given initial length.
+//
+// By default, the borrowed slices are reset to length 0.
+func WithLength(size int) PoolSliceOption {
+	return func(o *poolSliceOptions) {
+		o.length = size
 	}
 }
 
@@ -196,7 +219,8 @@ func NewPoolSlice[T any](opts ...PoolSliceOption) *PoolSlice[T] {
 		New: func() any {
 			s := &redeemable[Slice[T]]{
 				inner: &Slice[T]{
-					inner: make([]T, 0, o.minCapacity),
+					length: o.length,
+					inner:  make([]T, o.length, max(o.length, o.minCapacity)),
 				},
 			}
 
