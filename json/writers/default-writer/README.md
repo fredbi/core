@@ -3,6 +3,13 @@
 ## Performance
 
 * Allocations
+The exposed writers generally amortize all internal allocations.
+
+There is an exception: when writing numerical values using the `Number()` method with types
+from the `math/big` standard library, serialization occurs using their `AppendText` method.
+
+Since `math/big` is not optimized for zero-allocation, there are a few buffered allocated internally by this library.
+
 
 * CPU profiling
   * appendFloatG vs appendFloat
@@ -71,6 +78,38 @@ BenchmarkProfile/with_buffered/writer_profile_without_math/big_values-16        
 PASS
 ok  	github.com/fredbi/core/json/writers/default-writer	143.020s
 
+go test -v -run Bench -bench . -benchtime 10s
+goos: linux
+goarch: amd64
+pkg: github.com/fredbi/core/json/writers/default-writer
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+BenchmarkProfile
+BenchmarkProfile/with_unbuffered
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_with_math/big_values-16         	 3155394	      3808 ns/op	     490 B/op	      10 allocs/op
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_unbuffered/writer_profile_without_math/big_values-16      	 3886904	      3073 ns/op	       4 B/op	       0 allocs/op
+BenchmarkProfile/with_buffered
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_with_math/big_values-16           	 3206721	      3695 ns/op	     473 B/op	      10 allocs/op
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values
+BenchmarkProfile/with_buffered/writer_profile_without_math/big_values-16        	 4148911	      2875 ns/op	       3 B/op	       0 allocs/op
+BenchmarkProfile/with_buffered2
+BenchmarkProfile/with_buffered2/writer_profile_with_math/big_values
+BenchmarkProfile/with_buffered2/writer_profile_with_math/big_values-16          	 3202348	      3722 ns/op	     517 B/op	      10 allocs/op
+BenchmarkProfile/with_buffered2/writer_profile_without_math/big_values
+BenchmarkProfile/with_buffered2/writer_profile_without_math/big_values-16       	 4006818	      2993 ns/op	       3 B/op	       0 allocs/op
+BenchmarkProfile/with_indented
+BenchmarkProfile/with_indented/writer_profile_with_math/big_values
+BenchmarkProfile/with_indented/writer_profile_with_math/big_values-16           	 2620304	      4523 ns/op	     529 B/op	      10 allocs/op
+BenchmarkProfile/with_indented/writer_profile_without_math/big_values
+BenchmarkProfile/with_indented/writer_profile_without_math/big_values-16        	 3112048	      3865 ns/op	      26 B/op	       0 allocs/op
+PASS
+ok  	github.com/fredbi/core/json/writers/default-writer	95.552s
+
+with new writeText
+
+    
 
 ## Background and credits
 

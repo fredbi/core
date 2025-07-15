@@ -462,6 +462,9 @@ func (w *Unbuffered) writeTextString(data string) {
 	writeTextString(w, data)
 }
 
-func (w *Unbuffered) writeText(data []byte) {
+func (w *Unbuffered) writeText(data []byte) []byte {
+	// TODO: change this
 	writeText(w, data)
+
+	return nil
 }

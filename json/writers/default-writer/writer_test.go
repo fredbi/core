@@ -85,7 +85,7 @@ func TestWriter(t *testing.T) {
 		t.Run("should write JSON to io.Writer and need Flush", func(t *testing.T) {
 			var tw bytes.Buffer
 
-			jw := NewIndented(&tw, WithIndent("    "), WithBufferedOptions(WithBufferSize(32)))
+			jw := NewIndented(&tw, WithIndent("    "), WithIndentBufferedOptions(WithBufferSize(32)))
 
 			writeStuff(t, jw, stuff)
 			require.NoError(t, jw.Err())
@@ -93,6 +93,26 @@ func TestWriter(t *testing.T) {
 			// t.Log(tw.String())
 
 			assert.JSONEq(t, expected, tw.String())
+			// TODO: assert indentation...
+
+			t.Run("written bytes should reflect the size of the output", func(t *testing.T) {
+				assert.Equal(t, int64(len(tw.Bytes())), jw.Size())
+			})
+		})
+	})
+
+	t.Run("with yaml", func(t *testing.T) {
+		t.Run("should write JSON to io.Writer and need Flush", func(t *testing.T) {
+			var tw bytes.Buffer
+
+			jw := NewYAML(&tw, WithYAMLIndent("  "), WithYAMLBufferedOptions(WithBufferSize(32)))
+
+			writeStuff(t, jw, stuff)
+			require.NoError(t, jw.Err())
+			require.NoError(t, jw.Flush())
+			t.Log(tw.String())
+
+			// assert.JSONEq(t, expected, tw.String())
 			// TODO: assert indentation...
 
 			t.Run("written bytes should reflect the size of the output", func(t *testing.T) {

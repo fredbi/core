@@ -5,7 +5,6 @@ import (
 )
 
 func escapedBytes(input, output []byte) ([]byte, []byte) {
-	const lowestPrintable = byte(0x20)
 	var (
 		p       int
 		escaped bool

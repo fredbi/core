@@ -490,10 +490,14 @@ func (w *Buffered) writeBinary(data []byte) {
 	}
 }
 
-func (w *Buffered) writeTextString(data string) {
+func (w *Buffered) writeTextString(data string) []byte {
 	writeTextString(w, data)
+
+	return nil
 }
 
-func (w *Buffered) writeText(data []byte) {
+func (w *Buffered) writeText(data []byte) []byte {
 	writeText(w, data)
+
+	return nil
 }

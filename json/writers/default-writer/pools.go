@@ -16,11 +16,16 @@ const (
 var (
 	poolOfUnbuffered        = pools.New[Unbuffered]()
 	poolOfUnbufferedOptions = pools.New[unbufferedOptions]()
-	poolOfBuffered          = pools.New[Buffered]()
-	poolOfBuffered2         = pools.New[Buffered2]()
-	poolOfBufferedOptions   = pools.New[bufferedOptions]()
-	poolOfIndented          = pools.New[Indented]()
-	poolOfIndentedOptions   = pools.New[indentedOptions]()
+
+	poolOfBuffered        = pools.New[Buffered]()
+	poolOfBuffered2       = pools.New[Buffered2]()
+	poolOfBufferedOptions = pools.New[bufferedOptions]()
+
+	poolOfIndented        = pools.New[Indented]()
+	poolOfIndentedOptions = pools.New[indentedOptions]()
+
+	poolOfYAML        = pools.New[YAML]()
+	poolOfYAMLOptions = pools.New[yamlOptions]()
 
 	poolOfNumberBuffers = pools.NewPoolSlice[byte](
 		pools.WithMinimumCapacity(defaultCapacityForNumbers),
@@ -118,4 +123,37 @@ func BorrowIndented(writer io.Writer, opts ...IndentedOption) *Indented {
 func RedeemIndented(w *Indented) {
 	w.redeem() // redeem inner resources
 	poolOfIndented.Redeem(w)
+}
+
+func BorrowYAML(writer io.Writer, opts ...YAMLOption) *YAML {
+	w := poolOfYAML.Borrow()
+	w.yamlOptions = yamlOptionsWithDefaults(opts)
+
+	if w.Buffered2 == nil {
+		// this is a new Indented: we need to borrow the inner Buffered2
+		w.Buffered2 = BorrowBuffered2(writer, w.applyBufferedOptions...)
+		w.redeemBuffered2 = w.Buffered2 // mark for redemption later on
+
+		return w
+	}
+
+	// this is a recycled Indented: we already have a Buffered2, we just need to Reset it
+	w.Buffered2.Reset()
+
+	// now ensure that the recycled Buffered2 got the correct options
+	if w.bufferedOptions == nil {
+		w.bufferedOptions = bufferedOptionsWithDefaults(w.applyBufferedOptions)
+	} else {
+		w.bufferedOptions.updateOptions(w.applyBufferedOptions)
+	}
+
+	// set the new underlying writer for this recycled instance
+	w.w = writer
+
+	return w
+}
+
+func RedeemYAML(w *YAML) {
+	w.redeem() // redeem inner resources
+	poolOfYAML.Redeem(w)
 }

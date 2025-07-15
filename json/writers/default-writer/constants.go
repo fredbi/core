@@ -10,6 +10,7 @@ const (
 	quote                = '"'
 	newline              = '\n'
 	space                = ' '
+	lowestPrintable      = byte(0x20)
 )
 
 var (

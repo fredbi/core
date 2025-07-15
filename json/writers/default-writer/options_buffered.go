@@ -1,6 +1,9 @@
 package writer
 
-const defaultBufferSize = 4096
+const (
+	defaultBufferSize = 4096
+	minBufferSize     = 6
+)
 
 // BufferedOption configures the [Buffered] writer.
 type BufferedOption func(*bufferedOptions)
@@ -8,9 +11,11 @@ type BufferedOption func(*bufferedOptions)
 // WithBufferSize specifies the size in bytes of the write buffer.
 //
 // The default is 4096.
+//
+// The minimum value is 6 bytes.
 func WithBufferSize(size int) BufferedOption {
 	return func(o *bufferedOptions) {
-		o.bufferSize = size
+		o.bufferSize = max(size, minBufferSize)
 	}
 }
 

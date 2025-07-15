@@ -10,7 +10,7 @@ func WithIndent(indent string) IndentedOption {
 	}
 }
 
-func WithBufferedOptions(opts ...BufferedOption) IndentedOption {
+func WithIndentBufferedOptions(opts ...BufferedOption) IndentedOption {
 	return func(o *indentedOptions) {
 		o.applyBufferedOptions = opts
 	}
@@ -35,6 +35,10 @@ func indentedOptionsWithDefaults(opts []IndentedOption) *indentedOptions {
 
 	for _, apply := range opts {
 		apply(o)
+	}
+
+	if len(o.indent) == 0 {
+		o.indent = defaultIndent
 	}
 
 	return o

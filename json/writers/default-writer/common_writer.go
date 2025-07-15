@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/big"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores/values"
@@ -95,7 +96,7 @@ func (w *commonWriter[T]) StringBytes(data []byte) {
 		return
 	}
 
-	w.writeText(data)
+	w.jw.writeText(data)
 }
 
 // StringRunes writes a slice of bytes as a JSON string enclosed by double quotes ('"'), with escaping.
@@ -113,7 +114,7 @@ func (w *commonWriter[T]) StringRunes(data []rune) {
 		buf = utf8.AppendRune(buf, r)
 	}
 
-	w.writeText(buf)
+	w.jw.writeText(buf)
 }
 
 // NumberBytes writes a slice of bytes as a JSON number.
@@ -174,17 +175,11 @@ func (w *commonWriter[T]) StringCopy(r io.Reader) {
 
 	var remainder []byte
 	bufHolder, redeemReadBuffer := poolOfReadBuffers.BorrowWithRedeem()
-	extraBufHolder, redeemExtraBuf := poolOfEscapedBuffers.BorrowWithSizeAndRedeem(bufHolder.Len() + utf8.UTFMax)
-	escapedHolder, redeemEscaped := poolOfEscapedBuffers.BorrowWithSizeAndRedeem(bufHolder.Len())
 	defer func() {
 		redeemReadBuffer()
-		redeemEscaped()
-		redeemExtraBuf()
 	}()
 
 	buf := bufHolder.Slice()
-	escapedBuffer := escapedHolder.Slice()
-	extra := extraBufHolder.Slice()
 
 	for {
 		n, err := r.Read(buf)
@@ -195,44 +190,74 @@ func (w *commonWriter[T]) StringCopy(r io.Reader) {
 		}
 
 		if n > 0 {
-			if len(extra) > 0 {
-				// if the previous read reported an incomplete rune, the incomplete part is prepended to the input now
-				extra = append(extra, buf[:n]...)
-				escapedBuffer, remainder = escapedBytes(extra, escapedBuffer)
-				extra = extra[:0]
-			} else {
-				escapedBuffer, remainder = escapedBytes(buf[:n], escapedBuffer)
-			}
-
-			w.jw.writeBinary(escapedBuffer)
+			remainder = w.jw.writeText(buf[:n])
 			if w.jw.Err() != nil {
 				return
 			}
 
-			if len(remainder) > 0 {
-				if len(remainder) >= utf8.UTFMax {
-					w.jw.SetErr(fmt.Errorf("unexpected incomplete rune: %c: %w", remainder, ErrDefaultWriter))
+			notWritten := len(remainder)
+			if notWritten > 0 {
+				// if the previous read reported an incomplete rune, consume the expected remaining bytes and realign to runes
+				if notWritten > utf8.UTFMax {
+					w.jw.SetErr(fmt.Errorf("unexpected incomplete rune (remainder larger than possible rune): %c : %w", remainder, ErrDefaultWriter))
 
 					return
 				}
 
-				extra = extra[:0]
-				extra = append(extra, remainder...)
+				runeSize := completeRuneSize(remainder[0]) // TODO: check if 0 (invalid)
+				if runeSize == 0 {
+					w.jw.SetErr(fmt.Errorf("unexpected incomplete rune (invalid first byte): %c: %w", remainder, ErrDefaultWriter))
+
+					return
+				}
+
+				var single [utf8.UTFMax]byte
+				copy(single[:], remainder)
+
+				n, err = r.Read(single[notWritten:runeSize])
+				if err != nil && !errors.Is(err, io.EOF) {
+					w.jw.SetErr(err) // TODO: wrap error
+
+					return
+				}
+
+				if n < runeSize-notWritten || (err != nil && errors.Is(err, io.EOF)) {
+					w.jw.SetErr(fmt.Errorf("unexpected incomplete rune at end of input: %c: %w", remainder, ErrDefaultWriter))
+
+					return
+				}
+
+				remainder = w.jw.writeText(single[:n])
+				if w.jw.Err() != nil {
+					return
+				}
+				if len(remainder) > 0 {
+					w.jw.SetErr(fmt.Errorf("unexpected incomplete rune at end of input: %c: %w", remainder, ErrDefaultWriter))
+
+					return
+				}
 			}
 		}
 
 		if n == 0 || (err != nil && errors.Is(err, io.EOF)) {
-			if len(remainder) > 0 {
-				w.jw.SetErr(fmt.Errorf("unexpected incomplete rune at end of input: %c: %w", remainder, ErrDefaultWriter))
-
-				return
-			}
-
 			break
 		}
 	}
 
 	w.jw.writeSingleByte(quote)
+}
+
+func completeRuneSize(c byte) int {
+	switch {
+	case c&0b11110000 > 0:
+		return 4
+	case c&0b11100000 > 0:
+		return 3
+	case c&0b11000000 > 0:
+		return 2
+	default:
+		return 0 // invalid
+	}
 }
 
 // JSONString writes a JSON value of [types.String].
@@ -243,7 +268,7 @@ func (w *commonWriter[T]) JSONString(value types.String) {
 		return
 	}
 
-	w.writeText(value.Value)
+	w.jw.writeText(value.Value)
 }
 
 // JSONNumber writes a JSON value of [types.Number].
@@ -415,7 +440,7 @@ func (w *commonWriter[T]) Token(tok token.T) {
 			// ignore
 		}
 	case token.String, token.Key:
-		w.writeText(tok.Value())
+		w.jw.writeText(tok.Value())
 	case token.Number:
 		w.NumberBytes(tok.Value())
 	case token.Boolean:
@@ -478,34 +503,6 @@ func (w *commonWriter[T]) appendFloat(n *big.Float) {
 }
 
 func (w *commonWriter[T]) writeTextString(input string) {
-	stringBuffer, redeem := poolOfEscapedBuffers.BorrowWithSizeAndRedeem(len(input))
-	defer redeem()
-	data := stringBuffer.Slice()
-	data = append(data, input...)
-
-	w.writeText(data)
-}
-
-func (w *commonWriter[T]) writeText(data []byte) {
-	w.jw.writeSingleByte(quote)
-	if w.jw.Err() != nil {
-		return
-	}
-
-	var remainder []byte
-
-	// TODO: we need something more elaborate here: managing this pool takes more time than escaping the string
-	// possibility: manage a free list of such buffers, so we only have to borrow from the pool ocasionally
-	escapedHolder, redeemEscaped := poolOfEscapedBuffers.BorrowWithSizeAndRedeem(len(data)) // TODO: more elaborate pool
-	escapedBuffer := escapedHolder.Slice()
-	escapedBuffer, remainder = escapedBytes(data, escapedBuffer)
-	w.jw.writeBinary(escapedBuffer)
-	redeemEscaped()
-	if len(remainder) > 0 {
-		w.jw.SetErr(fmt.Errorf("incomplete rune at end of input: %c: %w", remainder, ErrDefaultWriter))
-
-		return
-	}
-
-	w.jw.writeSingleByte(quote)
+	b := unsafe.Slice(unsafe.StringData(input), len(input))
+	w.jw.writeText(b)
 }

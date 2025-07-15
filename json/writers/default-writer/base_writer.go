@@ -54,6 +54,7 @@ func (w *baseWriter) inc(n int) {
 type wrt interface {
 	writeSingleByte(byte)
 	writeBinary([]byte)
+	writeText([]byte) []byte
 	Err() error
 	SetErr(error)
 }
