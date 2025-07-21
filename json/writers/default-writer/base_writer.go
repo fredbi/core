@@ -55,6 +55,7 @@ type wrt interface {
 	writeSingleByte(byte)
 	writeBinary([]byte)
 	writeText([]byte) []byte
+	writeEscaped([]byte) []byte
 	Err() error
 	SetErr(error)
 }
@@ -191,8 +192,7 @@ func writeTextRunesG[T wrt](w T, data []rune) {
 }
 */
 
-func writeText(w wrt, data []byte) {
-	w.writeSingleByte(quote)
+func writeEscaped(w wrt, data []byte) {
 	if w.Err() != nil {
 		return
 	}
@@ -206,10 +206,12 @@ func writeText(w wrt, data []byte) {
 	redeemEscaped()
 	if len(remainder) > 0 {
 		w.SetErr(fmt.Errorf("incomplete rune at end of input: %c: %w", remainder, ErrDefaultWriter))
-
-		return
 	}
 
+}
+func writeText(w wrt, data []byte) {
+	w.writeSingleByte(quote)
+	writeEscaped(w, data)
 	w.writeSingleByte(quote)
 }
 

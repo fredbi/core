@@ -496,6 +496,12 @@ func (w *Buffered) writeTextString(data string) []byte {
 	return nil
 }
 
+func (w *Buffered) writeEscaped(data []byte) []byte {
+	writeEscaped(w, data)
+
+	return nil
+}
+
 func (w *Buffered) writeText(data []byte) []byte {
 	writeText(w, data)
 

@@ -1,6 +1,7 @@
 package writer
 
 import (
+	"fmt"
 	"io"
 	"runtime"
 	"unicode/utf8"
@@ -117,8 +118,20 @@ func (w *buffered2) writeBinary(data []byte) {
 // TODO: rewrite common StringCopy => requires a "needMore" flag in writeText
 func (w *buffered2) writeText(data []byte) (remainder []byte) {
 	w.writeSingleByte(quote)
-	if w.err != nil {
+	remainder = w.writeEscaped(data)
+	if len(remainder) > 0 {
+		w.SetErr(fmt.Errorf("unexpected incomplete rune (invalid first byte): %c: %w", remainder, ErrDefaultWriter))
+
 		return
+	}
+	w.writeSingleByte(quote)
+
+	return remainder
+}
+
+func (w *buffered2) writeEscaped(data []byte) (remainder []byte) {
+	if w.err != nil {
+		return nil
 	}
 
 	var (
@@ -127,6 +140,7 @@ func (w *buffered2) writeText(data []byte) (remainder []byte) {
 	)
 
 	// first iterates over non-escaped bytes.
+	// TODO: imitate easyjson writer and do  it in chunks
 	for ; p < len(data); p++ {
 		c := data[p]
 		if c < lowestPrintable || c >= utf8.RuneSelf || c == '\t' || c == '\r' || c == '\n' || c == '\\' || c == '"' || c == '\b' || c == '\f' {
@@ -142,8 +156,6 @@ func (w *buffered2) writeText(data []byte) (remainder []byte) {
 
 	if !escaped {
 		//  nothing to be escaped: we are done
-		w.writeSingleByte(quote)
-
 		return nil
 	}
 
@@ -157,7 +169,7 @@ func (w *buffered2) writeText(data []byte) (remainder []byte) {
 		available := cap(w.buffer) - len(w.buffer)
 
 		switch {
-		// TODO: compare with table lookup
+		// TODO: compare perf with table lookup
 		case c == '\t':
 			if available < escapedSize {
 				w.flush()
@@ -251,8 +263,6 @@ func (w *buffered2) writeText(data []byte) (remainder []byte) {
 			i += runeWidth - 1
 		}
 	}
-
-	w.writeSingleByte(quote)
 
 	return nil
 }

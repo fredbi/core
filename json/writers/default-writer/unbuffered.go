@@ -462,6 +462,12 @@ func (w *Unbuffered) writeTextString(data string) {
 	writeTextString(w, data)
 }
 
+func (w *Unbuffered) writeEscaped(data []byte) []byte {
+	writeEscaped(w, data)
+
+	return nil
+}
+
 func (w *Unbuffered) writeText(data []byte) []byte {
 	// TODO: change this
 	writeText(w, data)

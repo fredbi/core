@@ -190,7 +190,7 @@ func (w *commonWriter[T]) StringCopy(r io.Reader) {
 		}
 
 		if n > 0 {
-			remainder = w.jw.writeText(buf[:n])
+			remainder = w.jw.writeEscaped(buf[:n])
 			if w.jw.Err() != nil {
 				return
 			}
@@ -227,7 +227,7 @@ func (w *commonWriter[T]) StringCopy(r io.Reader) {
 					return
 				}
 
-				remainder = w.jw.writeText(single[:n])
+				remainder = w.jw.writeEscaped(single[:n])
 				if w.jw.Err() != nil {
 					return
 				}
