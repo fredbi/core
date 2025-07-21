@@ -17,10 +17,10 @@ var (
 )
 
 type Indented struct {
-	*Buffered2
+	*Buffered
 	*indentedOptions
 	level           int
-	redeemBuffered2 *Buffered2 // mark that the Buffered2 must be redeemed
+	redeemBuffered  *Buffered // mark that the Buffered must be redeemed
 	lastSeparator   byte
 	containerOnHold bool
 }
@@ -28,7 +28,7 @@ type Indented struct {
 func NewIndented(w io.Writer, opts ...IndentedOption) *Indented {
 	o := indentedOptionsWithDefaults(opts)
 	writer := &Indented{
-		Buffered2:       NewBuffered2(w, o.applyBufferedOptions...),
+		Buffered:        NewBuffered(w, o.applyBufferedOptions...),
 		indentedOptions: o,
 	}
 
@@ -48,8 +48,8 @@ func (w *Indented) Reset() {
 	w.lastSeparator = 0
 	w.level = 0
 
-	if w.Buffered2 != nil {
-		w.Buffered2.Reset()
+	if w.Buffered != nil {
+		w.Buffered.Reset()
 	}
 
 	if w.indentedOptions != nil {
@@ -60,13 +60,13 @@ func (w *Indented) Reset() {
 func (w *Indented) Flush() error {
 	w.releaseHold(true)
 
-	return w.Buffered2.Flush()
+	return w.Buffered.Flush()
 }
 
 // Comma writes a comma separator, ','.
 func (w *Indented) Comma() {
 	w.releaseHold(true)
-	w.Buffered2.Comma()
+	w.Buffered.Comma()
 	w.writeNewlineIndent()
 	w.lastSeparator = comma
 }
@@ -74,7 +74,7 @@ func (w *Indented) Comma() {
 // Colon writes a colon separator, ':'.
 func (w *Indented) Colon() {
 	w.releaseHold(true)
-	w.Buffered2.Colon()
+	w.Buffered.Colon()
 	w.jw.writeSingleByte(space)
 	w.lastSeparator = colon
 }
@@ -85,7 +85,7 @@ func (w *Indented) EndArray() {
 	if w.containerOnHold {
 		w.releaseHold(w.lastSeparator != openingSquareBracket)
 
-		w.Buffered2.EndArray()
+		w.Buffered.EndArray()
 		w.lastSeparator = closingSquareBracket
 		w.level--
 
@@ -95,7 +95,7 @@ func (w *Indented) EndArray() {
 	// no hold: close array and indent normally
 	w.level--
 	w.writeNewlineIndent()
-	w.Buffered2.EndArray()
+	w.Buffered.EndArray()
 	w.lastSeparator = closingSquareBracket
 }
 
@@ -105,7 +105,7 @@ func (w *Indented) EndObject() {
 	if w.containerOnHold {
 		w.releaseHold(w.lastSeparator != openingBracket)
 
-		w.Buffered2.EndObject()
+		w.Buffered.EndObject()
 		w.lastSeparator = closingBracket
 		w.level--
 
@@ -115,7 +115,7 @@ func (w *Indented) EndObject() {
 	// no hold: close object and indent normally
 	w.level--
 	w.writeNewlineIndent()
-	w.Buffered2.EndObject()
+	w.Buffered.EndObject()
 	w.lastSeparator = closingBracket
 }
 
@@ -145,7 +145,7 @@ func (w *Indented) StartObject() {
 
 func (w *Indented) Key(key values.InternedKey) {
 	w.releaseHold(true)
-	w.Buffered2.String(key.String())
+	w.Buffered.String(key.String())
 	w.Colon()
 }
 
@@ -174,79 +174,93 @@ func (w *Indented) Token(tok token.T) {
 		}
 	default:
 		w.releaseHold(true)
-		w.Buffered2.Token(tok)
+		w.Buffered.Token(tok)
 	}
 }
+
 func (w *Indented) Bool(v bool) {
 	w.releaseHold(true)
-	w.Buffered2.Bool(v)
+	w.Buffered.Bool(v)
 }
+
 func (w *Indented) Raw(data []byte) {
 	w.releaseHold(true)
-	w.Buffered2.Raw(data)
+	w.Buffered.Raw(data)
 }
 
 func (w *Indented) String(s string) {
 	w.releaseHold(true)
-	w.Buffered2.String(s)
+	w.Buffered.String(s)
 }
 
 func (w *Indented) StringBytes(data []byte) {
 	w.releaseHold(true)
-	w.Buffered2.StringBytes(data)
+	w.Buffered.StringBytes(data)
 }
+
 func (w *Indented) StringRunes(data []rune) {
 	w.releaseHold(true)
-	w.Buffered2.StringRunes(data)
+	w.Buffered.StringRunes(data)
 }
+
 func (w *Indented) NumberBytes(data []byte) {
 	w.releaseHold(true)
-	w.Buffered2.NumberBytes(data)
+	w.Buffered.NumberBytes(data)
 }
+
 func (w *Indented) NumberCopy(r io.Reader) {
 	w.releaseHold(true)
-	w.Buffered2.NumberCopy(r)
+	w.Buffered.NumberCopy(r)
 }
+
 func (w *Indented) RawCopy(r io.Reader) {
 	w.releaseHold(true)
-	w.Buffered2.RawCopy(r)
+	w.Buffered.RawCopy(r)
 }
+
 func (w *Indented) StringCopy(r io.Reader) {
 	w.releaseHold(true)
-	w.Buffered2.StringCopy(r)
+	w.Buffered.StringCopy(r)
 }
+
 func (w *Indented) JSONString(value types.String) {
 	w.releaseHold(true)
-	w.Buffered2.JSONString(value)
+	w.Buffered.JSONString(value)
 }
+
 func (w *Indented) JSONNumber(value types.Number) {
 	w.releaseHold(true)
-	w.Buffered2.JSONNumber(value)
+	w.Buffered.JSONNumber(value)
 }
+
 func (w *Indented) JSONBoolean(value types.Boolean) {
 	w.releaseHold(true)
-	w.Buffered2.JSONBoolean(value)
+	w.Buffered.JSONBoolean(value)
 }
+
 func (w *Indented) JSONNull(value types.NullType) {
 	w.releaseHold(true)
-	w.Buffered2.JSONNull(value)
+	w.Buffered.JSONNull(value)
 }
+
 func (w *Indented) Value(v values.Value) {
 	w.releaseHold(true)
-	w.Buffered2.Value(v)
+	w.Buffered.Value(v)
 }
+
 func (w *Indented) Null() {
 	w.releaseHold(true)
-	w.Buffered2.Null()
+	w.Buffered.Null()
 }
+
 func (w *Indented) Number(v any) {
 	w.releaseHold(true)
-	w.Buffered2.Number(v)
+	w.Buffered.Number(v)
 }
 
 func (w *Indented) redeem() {
-	if w.redeemBuffered2 != nil { // this is hydrated when borrowing from a pool and remains nil when created with New
-		RedeemBuffered2(w.redeemBuffered2)
+	if w.redeemBuffered != nil { // this is hydrated when borrowing from a pool and remains nil when created with New
+		RedeemBuffered(w.redeemBuffered)
 	}
 
 	if w.indentedOptions != nil {
@@ -264,9 +278,9 @@ func (w *Indented) releaseHold(wantIndent bool) {
 
 	switch w.lastSeparator {
 	case openingSquareBracket:
-		w.Buffered2.StartArray()
+		w.Buffered.StartArray()
 	case openingBracket:
-		w.Buffered2.StartObject()
+		w.Buffered.StartObject()
 	}
 
 	w.level++

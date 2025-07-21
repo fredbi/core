@@ -47,28 +47,10 @@ func TestWriter(t *testing.T) {
 	})
 
 	t.Run("with buffered", func(t *testing.T) {
-		t.Run("should write JSON to io.Writer and need Flush", func(t *testing.T) {
-			var tw bytes.Buffer
-
-			jw := NewBuffered(&tw, WithBufferSize(32))
-
-			writeStuff(t, jw, stuff)
-			require.NoError(t, jw.Err())
-			require.NoError(t, jw.Flush())
-			// t.Log(tw.String())
-
-			assert.JSONEq(t, expected, tw.String())
-			t.Run("written bytes should reflect the size of the output", func(t *testing.T) {
-				assert.Equal(t, int64(len(tw.Bytes())), jw.Size())
-			})
-		})
-	})
-
-	t.Run("with buffered2", func(t *testing.T) {
 		t.Run("should write JSON to io.Writer", func(t *testing.T) {
 			var tw bytes.Buffer
 
-			jw := NewBuffered2(&tw)
+			jw := NewBuffered(&tw)
 
 			writeStuff(t, jw, stuff)
 			require.NoError(t, jw.Err())
@@ -85,7 +67,11 @@ func TestWriter(t *testing.T) {
 		t.Run("should write JSON to io.Writer and need Flush", func(t *testing.T) {
 			var tw bytes.Buffer
 
-			jw := NewIndented(&tw, WithIndent("    "), WithIndentBufferedOptions(WithBufferSize(32)))
+			jw := NewIndented(
+				&tw,
+				WithIndent("    "),
+				WithIndentBufferedOptions(WithBufferSize(32)),
+			)
 
 			writeStuff(t, jw, stuff)
 			require.NoError(t, jw.Err())
@@ -123,97 +109,26 @@ func TestWriter(t *testing.T) {
 }
 
 func TestWriterPool(t *testing.T) {
-	const epsilon = 1e-6
 	stuff := prepareStuff()
 
 	t.Run("with unbuffered", func(t *testing.T) {
-		var tw bytes.Buffer
+		t.Run("should write JSON straight-through to io.Writer", func(t *testing.T) {
+			var tw bytes.Buffer
 
-		jw := BorrowUnbuffered(&tw)
-		defer func() {
-			RedeemUnbuffered(jw)
-		}()
-		writeStuff(t, jw, stuff)
-		require.NoError(t, jw.Err())
-		assert.JSONEq(t, expected, tw.String())
-		t.Run("written bytes should reflect the size of the output", func(t *testing.T) {
-			assert.Equal(t, int64(len(tw.Bytes())), jw.Size())
-		})
-
-		t.Run("all allocations should be amortized (excluding math/big values)", func(t *testing.T) {
-			allocs := testing.AllocsPerRun(100, func() {
-				tw.Reset()
-				jw := BorrowUnbuffered(&tw)
-				defer func() {
-					RedeemUnbuffered(jw)
-				}()
-				writeStuffWithoutBig(t, jw, stuff)
-				require.NoError(t, jw.Err())
+			jw := BorrowUnbuffered(&tw)
+			defer func() {
+				RedeemUnbuffered(jw)
+			}()
+			writeStuff(t, jw, stuff)
+			require.NoError(t, jw.Err())
+			assert.JSONEq(t, expected, tw.String())
+			t.Run("written bytes should reflect the size of the output", func(t *testing.T) {
+				assert.Equal(t, int64(len(tw.Bytes())), jw.Size())
 			})
-			assert.InDelta(t, 0, allocs, epsilon)
-		})
-
-		t.Run("most but not all allocations should be amortized (including math/big values)", func(t *testing.T) {
-			allocs := testing.AllocsPerRun(100, func() {
-				tw.Reset()
-				jw := BorrowUnbuffered(&tw)
-				defer func() {
-					RedeemUnbuffered(jw)
-				}()
-				writeStuff(t, jw, stuff)
-				require.NoError(t, jw.Err())
-				require.NoError(t, jw.Err())
-			})
-			assert.InDelta(t, 10, allocs, epsilon) // this assertion is sensitive to the math/big package
 		})
 	})
 
-	t.Run("with buffered", func(t *testing.T) {
-		var tw bytes.Buffer
-
-		jw := BorrowBuffered(&tw, WithBufferSize(32))
-		defer func() {
-			RedeemBuffered(jw)
-		}()
-		writeStuff(t, jw, stuff)
-		require.NoError(t, jw.Err())
-		require.NoError(t, jw.Flush())
-		assert.JSONEq(t, expected, tw.String())
-
-		t.Run("written bytes should reflect the size of the output", func(t *testing.T) {
-			assert.Equal(t, int64(len(tw.Bytes())), jw.Size())
-		})
-
-		t.Run("all allocations should be amortized (excluding math/big values)", func(t *testing.T) {
-			allocs := testing.AllocsPerRun(100, func() {
-				tw.Reset()
-				jw := BorrowBuffered(&tw, WithBufferSize(32))
-				defer func() {
-					RedeemBuffered(jw)
-				}()
-				writeStuffWithoutBig(t, jw, stuff)
-				require.NoError(t, jw.Err())
-				require.NoError(t, jw.Flush())
-			})
-			assert.InDelta(t, 0, allocs, epsilon)
-		})
-
-		t.Run("most but not all allocations should be amortized (including math/big values)", func(t *testing.T) {
-			allocs := testing.AllocsPerRun(100, func() {
-				tw.Reset()
-				jw := BorrowBuffered(&tw, WithBufferSize(32))
-				defer func() {
-					RedeemBuffered(jw)
-				}()
-				writeStuff(t, jw, stuff)
-				require.NoError(t, jw.Err())
-				require.NoError(t, jw.Flush())
-			})
-			assert.InDelta(t, 10, allocs, epsilon)
-		})
-	})
-
-	t.Run("with pooled buffered2", func(t *testing.T) {
+	t.Run("with pooled buffered", func(t *testing.T) {
 		t.Run("should write JSON straight-through to io.Writer", func(t *testing.T) {
 			var tw bytes.Buffer
 
@@ -225,34 +140,6 @@ func TestWriterPool(t *testing.T) {
 			assert.JSONEq(t, expected, tw.String())
 			t.Run("written bytes should reflect the size of the output", func(t *testing.T) {
 				assert.Equal(t, int64(len(tw.Bytes())), jw.Size())
-			})
-
-			t.Run("all allocations should be amortized (excluding math/big values)", func(t *testing.T) {
-				allocs := testing.AllocsPerRun(10000, func() {
-					tw.Reset()
-					jw := BorrowBuffered2(&tw)
-					defer func() {
-						RedeemBuffered2(jw)
-					}()
-					writeStuffWithoutBig(t, jw, stuff)
-					require.NoError(t, jw.Err())
-					require.NoError(t, jw.Flush())
-				})
-				assert.InDelta(t, 0, allocs, epsilon)
-			})
-
-			t.Run("most but not all allocations should be amortized (including math/big values)", func(t *testing.T) {
-				allocs := testing.AllocsPerRun(100, func() {
-					tw.Reset()
-					jw := BorrowBuffered2(&tw)
-					defer func() {
-						RedeemBuffered2(jw)
-					}()
-					writeStuff(t, jw, stuff)
-					require.NoError(t, jw.Err())
-					require.NoError(t, jw.Flush())
-				})
-				assert.InDelta(t, 10, allocs, epsilon) // this assertion is sensitive to the math/big package
 			})
 		})
 	})
@@ -271,34 +158,6 @@ func TestWriterPool(t *testing.T) {
 			assert.JSONEq(t, expected, tw.String())
 			t.Run("written bytes should reflect the size of the output", func(t *testing.T) {
 				assert.Equal(t, int64(len(tw.Bytes())), jw.Size())
-			})
-
-			t.Run("all allocations should be amortized (excluding math/big values)", func(t *testing.T) {
-				allocs := testing.AllocsPerRun(10000, func() {
-					tw.Reset()
-					jw := BorrowIndented(&tw)
-					defer func() {
-						RedeemIndented(jw)
-					}()
-					writeStuffWithoutBig(t, jw, stuff)
-					require.NoError(t, jw.Err())
-					require.NoError(t, jw.Flush())
-				})
-				assert.InDelta(t, 0, allocs, epsilon)
-			})
-
-			t.Run("most but not all allocations should be amortized (including math/big values)", func(t *testing.T) {
-				allocs := testing.AllocsPerRun(100, func() {
-					tw.Reset()
-					jw := BorrowIndented(&tw)
-					defer func() {
-						RedeemIndented(jw)
-					}()
-					writeStuff(t, jw, stuff)
-					require.NoError(t, jw.Err())
-					require.NoError(t, jw.Flush())
-				})
-				assert.InDelta(t, 10, allocs, epsilon) // this assertion is sensitive to the math/big package
 			})
 		})
 	})
@@ -361,36 +220,6 @@ func BenchmarkProfile(b *testing.B) {
 				writeStuffWithoutBig(b, jw, stuff)
 				_ = jw.Flush()
 				RedeemBuffered(jw)
-			}
-		})
-	})
-
-	b.Run("with buffered2", func(b *testing.B) {
-		b.Run("writer profile with math/big values", func(b *testing.B) {
-			var tw bytes.Buffer
-			b.ReportAllocs()
-			b.ResetTimer()
-
-			for b.Loop() {
-				tw.Reset()
-				jw := BorrowBuffered2(&tw)
-				writeStuff(b, jw, stuff)
-				_ = jw.Flush()
-				RedeemBuffered2(jw)
-			}
-		})
-
-		b.Run("writer profile without math/big values", func(b *testing.B) {
-			var tw bytes.Buffer
-			b.ReportAllocs()
-			b.ResetTimer()
-
-			for b.Loop() {
-				tw.Reset()
-				jw := BorrowBuffered2(&tw)
-				writeStuffWithoutBig(b, jw, stuff)
-				_ = jw.Flush()
-				RedeemBuffered2(jw)
 			}
 		})
 	})
@@ -516,6 +345,14 @@ func prepareStuff() testValues {
 }
 
 func writeStuff(t testing.TB, jw fullWriter, stuff testValues) {
+	writeStuffWithSelector(t, jw, stuff, true)
+}
+
+func writeStuffWithoutBig(t testing.TB, jw fullWriter, stuff testValues) {
+	writeStuffWithSelector(t, jw, stuff, false)
+}
+
+func writeStuffWithSelector(t testing.TB, jw fullWriter, stuff testValues, withMathBig bool) {
 	// TODO: uint8, uint32, uint64, int8, int16, int32, []byte, values from math/big (not pointers)
 	// TODO: verbatim token, verbatim value
 	jw.StartObject()
@@ -537,122 +374,27 @@ func writeStuff(t testing.TB, jw fullWriter, stuff testValues) {
 	// native numbers
 	jw.Number(stuff.Numbers["number2"])
 	jw.Comma()
-	jw.Number(stuff.Numbers["number3"])
+	if withMathBig {
+		jw.Number(stuff.Numbers["number3"])
+	} else {
+		jw.Number(stuff.Numbers["number3nobig"])
+	}
 	jw.Comma()
 	jw.Number(stuff.Numbers["number4"])
 	jw.Comma()
 	jw.Number(stuff.Numbers["number5"])
 	jw.Comma()
-	jw.Number(stuff.Numbers["number6"])
+	if withMathBig {
+		jw.Number(stuff.Numbers["number6"])
+	} else {
+		jw.Number(stuff.Numbers["number6nobig"])
+	}
 	jw.Comma()
-	jw.Number(stuff.Numbers["number7"])
-	jw.EndArray()
-	jw.Comma()
-	// native strings
-	jw.StringBytes(stuff.Bytes["string3"])
-	jw.Colon()
-	jw.StartArray()
-	jw.String(stuff.Strings["string4"])
-	jw.Comma()
-	jw.StringBytes(stuff.Bytes["string5"])
-	jw.Comma()
-	jw.StringRunes(stuff.Runes["string6"])
-	jw.EndArray()
-	jw.Comma()
-	jw.Key(stuff.Keys["key2"])
-	// readers
-	jw.StartArray()
-	jw.StringCopy(stuff.Readers["reader1"]())
-	require.NoError(t, jw.Err())
-	jw.Comma()
-	jw.NumberCopy(stuff.Readers["reader2"]())
-	require.NoError(t, jw.Err())
-	jw.EndArray()
-	jw.Comma()
-	// native
-	jw.Key(stuff.Keys["key3"])
-	jw.Bool(true)
-	jw.Comma()
-	jw.Key(stuff.Keys["key4"])
-	jw.Null()
-	jw.Comma()
-	jw.Key(stuff.Keys["key5"])
-	// json types
-	jw.StartArray()
-	jw.JSONNull(types.Null)
-	jw.Comma()
-	jw.JSONBoolean(stuff.JSONBools["jsonbool"])
-	jw.Comma()
-	jw.JSONString(stuff.JSONStrings["jsonstring"])
-	jw.Comma()
-	jw.JSONNumber(stuff.JSONNumbers["jsonnumber"])
-	jw.EndArray()
-	jw.Comma()
-	jw.Key(stuff.Keys["key6"])
-	jw.Raw(stuff.Bytes["raw1"])
-	jw.Comma()
-	jw.Key(stuff.Keys["key7"])
-	jw.StartArray()
-	jw.Token(stuff.Tokens["tokenBool"])
-	jw.Token(stuff.Tokens["tokenComma"])
-	jw.Token(stuff.Tokens["tokenNumber1"])
-	jw.Token(stuff.Tokens["tokenComma"])
-	jw.Token(stuff.Tokens["tokenString1"])
-	jw.Token(stuff.Tokens["tokenComma"])
-	jw.Token(stuff.Tokens["tokenOpeningBracket"])
-	jw.Token(stuff.Tokens["tokenKey1"])
-	jw.Token(stuff.Tokens["tokenColon"])
-	jw.Token(stuff.Tokens["tokenOpeningSquareBracket"])
-	jw.Token(token.NullToken)
-	jw.Token(stuff.Tokens["tokenComma"])
-	jw.Token(stuff.Tokens["tokenOpeningBracket"])
-	jw.Token(stuff.Tokens["tokenKey2"])
-	jw.Token(stuff.Tokens["tokenColon"])
-	jw.Token(stuff.Tokens["tokenOpeningBracket"])
-	jw.Token(stuff.Tokens["tokenClosingBracket"])
-	jw.Token(stuff.Tokens["tokenComma"])
-	jw.Token(stuff.Tokens["tokenKey3"])
-	jw.Token(stuff.Tokens["tokenColon"])
-	jw.Token(stuff.Tokens["tokenOpeningSquareBracket"])
-	jw.Token(stuff.Tokens["tokenClosingSquareBracket"])
-	jw.Token(stuff.Tokens["tokenClosingBracket"])
-	jw.Token(stuff.Tokens["tokenClosingSquareBracket"])
-	jw.Token(stuff.Tokens["tokenClosingBracket"])
-	jw.EndArray()
-	jw.EndObject()
-
-	require.True(t, jw.Ok())
-}
-
-func writeStuffWithoutBig(t testing.TB, jw fullWriter, stuff testValues) {
-	jw.StartObject()
-	// stores
-	jw.Key(stuff.Keys["key1"])
-	jw.StartArray()
-	jw.Value(stuff.Values["string1"])
-	jw.Comma()
-	jw.Value(stuff.Values["bool1"])
-	jw.Comma()
-	jw.Value(stuff.Values["number1"])
-	jw.Comma()
-	jw.Value(values.NullValue)
-	jw.EndArray()
-	jw.Comma()
-	jw.String(stuff.Strings["string2"])
-	jw.Colon()
-	jw.StartArray()
-	// native numbers
-	jw.Number(stuff.Numbers["number2"])
-	jw.Comma()
-	jw.Number(stuff.Numbers["number3nobig"])
-	jw.Comma()
-	jw.Number(stuff.Numbers["number4"])
-	jw.Comma()
-	jw.Number(stuff.Numbers["number5"])
-	jw.Comma()
-	jw.Number(stuff.Numbers["number6nobig"])
-	jw.Comma()
-	jw.Number(stuff.Numbers["number7nobig"])
+	if withMathBig {
+		jw.Number(stuff.Numbers["number7"])
+	} else {
+		jw.Number(stuff.Numbers["number7nobig"])
+	}
 	jw.EndArray()
 	jw.Comma()
 	// native strings

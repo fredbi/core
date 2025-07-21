@@ -21,15 +21,13 @@ const (
 	yamlElement = '-'
 )
 
-var yamlElementPrefix = []byte{yamlElement, space}
-
 // TODO: optionally add yaml doc separator "---"
 // TODO: text escaping rules
 type YAML struct {
-	*Buffered2
+	*Buffered
 	*yamlOptions
 	level           int
-	redeemBuffered2 *Buffered2 // mark that the Buffered2 must be redeemed
+	redeemBuffered  *Buffered // mark that the Buffered must be redeemed
 	lastSeparator   byte
 	containerOnHold bool
 
@@ -40,7 +38,7 @@ type YAML struct {
 func NewYAML(w io.Writer, opts ...YAMLOption) *YAML {
 	o := yamlOptionsWithDefaults(opts)
 	writer := &YAML{
-		Buffered2:    NewBuffered2(w, o.applyBufferedOptions...),
+		Buffered:     NewBuffered(w, o.applyBufferedOptions...),
 		yamlOptions:  o,
 		nestingLevel: make([]uint64, 1),
 	}
@@ -65,8 +63,8 @@ func (w *YAML) Reset() {
 	w.nestingLevel[0] = 1
 	w.lastStack = 0
 
-	if w.Buffered2 != nil {
-		w.Buffered2.Reset()
+	if w.Buffered != nil {
+		w.Buffered.Reset()
 	}
 
 	if w.yamlOptions != nil {
@@ -77,7 +75,7 @@ func (w *YAML) Reset() {
 func (w *YAML) Flush() error {
 	w.releaseHold(true)
 
-	return w.Buffered2.Flush()
+	return w.Buffered.Flush()
 }
 
 // Comma writes a comma separator, ','.
@@ -93,7 +91,7 @@ func (w *YAML) Comma() {
 // Colon writes a colon separator, ':'.
 func (w *YAML) Colon() {
 	w.releaseHold(true)
-	w.Buffered2.Colon()
+	w.Buffered.Colon()
 	w.jw.writeSingleByte(space)
 	w.lastSeparator = colon
 }
@@ -103,7 +101,7 @@ func (w *YAML) EndArray() {
 	// if the previous written was [, do not indent on empty array
 	if w.containerOnHold {
 		w.releaseHold(w.lastSeparator != openingSquareBracket)
-		w.Buffered2.EndArray()
+		w.Buffered.EndArray()
 
 		w.level--
 		w.lastSeparator = closingSquareBracket
@@ -127,7 +125,7 @@ func (w *YAML) EndObject() {
 	// if the previous written was {, do not indent on empty object
 	if w.containerOnHold {
 		w.releaseHold(w.lastSeparator != openingBracket)
-		w.Buffered2.EndObject()
+		w.Buffered.EndObject()
 
 		w.level--
 		w.lastSeparator = closingBracket
@@ -178,7 +176,7 @@ func (w *YAML) StartObject() {
 func (w *YAML) Key(key values.InternedKey) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.String(key.String())
+	w.Buffered.String(key.String())
 	w.Colon()
 }
 
@@ -208,74 +206,86 @@ func (w *YAML) Token(tok token.T) {
 	default:
 		w.releaseHold(true)
 		w.yamlCheckIsElement()
-		w.Buffered2.Token(tok)
+		w.Buffered.Token(tok)
 	}
 }
+
 func (w *YAML) Bool(v bool) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.Bool(v)
+	w.Buffered.Bool(v)
 }
+
 func (w *YAML) Raw(data []byte) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.Raw(data)
+	w.Buffered.Raw(data)
 }
 
 func (w *YAML) String(s string) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.String(s)
+	w.Buffered.String(s)
 }
 
 func (w *YAML) StringBytes(data []byte) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.StringBytes(data)
+	w.Buffered.StringBytes(data)
 }
+
 func (w *YAML) StringRunes(data []rune) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.StringRunes(data)
+	w.Buffered.StringRunes(data)
 }
+
 func (w *YAML) NumberBytes(data []byte) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.NumberBytes(data)
+	w.Buffered.NumberBytes(data)
 }
+
 func (w *YAML) NumberCopy(r io.Reader) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.NumberCopy(r)
+	w.Buffered.NumberCopy(r)
 }
+
 func (w *YAML) RawCopy(r io.Reader) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.RawCopy(r)
+	w.Buffered.RawCopy(r)
 }
+
 func (w *YAML) StringCopy(r io.Reader) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.StringCopy(r)
+	w.Buffered.StringCopy(r)
 }
+
 func (w *YAML) JSONString(value types.String) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.JSONString(value)
+	w.Buffered.JSONString(value)
 }
+
 func (w *YAML) JSONNumber(value types.Number) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.JSONNumber(value)
+	w.Buffered.JSONNumber(value)
 }
+
 func (w *YAML) JSONBoolean(value types.Boolean) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.JSONBoolean(value)
+	w.Buffered.JSONBoolean(value)
 }
+
 func (w *YAML) JSONNull(_ types.NullType) {
 	w.Null()
 }
+
 func (w *YAML) Value(v values.Value) {
 	if v.Kind() == token.Null {
 		w.Null()
@@ -285,8 +295,9 @@ func (w *YAML) Value(v values.Value) {
 
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.Value(v)
+	w.Buffered.Value(v)
 }
+
 func (w *YAML) Null() {
 	if !w.jw.Ok() {
 		return
@@ -300,12 +311,12 @@ func (w *YAML) Null() {
 func (w *YAML) Number(v any) {
 	w.releaseHold(true)
 	w.yamlCheckIsElement()
-	w.Buffered2.Number(v)
+	w.Buffered.Number(v)
 }
 
 func (w *YAML) redeem() {
-	if w.redeemBuffered2 != nil { // this is hydrated when borrowing from a pool and remains nil when created with New
-		RedeemBuffered2(w.redeemBuffered2)
+	if w.redeemBuffered != nil { // this is hydrated when borrowing from a pool and remains nil when created with New
+		RedeemBuffered(w.redeemBuffered)
 	}
 
 	if w.yamlOptions != nil {
@@ -335,9 +346,9 @@ func (w *YAML) releaseHold(wantIndent bool) {
 		// in YAML output, write [] or {} only for empty containers
 		switch w.lastSeparator {
 		case openingSquareBracket:
-			w.Buffered2.StartArray()
+			w.Buffered.StartArray()
 		case openingBracket:
-			w.Buffered2.StartObject()
+			w.Buffered.StartObject()
 		}
 
 		w.level++

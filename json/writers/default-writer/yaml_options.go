@@ -1,6 +1,9 @@
 package writer
 
-var defaultYAMLIndent = []byte("  ")
+var (
+	defaultYAMLIndent = []byte("  ")               //nolint:gochecknoglobals
+	yamlElementPrefix = []byte{yamlElement, space} //nolint:gochecknoglobals
+)
 
 type YAMLOption func(*yamlOptions)
 

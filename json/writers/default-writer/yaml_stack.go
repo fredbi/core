@@ -11,11 +11,13 @@ const (
 	stackScale    = 63 // 2^8-1
 )
 
+/*
 func (w *YAML) isInObject() bool {
 	stack := w.nestingLevel[len(w.nestingLevel)-1]
 
 	return stack > 1 && (stack&1 == 0)
 }
+*/
 
 func (w *YAML) isInArray() bool {
 	stack := w.nestingLevel[len(w.nestingLevel)-1]
@@ -23,6 +25,7 @@ func (w *YAML) isInArray() bool {
 	return stack > 1 && (stack&1 == 1)
 }
 
+/*
 func (w *YAML) isInContainer() bool {
 	if len(w.nestingLevel) > 1 {
 		return true
@@ -32,6 +35,7 @@ func (w *YAML) isInContainer() bool {
 
 	return stack > 1
 }
+*/
 
 // IndentLevel yields the current depth of the container stack.
 //
@@ -80,7 +84,7 @@ func (w *YAML) pushArray() {
 func (w *YAML) popContainer() {
 	stack := w.nestingLevel[len(w.nestingLevel)-1]
 	if stack <= 1 {
-		if len(w.nestingLevel) < 2 {
+		if len(w.nestingLevel) <= 1 {
 			panic(
 				"dev error: nestingLevel should be initialized with a single element with value 1",
 			)

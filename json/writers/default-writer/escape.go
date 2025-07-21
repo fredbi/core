@@ -14,7 +14,11 @@ func escapedBytes(input, output []byte) ([]byte, []byte) {
 	// first iterates over non-escaped bytes.
 	for ; p < len(input); p++ {
 		c := input[p]
-		if c < lowestPrintable || c >= utf8.RuneSelf || c == '\t' || c == '\r' || c == '\n' || c == '\\' || c == '"' || c == '\b' || c == '\f' {
+		if c < lowestPrintable || c >= utf8.RuneSelf || c == '\t' || c == '\r' || c == '\n' ||
+			c == '\\' ||
+			c == '"' ||
+			c == '\b' ||
+			c == '\f' {
 			escaped = true
 			output = append(output, input[:p]...)
 			break
@@ -50,7 +54,15 @@ func escapedBytes(input, output []byte) ([]byte, []byte) {
 		case c < lowestPrintable:
 			// control character is escaped as the unicode sequence \u00{hex representation of c}
 			const chars = "0123456789abcdef"
-			output = append(output, '\\', 'u', '0', '0', chars[c>>4], chars[c&0xf]) // hexadecimal representation of c
+			output = append(
+				output,
+				'\\',
+				'u',
+				'0',
+				'0',
+				chars[c>>4],
+				chars[c&0xf],
+			) // hexadecimal representation of c
 		default:
 			// multi-byte UTF8 character.
 			if !utf8.FullRune(input[i:]) {

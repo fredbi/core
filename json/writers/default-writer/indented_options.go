@@ -1,6 +1,6 @@
 package writer
 
-var defaultIndent = []byte("  ")
+var defaultIndent = []byte("  ") //nolint:gochecknoglobals
 
 type IndentedOption func(*indentedOptions)
 

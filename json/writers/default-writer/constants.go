@@ -14,7 +14,7 @@ const (
 )
 
 var (
-	trueBytes  = []byte("true")
-	falseBytes = []byte("false")
-	nullToken  = []byte("null")
+	trueBytes  = []byte("true")  //nolint:gochecknoglobals
+	falseBytes = []byte("false") //nolint:gochecknoglobals
+	nullToken  = []byte("null")  //nolint:gochecknoglobals
 )
