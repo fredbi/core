@@ -270,8 +270,13 @@ func (d *Document) decode(lex lexers.Lexer) error {
 	context.L = lex
 	context.S = d.store
 	context.DO = d.DecodeOptions
+	pth, redeemPath := light.BorrowPathWithRedeem()
+	context.P = pth
 	d.root.Decode(context)
-	light.RedeemParentContext(context)
+	defer func() {
+		light.RedeemParentContext(context)
+		redeemPath()
+	}()
 
 	if lex.Ok() {
 		return nil
@@ -317,8 +322,11 @@ func makeDecodeError(ctx *light.ParentContext) *DecodeError {
 		return nil
 	}
 
+	pth := make(light.Path, len(ctx.P))
+	copy(pth, ctx.P)
+
 	return &DecodeError{
 		ErrContext: ctx.C,
-		Path:       ctx.P,
+		Path:       pth,
 	}
 }
