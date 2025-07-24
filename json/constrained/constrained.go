@@ -22,10 +22,19 @@ func MakeObject(opts ...json.Option) Object {
 	}
 }
 
+type objectContext struct {
+	initialLevel int
+	isObject     bool
+}
+
+func (c *objectContext) Reset() {
+	c.initialLevel = 0
+	c.isObject = false
+}
+
 // Object is a [json.Document] constrained to be a JSON object.
 type Object struct {
 	json.Document
-	isObject bool
 }
 
 func (d *Object) Decode(r io.Reader) error {
@@ -53,13 +62,24 @@ func (d *Object) hooks() light.DecodeOptions {
 	return decodeOptions
 }
 
-func (d *Object) mustBeObject(l lexers.Lexer, tok token.T) (skip bool, err error) {
-	if d.isObject {
+func (d *Object) mustBeObject(
+	ctx *light.ParentContext,
+	l lexers.Lexer,
+	tok token.T,
+) (skip bool, err error) {
+	octx, ok := ctx.X.(*objectContext)
+	if !ok {
 		return false, nil
 	}
 
-	if l.IndentLevel() == 1 && tok.IsStartObject() {
-		d.isObject = true
+	if octx.isObject {
+		return false, nil
+	}
+
+	level := l.IndentLevel() - octx.initialLevel
+
+	if level == 1 && tok.IsStartObject() {
+		octx.isObject = true
 
 		return false, nil
 	}
@@ -72,11 +92,14 @@ func (d *Object) decode(lex lexers.Lexer) error {
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
-	d.isObject = false
+	octx := poolOfObjectContexts.Borrow()
+	octx.initialLevel = lex.IndentLevel()
+	context.X = octx
 
 	n := d.Node()
 	n.Decode(context)
 	light.RedeemParentContext(context)
+	poolOfObjectContexts.Redeem(octx)
 
 	return lex.Err()
 }
@@ -90,7 +113,16 @@ func MakeArray(opts ...json.Option) Array {
 // Array is a [json.Document] constrained to be a JSON array.
 type Array struct {
 	json.Document
-	isArray bool
+}
+
+type arrayContext struct {
+	initialLevel int
+	isArray      bool
+}
+
+func (c *arrayContext) Reset() {
+	c.initialLevel = 0
+	c.isArray = false
 }
 
 func (d *Array) Decode(r io.Reader) error {
@@ -118,13 +150,23 @@ func (d *Array) hooks() light.DecodeOptions {
 	return decodeOptions
 }
 
-func (d *Array) mustBeArray(l lexers.Lexer, tok token.T) (skip bool, err error) {
-	if d.isArray {
+func (d *Array) mustBeArray(
+	ctx *light.ParentContext,
+	l lexers.Lexer,
+	tok token.T,
+) (skip bool, err error) {
+	octx, ok := ctx.X.(*arrayContext)
+	if !ok {
 		return false, nil
 	}
 
-	if l.IndentLevel() == 1 && tok.IsStartArray() {
-		d.isArray = true
+	if octx.isArray {
+		return false, nil
+	}
+
+	level := l.IndentLevel() - octx.initialLevel
+	if level == 1 && tok.IsStartArray() {
+		octx.isArray = true
 
 		return false, nil
 	}
@@ -137,11 +179,14 @@ func (d *Array) decode(lex lexers.Lexer) error {
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
-	d.isArray = false
+	octx := poolOfArrayContexts.Borrow()
+	octx.initialLevel = lex.IndentLevel()
+	context.X = octx
 
 	n := d.Node()
 	n.Decode(context)
 	light.RedeemParentContext(context)
+	poolOfArrayContexts.Redeem(octx)
 
 	return lex.Err()
 }
@@ -155,7 +200,16 @@ func MakeStringOrArrayOfStrings(opts ...json.Option) StringOrArrayOfStrings {
 // StringOrArrayOfStrings is a [json.Document] constrained to be either a string or an array of strings.
 type StringOrArrayOfStrings struct {
 	json.Document
+}
+
+type stringOfArrayContext struct {
+	initialLevel             int
 	isStringOrArrayOfStrings bool
+}
+
+func (c *stringOfArrayContext) Reset() {
+	c.initialLevel = 0
+	c.isStringOrArrayOfStrings = false
 }
 
 func (d *StringOrArrayOfStrings) Decode(r io.Reader) error {
@@ -184,25 +238,29 @@ func (d *StringOrArrayOfStrings) hooks() light.DecodeOptions {
 }
 
 func (d *StringOrArrayOfStrings) mustBeStringOrArrayOfStrings(
+	ctx *light.ParentContext,
 	l lexers.Lexer,
 	tok token.T,
 ) (skip bool, err error) {
-	if d.isStringOrArrayOfStrings {
+	octx, ok := ctx.X.(*stringOfArrayContext)
+	if !ok {
+		return false, nil
+	}
+	if octx.isStringOrArrayOfStrings {
 		return false, nil
 	}
 
-	level := l.IndentLevel()
+	level := l.IndentLevel() - octx.initialLevel
 	switch {
 	case level == 0 && tok.Kind() == token.String:
 		fallthrough
 	case level == 0 && tok.IsEndArray():
-		d.isStringOrArrayOfStrings = true
+		octx.isStringOrArrayOfStrings = true
 
 		return false, nil
 	case level == 1 && tok.IsStartArray():
 		fallthrough
 	case level == 1 && (tok.Kind() == token.String || tok.IsComma()):
-
 		return false, nil
 	default:
 		return false, fmt.Errorf(
@@ -218,11 +276,14 @@ func (d *StringOrArrayOfStrings) decode(lex lexers.Lexer) error {
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
-	d.isStringOrArrayOfStrings = false
+	octx := poolOfStringOrArrayContexts.Borrow()
+	octx.initialLevel = lex.IndentLevel()
+	context.X = octx
 
 	n := d.Node()
 	n.Decode(context)
 	light.RedeemParentContext(context)
+	poolOfStringOrArrayContexts.Redeem(octx)
 
 	return lex.Err()
 }
@@ -236,7 +297,16 @@ func MakeBoolOrObject(opts ...json.Option) BoolOrObject {
 // BoolOrObject is a [json.Document] constrained to be either a boolean or an object.
 type BoolOrObject struct {
 	json.Document
+}
+
+type boolOrObjectContext struct {
+	initialLevel   int
 	isBoolOrObject bool
+}
+
+func (c *boolOrObjectContext) Reset() {
+	c.initialLevel = 0
+	c.isBoolOrObject = false
 }
 
 func (d *BoolOrObject) Decode(r io.Reader) error {
@@ -264,16 +334,26 @@ func (d *BoolOrObject) hooks() light.DecodeOptions {
 	return decodeOptions
 }
 
-func (d *BoolOrObject) mustBeBoolOrObject(l lexers.Lexer, tok token.T) (skip bool, err error) {
-	if d.isBoolOrObject {
+func (d *BoolOrObject) mustBeBoolOrObject(
+	ctx *light.ParentContext,
+	l lexers.Lexer,
+	tok token.T,
+) (skip bool, err error) {
+	boolOrObjectContext, ok := ctx.X.(*boolOrObjectContext)
+	if !ok {
 		return false, nil
 	}
 
+	if boolOrObjectContext.isBoolOrObject {
+		return false, nil
+	}
+	level := l.IndentLevel() - boolOrObjectContext.initialLevel
+
 	switch {
-	case l.IndentLevel() == 0 && tok.Kind() == token.Boolean:
+	case level == 0 && tok.Kind() == token.Boolean:
 		fallthrough
-	case l.IndentLevel() == 1 && tok.IsStartObject():
-		d.isBoolOrObject = true
+	case level == 1 && tok.IsStartObject():
+		boolOrObjectContext.isBoolOrObject = true
 
 		return false, nil
 	default:
@@ -290,11 +370,14 @@ func (d *BoolOrObject) decode(lex lexers.Lexer) error {
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
-	d.isBoolOrObject = false
+	octx := poolOfBoolOrObjectContexts.Borrow()
+	octx.initialLevel = lex.IndentLevel()
+	context.X = octx
 
 	n := d.Node()
 	n.Decode(context)
 	light.RedeemParentContext(context)
+	poolOfBoolOrObjectContexts.Redeem(octx)
 
 	return lex.Err()
 }
@@ -308,8 +391,18 @@ func MakeObjectOrArrayOfObjects(opts ...json.Option) ObjectOrArrayOfObjects {
 // ObjectOrArray is a [json.Document] constrained to be either an object or an array of objects.
 type ObjectOrArrayOfObjects struct {
 	json.Document
-	isObject bool
-	isArray  bool
+}
+
+type objectOrArrayOfObjectsContext struct {
+	initialLevel int
+	isObject     bool
+	isArray      bool
+}
+
+func (c *objectOrArrayOfObjectsContext) Reset() {
+	c.initialLevel = 0
+	c.isObject = false
+	c.isArray = false
 }
 
 func (d *ObjectOrArrayOfObjects) Decode(r io.Reader) error {
@@ -339,23 +432,29 @@ func (d *ObjectOrArrayOfObjects) hooks() light.DecodeOptions {
 }
 
 func (d *ObjectOrArrayOfObjects) mustBeObjectOrArrayOfObjects(
+	ctx *light.ParentContext,
 	l lexers.Lexer,
 	tok token.T,
 ) (skip bool, err error) {
-	if d.isObject || d.isArray {
+	octx, ok := ctx.X.(*objectOrArrayOfObjectsContext)
+	if !ok {
+		return false, nil
+	}
+	if octx.isObject || octx.isArray {
 		return false, nil
 	}
 
+	level := l.IndentLevel() - octx.initialLevel
 	switch {
-	case l.IndentLevel() == 0 && tok.IsEndArray():
+	case level == 0 && tok.IsEndArray():
 		fallthrough
-	case l.IndentLevel() == 1 && tok.IsStartArray():
-		d.isArray = true
-	case l.IndentLevel() == 0 && tok.IsEndObject():
+	case level == 1 && tok.IsStartArray():
+		octx.isArray = true
+	case level == 0 && tok.IsEndObject():
 		fallthrough
-	case l.IndentLevel() == 1 && tok.IsStartObject():
-		d.isObject = true
-	case l.IndentLevel() == 0:
+	case level == 1 && tok.IsStartObject():
+		octx.isObject = true
+	case level == 0:
 		return false, fmt.Errorf(
 			"an object or an array of objects is expected. Got: %v: %w",
 			tok,
@@ -368,14 +467,19 @@ func (d *ObjectOrArrayOfObjects) mustBeObjectOrArrayOfObjects(
 }
 
 func (d *ObjectOrArrayOfObjects) elementMustBeObject(
+	ctx *light.ParentContext,
 	l lexers.Lexer,
 	elem light.Node,
 ) (skip bool, err error) {
-	if d.isObject || l.IndentLevel() > 2 {
+	octx, ok := ctx.X.(*objectOrArrayOfObjectsContext)
+	if !ok {
+		return false, nil
+	}
+	if octx.isObject || l.IndentLevel()-octx.initialLevel > 2 {
 		return false, nil
 	}
 
-	if d.isArray && elem.Kind() == nodes.KindObject {
+	if octx.isArray && elem.Kind() == nodes.KindObject {
 		return false, nil
 	}
 
@@ -391,12 +495,14 @@ func (d *ObjectOrArrayOfObjects) decode(lex lexers.Lexer) error {
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
-	d.isObject = false
-	d.isArray = false
+	octx := poolOfObjectOrArrayOfObjectsContexts.Borrow()
+	octx.initialLevel = lex.IndentLevel()
+	context.X = octx
 
 	n := d.Node()
 	n.Decode(context)
 	light.RedeemParentContext(context)
+	poolOfObjectOrArrayOfObjectsContexts.Redeem(octx)
 
 	return lex.Err()
 }

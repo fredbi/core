@@ -9,6 +9,7 @@ import (
 
 	"github.com/fredbi/core/json/internal"
 	"github.com/fredbi/core/json/lexers"
+	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/nodes"
 	"github.com/fredbi/core/json/nodes/light"
 	"github.com/fredbi/core/json/stores"
@@ -113,6 +114,7 @@ func (d Document) Node() light.Node {
 	return d.root
 }
 
+// Context returns the decode context of the document root, i.e a bytes count offset.
 func (d Document) Context() Context {
 	return Context{Context: d.root.Context()}
 }
@@ -271,7 +273,11 @@ func (d *Document) decode(lex lexers.Lexer) error {
 	d.root.Decode(context)
 	light.RedeemParentContext(context)
 
-	return lex.Err()
+	if lex.Ok() {
+		return nil
+	}
+
+	return makeDecodeError(context)
 }
 
 func (d Document) encode(jw writers.StoreWriter) error {
@@ -290,4 +296,29 @@ func (d Document) encode(jw writers.StoreWriter) error {
 	}
 
 	return jw.Err()
+}
+
+// DecodeError contains details about a JSON decode error.
+type DecodeError struct {
+	ErrContext *codes.ErrContext
+	Path       light.Path
+}
+
+func (d DecodeError) AsError() error {
+	return fmt.Errorf("at path %q (offset: %d): %w", d.Path, d.ErrContext.Offset, d.ErrContext.Err)
+}
+
+func (d DecodeError) Error() string {
+	return d.AsError().Error()
+}
+
+func makeDecodeError(ctx *light.ParentContext) *DecodeError {
+	if ctx.C == nil {
+		return nil
+	}
+
+	return &DecodeError{
+		ErrContext: ctx.C,
+		Path:       ctx.P,
+	}
 }

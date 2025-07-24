@@ -89,7 +89,7 @@ func (b *Builder) MakeNumber(value any) Document {
 
 // Document returns the [Document] produced by the [Builder].
 //
-// If a build error has occured, it returns the [EmptyDocument].
+// If a build error has occurred, it returns the [EmptyDocument].
 func (b Builder) Document() Document {
 	if !b.Ok() {
 		return EmptyDocument

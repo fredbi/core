@@ -78,9 +78,9 @@ func defaultLexerFromReaderFactory(r io.Reader) (lexers.Lexer, func()) {
 
 func defaultWriterToWriterFactory(w io.Writer) (writers.StoreWriter, func()) {
 	// using default writer from pool
-	jw := writer.BorrowWriter(w)
+	jw := writer.BorrowBuffered(w)
 
-	return jw, func() { writer.RedeemWriter(jw) } // TODO: use redeemable writer to avoid the alloc of the closure
+	return jw, func() { writer.RedeemBuffered(jw) } // TODO: use redeemable writer to avoid the alloc of the closure
 }
 
 func optionsWithDefaults(opts []Option) options {

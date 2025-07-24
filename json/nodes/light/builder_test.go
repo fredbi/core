@@ -31,7 +31,7 @@ func TestBuilder(t *testing.T) {
 
 			w := new(bytes.Buffer)
 			ctx := &ParentContext{
-				W: writer.New(w),
+				W: writer.NewUnbuffered(w),
 				S: s,
 			}
 			n.Encode(ctx)

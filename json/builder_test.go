@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"testing"
 
-	store "github.com/fredbi/core/json/stores/default-store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	store "github.com/fredbi/core/json/stores/default-store"
 )
 
 func TestBuilder(t *testing.T) {
@@ -31,6 +32,6 @@ func TestBuilder(t *testing.T) {
 		require.NoError(t, doc.Encode(w))
 
 		t.Logf("output: %s", w.String())
-		assert.Equal(t, `{"test":[null,true,"abc",123.45]}`, w.String())
+		assert.JSONEq(t, `{"test":[null,true,"abc",123.45]}`, w.String())
 	})
 }

@@ -5,7 +5,7 @@ import (
 	"math/big"
 )
 
-//TODO: type conversion
+// TODO: type conversion
 // TODO: arithmetics  / comparison
 // marshal/unmarshal
 

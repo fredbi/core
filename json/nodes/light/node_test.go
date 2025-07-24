@@ -40,7 +40,7 @@ func TestNode(t *testing.T) {
 		// All this is passed via the ParentContext, as it is reused in the entire hierarchy of nodes.
 		ctx := &ParentContext{
 			L: lexer.New(r),
-			W: writer.New(w),
+			W: writer.NewUnbuffered(w),
 			S: s,
 		}
 
@@ -83,6 +83,96 @@ func TestNode(t *testing.T) {
 					t.Logf("output: %s", w.String())
 				})
 			})
+		})
+	})
+
+	t.Run("with error path", func(t *testing.T) {
+		const jazon = `{
+			"witness":{},
+			"test":[
+				null,1,2,"a","x\n\t\r",
+				{
+					"z":true,
+					"x":null,
+					"a":[12,13,14],
+					"b":[],
+					"c":{INVALID_TOKEN}
+				}
+			]
+		}`
+
+		r := bytes.NewBufferString(jazon)
+		w := new(bytes.Buffer)
+		s := store.New()
+
+		ctx := &ParentContext{
+			L: lexer.New(r),
+			W: writer.NewUnbuffered(w),
+			S: s,
+		}
+
+		n := Node{}
+
+		t.Run("should decode JSON stream", func(t *testing.T) {
+			n.Decode(ctx)
+			require.Error(t, ctx.L.Err())
+
+			require.NotNil(t, ctx.C)
+			assert.Contains(t, ctx.C.Err.Error(), "invalid JSON token")
+			assert.Equalf(
+				t,
+				uint64(140),
+				ctx.C.Offset,
+				"expected offset of error to be %d but got %d",
+				123,
+				ctx.C.Offset,
+			)
+			assert.Equal(t, "/test/5/c", ctx.P.String())
+		})
+	})
+
+	t.Run("with error path, ecaped", func(t *testing.T) {
+		const jazon = `{
+			"witness":{},
+			"test":[
+				null,1,2,"a","x\n\t\r",
+				{
+					"z":true,
+					"x":null,
+					"a/z":[INVALID,12,13,14],
+					"b":[],
+					"c":{}
+				}
+			]
+		}`
+
+		r := bytes.NewBufferString(jazon)
+		w := new(bytes.Buffer)
+		s := store.New()
+
+		ctx := &ParentContext{
+			L: lexer.New(r),
+			W: writer.NewUnbuffered(w),
+			S: s,
+		}
+
+		n := Node{}
+
+		t.Run("should decode JSON stream", func(t *testing.T) {
+			n.Decode(ctx)
+			require.Error(t, ctx.L.Err())
+
+			require.NotNil(t, ctx.C)
+			assert.Contains(t, ctx.C.Err.Error(), "invalid JSON token")
+			assert.Equalf(
+				t,
+				uint64(108),
+				ctx.C.Offset,
+				"expected offset of error to be %d but got %d",
+				108,
+				ctx.C.Offset,
+			)
+			assert.Equal(t, "/test/5/a~1z", ctx.P.String())
 		})
 	})
 }

@@ -206,7 +206,7 @@ func MakeBoolValue(value bool) Value {
 // See [MakeRawValue] for a version that doesn't clone the content.
 func MakeScalarValue(t token.T) Value {
 	k := t.Kind()
-	switch k { //nolint:exhaustive
+	switch k {
 	case token.String:
 		return Value{
 			kind: k,
@@ -245,7 +245,7 @@ func MakeScalarValue(t token.T) Value {
 // See [MakeScalarValue] for a version that clones the content, so the input token may be safely discarded.
 func MakeRawValue(t token.T) Value {
 	k := t.Kind()
-	switch k { //nolint:exhaustive
+	switch k {
 	case token.String:
 		return Value{
 			kind: k,

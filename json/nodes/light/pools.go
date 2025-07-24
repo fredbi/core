@@ -6,9 +6,14 @@ import (
 	"github.com/fredbi/core/swag/pools"
 )
 
+const defaultPathCapacity = 32
+
 var (
 	poolOfBuilders       = pools.New[Builder]()
 	poolOfParentContexts = pools.New[ParentContext]()
+	poolOfPaths          = pools.NewPoolSlice[stringOrInt](
+		pools.WithMinimumCapacity(defaultPathCapacity),
+	)
 )
 
 // BorrowBuilder borrows a [Builder] from the pool.
@@ -32,4 +37,10 @@ func BorrowParentContext() *ParentContext {
 
 func RedeemParentContext(p *ParentContext) {
 	poolOfParentContexts.Redeem(p)
+}
+
+func BorrowPathWithRedeem() (Path, func()) {
+	p, redeem := poolOfPaths.BorrowWithRedeem()
+
+	return Path(p.Slice()), redeem
 }

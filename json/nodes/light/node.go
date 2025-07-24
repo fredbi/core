@@ -228,7 +228,7 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 
 	if ctx.DO.NodeHook != nil {
 		// hook: callback before a node is processed
-		skip, err := ctx.DO.NodeHook(l, tok)
+		skip, err := ctx.DO.NodeHook(ctx, l, tok)
 		if err != nil {
 			l.SetErr(err)
 			return
@@ -336,7 +336,16 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 		return nil
 	}
 
+	pth := ctx.P
+	lpth := len(ctx.P)
+
 	return func(yield func(values.InternedKey, Node) bool) {
+		defer func() {
+			if l.Ok() {
+				ctx.P = ctx.P[:lpth]
+			}
+		}()
+
 		for {
 			tok := l.NextToken()
 			if !l.Ok() {
@@ -354,6 +363,7 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 			}
 
 			key := values.MakeInternedKey(string(tok.Value()))
+			ctx.P = addKeyToPath(pth, ctx.P, key)
 
 			tok = l.NextToken() // skip the colon separator following the key
 			if !tok.IsColon() {
@@ -363,7 +373,7 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 
 			if ctx.DO.BeforeKey != nil {
 				// hook: callback before key is processed
-				skip, err := ctx.DO.BeforeKey(l, key)
+				skip, err := ctx.DO.BeforeKey(ctx, l, key)
 				if err != nil {
 					l.SetErr(err)
 					return
@@ -388,7 +398,7 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 
 			if ctx.DO.AfterKey != nil {
 				// hook: callback after array element
-				skip, err := ctx.DO.AfterKey(l, key, value)
+				skip, err := ctx.DO.AfterKey(ctx, l, key, value)
 				if err != nil {
 					l.SetErr(err)
 					return
@@ -430,7 +440,18 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 		return nil
 	}
 
+	pth := ctx.P
+	lpth := len(ctx.P)
+
 	return func(yield func(Node) bool) {
+		defer func() {
+			if l.Ok() {
+				ctx.P = ctx.P[:lpth]
+			}
+		}()
+
+		var idx int
+
 		for {
 			tok := l.NextToken()
 			if !l.Ok() {
@@ -442,6 +463,9 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 				return
 			}
 
+			ctx.P = addElemToPath(pth, ctx.P, idx)
+			idx++
+
 			var elem Node
 			elem.decodeToken(ctx, tok) // decode next value
 			if !l.Ok() {
@@ -450,7 +474,7 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 
 			if ctx.DO.AfterElem != nil {
 				// hook: callback after array element
-				skip, err := ctx.DO.AfterElem(l, elem)
+				skip, err := ctx.DO.AfterElem(ctx, l, elem)
 				if err != nil {
 					l.SetErr(err)
 					return

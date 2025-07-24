@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/fredbi/core/json/nodes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/fredbi/core/json/nodes"
 )
 
 func TestCollection(t *testing.T) {

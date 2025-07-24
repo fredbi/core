@@ -8,6 +8,7 @@ import (
 
 	"github.com/fredbi/core/json/internal"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/writers"
 )
 
 var (
@@ -113,6 +114,53 @@ func (c Collection) Encode(w io.Writer) error {
 	jw, redeem := c.writerToWriterFactory(w)
 	defer redeem()
 
+	return c.encode(jw)
+}
+
+// AppendText appends the JSON bytes to the provided buffer and returns the resulting slice.
+func (c Collection) AppendText(b []byte) ([]byte, error) {
+	w := internal.BorrowAppendWriter()
+	w.Set(b)
+	jw, redeem := c.writerToWriterFactory(w)
+	defer func() {
+		internal.RedeemAppendWriter(w)
+		redeem()
+	}()
+
+	if err := c.encode(jw); err != nil {
+		return w.Bytes(), err
+	}
+
+	return w.Bytes(), nil
+}
+
+// MarshalJSON marshals the [Collection] as an array of JSON documents.
+func (c Collection) MarshalJSON() ([]byte, error) {
+	buf := internal.BorrowBytesBuffer()
+	jw, redeem := c.writerToWriterFactory(buf)
+	defer func() {
+		internal.RedeemBytesBuffer(buf)
+		redeem()
+	}()
+
+	if err := c.encode(jw); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// Len returns the number of [Document] s in the collection.
+func (c Collection) Len() int {
+	return len(c.documents)
+}
+
+// Reset the collection, so it may be recycled.
+func (c *Collection) Reset() {
+	c.documents = c.documents[:0]
+}
+
+func (c Collection) encode(jw writers.StoreWriter) error {
 	jw.StartArray()
 
 	if len(c.documents) == 0 {
@@ -140,94 +188,11 @@ func (c Collection) Encode(w io.Writer) error {
 
 	jw.EndArray()
 
+	if flusher, ok := jw.(writers.Flusher); ok {
+		if err := flusher.Flush(); err != nil {
+			return err
+		}
+	}
+
 	return nil
-}
-
-// AppendText appends the JSON bytes to the provided buffer and returns the resulting slice.
-func (c Collection) AppendText(b []byte) ([]byte, error) {
-	w := internal.BorrowAppendWriter()
-	w.Set(b)
-	jw, redeem := c.writerToWriterFactory(w)
-	defer func() {
-		internal.RedeemAppendWriter(w)
-		redeem()
-	}()
-
-	jw.StartArray()
-
-	if len(c.documents) == 0 {
-		jw.EndArray()
-
-		return w.Bytes(), nil
-	}
-
-	doc := Document{
-		options:  c.options,
-		document: c.documents[0],
-	}
-	if err := doc.encode(jw); err != nil {
-		return nil, err
-	}
-
-	for _, d := range c.documents[1:] {
-		jw.Comma()
-		doc.document = d
-
-		if err := doc.encode(jw); err != nil {
-			return nil, err
-		}
-	}
-
-	jw.EndArray()
-
-	return w.Bytes(), nil
-}
-
-// MarshalJSON marshals the [Collection] as an array of JSON documents.
-func (c Collection) MarshalJSON() ([]byte, error) {
-	buf := internal.BorrowBytesBuffer()
-	jw, redeem := c.writerToWriterFactory(buf)
-	defer func() {
-		internal.RedeemBytesBuffer(buf)
-		redeem()
-	}()
-
-	jw.StartArray()
-
-	if len(c.documents) == 0 {
-		jw.EndArray()
-
-		return buf.Bytes(), nil
-	}
-
-	doc := Document{
-		options:  c.options,
-		document: c.documents[0],
-	}
-	if err := doc.encode(jw); err != nil {
-		return nil, err
-	}
-
-	for _, d := range c.documents[1:] {
-		jw.Comma()
-		doc.document = d
-
-		if err := doc.encode(jw); err != nil {
-			return nil, err
-		}
-	}
-
-	jw.EndArray()
-
-	return buf.Bytes(), nil
-}
-
-// Len returns the number of [Document] s in the collection.
-func (c Collection) Len() int {
-	return len(c.documents)
-}
-
-// Reset the collection, so it may be recycled.
-func (c *Collection) Reset() {
-	c.documents = c.documents[:0]
 }
