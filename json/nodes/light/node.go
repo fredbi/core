@@ -63,11 +63,15 @@ func (n Node) Kind() nodes.Kind {
 
 // AtKey returns the [Node] held under a key in an object, or false if not found.
 func (n Node) AtKey(k string) (Node, bool) {
+	return n.AtInternedKey(values.MakeInternedKey(k))
+}
+
+func (n Node) AtInternedKey(k values.InternedKey) (Node, bool) {
 	if n.kind != nodes.KindObject {
 		return nullNode, false
 	}
 
-	index, found := n.keysIndex[values.MakeInternedKey(k)]
+	index, found := n.keysIndex[k]
 
 	if !found {
 		return nullNode, false

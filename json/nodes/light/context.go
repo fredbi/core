@@ -33,6 +33,8 @@ type stringOrInt struct {
 
 type Path []stringOrInt
 
+var EmptyPath = []stringOrInt{}
+
 var pthEscaper = strings.NewReplacer(
 	"~",
 	"~0",
