@@ -1,3 +1,3 @@
 # JSON schema
 
-A go implementation of JSON schema, and some tools to work with schemas.
+A go implementation of JSON schema, with a few tools to work with schemas.

@@ -5,18 +5,80 @@ import (
 	"slices"
 
 	"github.com/fredbi/core/json"
+	"github.com/fredbi/core/json/nodes/light"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/values"
+	"github.com/fredbi/core/jsonschema/meta"
 )
 
+// Metadata holds the parts of the schema core keywords that are only descriptive and do not affect
+// either the validation or the structural analysis.
+//
+// This includes the following JSON schema keywords (including support for OpenAPI dialects):
+//
+//   - $comment (>= draft 7)
+//   - description
+//   - title
+//   - examples (>= draft 6)
+//   - $vocabulary
+//   - default
+//   - readOnly (>= draft 7)
+//   - writeOnly (>= draft 7)
+//
+// For OpenAPI schemas:
+//   - externalDocs
+//   - xml
+//   - example (OpenAPI v2)
 type Metadata struct {
-	s           stores.Store    // avoids storing in memory all the comments & metadata text
-	openAPIMeta OpenAPIMetadata // nil if schema does not originate from an OAI schema or spec
-	examples    []json.Document
-	title       stores.Handle // store.Handle
-	description stores.Handle // store.Handle
-	jsonComment stores.Handle // store.Handle
-	defined     bool
+	s            stores.Store         // avoids storing in memory all the comments & metadata text
+	openAPIMeta  meta.OpenAPIMetadata // nil if schema does not originate from an OAI schema or spec
+	examples     []json.Document
+	title        stores.Handle
+	description  stores.Handle
+	jsonComment  stores.Handle
+	defaultValue json.Document
+	defined      bool
+	vocabulary   json.Document
 }
+
+var (
+	commentKey      = values.MakeInternedKey("$comment")
+	descriptionKey  = values.MakeInternedKey("description")
+	titleKey        = values.MakeInternedKey("title")
+	examplesKey     = values.MakeInternedKey("examples")
+	exampleKey      = values.MakeInternedKey("example")
+	vocabularyKey   = values.MakeInternedKey("$vocabulary")
+	defaultKey      = values.MakeInternedKey("default")
+	readOnlyKey     = values.MakeInternedKey("readOnly")
+	writeOnlyKey    = values.MakeInternedKey("writeOnly")
+	externalDocsKey = values.MakeInternedKey("externalDocs")
+	xmlKey          = values.MakeInternedKey("xml")
+
+	metadataKeys = map[values.InternedKey]struct{}{
+		commentKey:      {},
+		descriptionKey:  {},
+		titleKey:        {},
+		examplesKey:     {},
+		exampleKey:      {},
+		vocabularyKey:   {},
+		defaultKey:      {},
+		readOnlyKey:     {},
+		writeOnlyKey:    {},
+		externalDocsKey: {},
+		xmlKey:          {},
+	}
+
+	metadataConstraints = map[values.InternedKey]VersionRequirements{
+		examplesKey:     {MinVersion: VersionDraft6},
+		commentKey:      {MinVersion: VersionDraft7},
+		readOnlyKey:     {MinVersion: VersionDraft7, MinOAIVersion: VersionOpenAPIv2},
+		writeOnlyKey:    {MinVersion: VersionDraft7}, // TODO: check OAI version
+		vocabularyKey:   {MinVersion: VersionDraft2019},
+		exampleKey:      {MinOAIVersion: VersionOpenAPIv2},
+		externalDocsKey: {MinOAIVersion: VersionOpenAPIv2},
+		xmlKey:          {MinOAIVersion: VersionOpenAPIv2},
+	}
+)
 
 func (m Metadata) Store() stores.Store {
 	return m.s
@@ -24,6 +86,18 @@ func (m Metadata) Store() stores.Store {
 
 func (m Metadata) IsDefined() bool {
 	return m.defined
+}
+
+func (m Metadata) HasDefaultValue() bool {
+	return false
+}
+
+func (m Metadata) DefaultValue() json.Document {
+	return json.EmptyDocument
+}
+
+func (m Metadata) Vocabulary() json.Document {
+	return json.EmptyDocument
 }
 
 func (m Metadata) HasExamples() bool {
@@ -42,7 +116,7 @@ func (m Metadata) HasOpenAPIMetadata() bool {
 	return m.openAPIMeta.IsDefined()
 }
 
-func (m Metadata) OpenAPIMetadata() OpenAPIMetadata {
+func (m Metadata) OpenAPIMetadata() meta.OpenAPIMetadata {
 	return m.openAPIMeta
 }
 
@@ -76,111 +150,6 @@ func (m Metadata) JSONComment() string {
 	return v.String()
 }
 
-// OpenAPIMetadata collects metadata specifically defined by OpenAPI schemas,
-// such as summary, externalDocs, xml and tags.
-//
-// Notice that tags are not directly supported by OpenAPI schemas.
-// However, the [structural.Analyzer] may infer tags for schemas when they are used by operations.
-type OpenAPIMetadata struct {
-	ExamplesMetadata []OpenAPIExampleMetadata
-	ExternalDoc      ExternalDocumentation
-	XML              OpenAPIXML
-	defined          bool
-
-	tags    []string
-	summary stores.Handle
-	s       stores.Store
-}
-
-func (o OpenAPIMetadata) IsDefined() bool {
-	return o.defined
-}
-
-func (o OpenAPIMetadata) HasSummary() bool {
-	return o.summary != stores.HandleZero
-}
-
-func (o OpenAPIMetadata) Summary() string {
-	v := o.s.Get(o.summary)
-
-	return v.String()
-}
-
-func (o OpenAPIMetadata) HasTags() bool {
-	return len(o.tags) > 0
-}
-
-func (o OpenAPIMetadata) Tags() []string {
-	return o.tags
-}
-
-type ExternalDocumentation struct {
-	s           stores.Store
-	url         stores.Handle
-	description stores.Handle
-}
-
-func (e ExternalDocumentation) URL() string {
-	v := e.s.Get(e.url)
-
-	return v.String()
-}
-
-func (e ExternalDocumentation) HasDescription() bool {
-	return e.description != stores.HandleZero
-}
-
-func (e ExternalDocumentation) Description() string {
-	v := e.s.Get(e.description)
-
-	return v.String()
-}
-
-// OpenAPIXML describes an OpenAPI XML object.
-type OpenAPIXML struct {
-	Name      string // TODO: use private fields
-	Namespace string
-	Prefix    string
-	Attribute string
-	Wrapped   string
-	defined   bool
-}
-
-// OpenAPIExampleMetadata captures metadata about examples, in the order provided in [Metadata.Examples]
-type OpenAPIExampleMetadata struct {
-	s             stores.Store
-	summary       stores.Handle
-	description   stores.Handle
-	externalValue stores.Handle
-	defined       bool
-}
-
-func (e OpenAPIExampleMetadata) HasDescription() bool {
-	return e.description != stores.HandleZero
-}
-
-func (e OpenAPIExampleMetadata) Description() string {
-	v := e.s.Get(e.description)
-
-	return v.String()
-}
-
-func (e OpenAPIExampleMetadata) HasSummary() bool {
-	return e.summary != stores.HandleZero
-}
-
-func (e OpenAPIExampleMetadata) Summary() string {
-	v := e.s.Get(e.summary)
-
-	return v.String()
-}
-
-func (e OpenAPIExampleMetadata) HasExternalValue() bool {
-	return e.externalValue != stores.HandleZero
-}
-
-func (e OpenAPIExampleMetadata) ExternalValue() string {
-	v := e.s.Get(e.externalValue)
-
-	return v.String()
+func (m *Metadata) decode(ctx *light.ParentContext, key values.InternedKey, vr *VersionRequirements) error {
+	return nil
 }

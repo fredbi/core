@@ -7,6 +7,14 @@ import (
 
 // MergeMaps merges maps into the target.
 func MergeMaps[M ~map[K]V, K comparable, V any](target M, merged ...M) M {
+	if target == nil {
+		var c int
+		for _, m := range merged {
+			c += len(m)
+		}
+		target = make(map[K]V, c)
+	}
+
 	for _, m := range merged {
 		maps.Copy(target, m)
 	}

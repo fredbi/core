@@ -98,6 +98,7 @@ func (d *Object) decode(lex lexers.Lexer) error {
 
 	n := d.Node()
 	n.Decode(context)
+
 	light.RedeemParentContext(context)
 	poolOfObjectContexts.Redeem(octx)
 

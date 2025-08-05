@@ -5,29 +5,40 @@ import (
 	"errors"
 )
 
+// Ref knows how to resolve a JSON reference
+// $id, $ref, $dynamicRef, $anchor, $dynamicAnchor
+//
+// $ref semantics depends on the version of the schema:
+//
+//   - for JSON schema draft 4 to 7: if a $ref is present, all other keys are ignored.
+//   - from JSON schema draft 2019 onwards, $ref is evaluated but sibling keys remain
+//
+// TODO: check draft 6 assertion "it is now possible to describe instance properties named $ref"
 type Ref struct {
-	resolved bool
-	schema   Schema
+	uri    string // TODO: URI
+	cached *Schema
 }
 
 type ResolverContext struct {
+	cache     map[string]Schema
 	basePath  string
-	baseStack []string
+	baseStack []string // or container.List ?
 }
 
 func defaultResolverContext() *ResolverContext {
-	return ResolverContext{
+	return &ResolverContext{
 		baseStack: []string{},
 	}
 }
 
-type ctxKey uint8
+type refCtxKey uint8
 
-const resolverKey ctxKey = iota + 1
+const resolverKey refCtxKey = iota + 1
 
-func (r Ref) Resolve(ctx context.Context) (Schema, error) {
-	if r.resolved {
-		return r.schema, nil
+// Resolve a $ref as a [Schema]
+func (r *Ref) Resolve(ctx context.Context) (Schema, error) {
+	if r.cached != nil {
+		return *r.cached, nil
 	}
 
 	rctx, ok := ctx.Value(resolverKey).(*ResolverContext)
@@ -35,7 +46,7 @@ func (r Ref) Resolve(ctx context.Context) (Schema, error) {
 		rctx = defaultResolverContext()
 	}
 
-	currentBase := "" // TODO
+	// currentBase := "" // TODO
 	defer func() {
 		// TODO: only if base changes
 		rctx.baseStack = append(rctx.baseStack, "")
@@ -47,9 +58,10 @@ func (r Ref) Resolve(ctx context.Context) (Schema, error) {
 }
 
 func (r *Ref) String() string {
-	return "" // TODO
+	return r.uri // TODO
 }
 
+// ResolveRecurse resolves a $ref recursively until all nested $ref are exhausted
 func (r Ref) ResolveRecurse(ctx context.Context) (Schema, error) {
 	return Schema{}, errors.ErrUnsupported
 }

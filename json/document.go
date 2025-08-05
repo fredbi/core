@@ -109,9 +109,18 @@ func (d Document) Store() stores.Store {
 	return d.store
 }
 
+func (d Document) IsEmpty() bool {
+	return d.root.Kind() == nodes.KindNull
+}
+
 // Node low-level access to the current node in the document hierarchy.
-func (d Document) Node() light.Node {
-	return d.root
+//
+// Most users won't need this "backdoor" to the internal node representation of the [Document].
+// It is however necessary when constructing constrained types on top of the [Document] type.
+//
+// See [github.com/fredbi/core/json/constrained.Object] for an example.
+func (d *Document) Node() *light.Node {
+	return &d.root
 }
 
 // Context returns the decode context of the document root, i.e a bytes count offset.
@@ -221,7 +230,7 @@ func (d Document) AppendText(b []byte) ([]byte, error) {
 		redeem()
 	}()
 
-	err := d.encode(jw)
+	err := d.encodeStore(jw)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +240,7 @@ func (d Document) AppendText(b []byte) ([]byte, error) {
 
 // MarshalJSON writes the [Document] as JSON bytes.
 func (d Document) MarshalJSON() ([]byte, error) {
-	buf := internal.BorrowBytesBuffer()
+	buf := internal.BorrowBytesBuffer() // TODO: find a way to factorize this boiler plate, that we repeat over and over
 	jw, redeem := d.writerToWriterFactory(buf)
 	defer func() {
 		internal.RedeemBytesBuffer(buf)
@@ -283,6 +292,10 @@ func (d *Document) decode(lex lexers.Lexer) error {
 	}
 
 	return makeDecodeError(context)
+}
+
+func (d Document) encodeStore(jw writers.StoreWriter) error {
+	return d.encode(jw)
 }
 
 func (d Document) encode(jw writers.StoreWriter) error {

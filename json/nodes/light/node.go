@@ -1,6 +1,7 @@
 package light
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"iter"
@@ -11,6 +12,7 @@ import (
 	nodecodes "github.com/fredbi/core/json/nodes/error-codes"
 	"github.com/fredbi/core/json/stores"
 	"github.com/fredbi/core/json/stores/values"
+	writer "github.com/fredbi/core/json/writers/default-writer"
 )
 
 var nullNode = Node{} //nolint:gochecknoglobals
@@ -27,7 +29,7 @@ var nullNode = Node{} //nolint:gochecknoglobals
 // [Node] does not guarantee to be verbatim: non significant space (indentations, new lines) or escaped unicode sequences are not kept verbatim.
 // Use [VerbatimNode] to cover use cases hat require that the original JSON can be reconstructed verbatim.
 //
-// # Duplicate keys in an object? TODO
+// Duplicate keys in an object trigger an error by default (option available to tolerate duplicates).
 //
 // In this "light" version of the [Node], values are [stores.Handle] references to an external [stores.Store],
 // injected by the caller.
@@ -42,6 +44,7 @@ type Node struct {
 	ctx       Context
 }
 
+// Value of a node of kind nodes.KindScalar.
 func (n Node) Value(s stores.Store) (values.Value, bool) {
 	switch n.kind {
 	case nodes.KindScalar:
@@ -53,12 +56,67 @@ func (n Node) Value(s stores.Store) (values.Value, bool) {
 	}
 }
 
+// Handle of the alue of a node of kind nodes.KindScalar.
+func (n Node) Handle() (stores.Handle, bool) {
+	switch n.kind {
+	case nodes.KindScalar:
+		return n.value, true
+	case nodes.KindObject, nodes.KindArray:
+		fallthrough
+	default:
+		return stores.HandleZero, false
+	}
+}
+
 func (n Node) Context() Context {
 	return n.ctx
 }
 
 func (n Node) Kind() nodes.Kind {
 	return n.kind
+}
+
+func (n Node) IsObject() bool {
+	return n.kind == nodes.KindObject
+}
+
+func (n Node) IsArray() bool {
+	return n.kind == nodes.KindArray
+}
+
+func (n Node) IsString(s stores.Store) bool {
+	if n.kind != nodes.KindScalar {
+		return false
+	}
+	v := s.Get(n.value)
+
+	return v.Kind() == token.String
+}
+
+func (n Node) IsNumber(s stores.Store) bool {
+	if n.kind != nodes.KindScalar {
+		return false
+	}
+	v := s.Get(n.value)
+
+	return v.Kind() == token.Number
+}
+
+func (n Node) IsBool(s stores.Store) bool {
+	if n.kind != nodes.KindScalar {
+		return false
+	}
+	v := s.Get(n.value)
+
+	return v.Kind() == token.Boolean
+}
+
+func (n Node) IsNull(_ stores.Store) bool {
+	if n.kind != nodes.KindScalar {
+		return false
+	}
+
+	return n.value == stores.HandleZero
 }
 
 // AtKey returns the [Node] held under a key in an object, or false if not found.
@@ -197,6 +255,23 @@ func (n Node) Encode(ctx *ParentContext) {
 	}()
 
 	n.encode(ctx)
+}
+
+// Dump is intended to be used for debug or inspection purpose.
+//
+// It dumps the content of the node as a JSON string.
+func (n Node) Dump(s stores.Store) string {
+	var w bytes.Buffer
+	jw := writer.BorrowUnbuffered(&w)
+
+	ctx := &ParentContext{
+		S: s,
+		W: jw,
+	}
+	writer.RedeemUnbuffered(jw)
+	n.Encode(ctx)
+
+	return w.String()
 }
 
 func (n *Node) decode(ctx *ParentContext) {
@@ -465,6 +540,18 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 			if tok.IsEndArray() {
 				// empty object
 				return
+			}
+
+			if ctx.DO.BeforeElem != nil {
+				// hook: callback before array element
+				skip, err := ctx.DO.BeforeElem(ctx, l, tok)
+				if err != nil {
+					l.SetErr(err)
+					return
+				}
+				if skip {
+					continue
+				}
 			}
 
 			ctx.P = addElemToPath(pth, ctx.P, idx)

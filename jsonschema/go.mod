@@ -4,14 +4,23 @@ go 1.24.2
 
 require (
 	github.com/fredbi/core/json v0.0.0-00010101000000-000000000000
-	github.com/fredbi/core/swag/pools v0.0.0-00010101000000-000000000000 // indirect
+	github.com/fredbi/core/stubs v0.0.0-00010101000000-000000000000
+	github.com/fredbi/core/swag/pools v0.0.0-00010101000000-000000000000
 	github.com/fredbi/core/swag/stringutils v0.0.0-00010101000000-000000000000
 	github.com/fredbi/core/swag/typeutils v0.0.0-00010101000000-000000000000
 )
 
-require github.com/hmdsefi/gograph v0.5.0
+require (
+	github.com/hmdsefi/gograph v0.5.0
+	github.com/stretchr/testify v1.10.0
+)
 
-require github.com/fredbi/core/swag/conv v0.0.0-00010101000000-000000000000 // indirect
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/fredbi/core/swag/conv v0.0.0-00010101000000-000000000000 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
 
 replace (
 	github.com/fredbi/core/json => ../json

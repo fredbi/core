@@ -17,9 +17,10 @@ type (
 // type HookFunc func(Node) (Node, error)
 
 type decodeHooks struct {
-	NodeHook  HookTokenFunc
-	BeforeKey HookKeyFunc
-	AfterKey  HookKeyNodeFunc
-	AfterElem HookElemFunc
+	NodeHook   HookTokenFunc
+	BeforeKey  HookKeyFunc
+	AfterKey   HookKeyNodeFunc
+	BeforeElem HookTokenFunc
+	AfterElem  HookElemFunc
 	// AfterValue HookFunc
 }

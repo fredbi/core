@@ -5,3 +5,4 @@ TODOs
 * [] Document factory with memory management for planned document garbage
 * [] JSON relative pointer
 * [] dynamic.JSON
+* [] refact JSON pointer basics with internal common stuff

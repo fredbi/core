@@ -1,8 +1,17 @@
 package differ
 
+// Severity qualifies the impact of a change, from cosmetic to breaking change.
 type Severity uint8
-type Category uint8
+
+// CategoryMode qualifies the nature of a schema change, such as version of jsonchema, metadata only, validations only etc.
+//
+// Several categories may apply to a single change.
+type CategoryMode uint8
+
+// ValidationCategory indicates more precisely the type of validation to which a change with ValidationCategory is eligible.
 type ValidationCategory uint8
+
+// Type of change, e.g. update, addition or deletion.
 type Type uint
 
 const (
@@ -10,13 +19,17 @@ const (
 	SeverityCosmetic
 	SeverityDocOnly
 	SeverityPatch
-	SeverityCompatible
+	SeverityMinor // compatible
 	SeverityBreaking
 )
 
+func (s Severity) Less(other Severity) bool {
+	return int(s) < int(other)
+}
+
 const (
-	CategoryNone    Category = iota
-	CategoryVersion          // JSON schema version
+	CategoryNone    CategoryMode = 1 << iota
+	CategoryVersion              // JSON schema version
 	CategoryMetadata
 	CategoryLocation // change in $ref
 	CategoryValidation
@@ -35,5 +48,5 @@ const (
 	TypeNoChange Type = iota
 	Deleted
 	Added
-	Changed
+	Updated
 )

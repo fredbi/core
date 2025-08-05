@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/fredbi/core/json/nodes"
+	"github.com/fredbi/core/json/nodes/light"
 	"github.com/fredbi/core/json/stores/values"
 )
 
@@ -55,23 +56,40 @@ func (d Document) GetPointer(p Pointer) (Document, error) {
 		return d, nil
 	}
 
-	current := d.root
+	node, err := d.getNodePointer(d.root, p)
+	if err != nil {
+		return EmptyDocument, errors.Join(err, ErrPointerNotFound)
+	}
+
+	return Document{
+		options: d.options,
+		document: document{
+			root: node,
+		},
+	}, nil
+}
+
+func errPointerGotKey(k values.InternedKey) error {
+	return fmt.Errorf("expected a numerical index to search an array, but got %q instead", k.String())
+}
+
+func errPointerNoIndex(i int) error {
+	return fmt.Errorf("searching element %d in array, but was not found", i)
+}
+
+// TODO: delegate to light.Node?
+func (d Document) getNodePointer(root light.Node, p Pointer) (current light.Node, err error) {
+	current = root
 
 	for _, e := range p {
 		if current.Kind() == nodes.KindObject {
 			if e.kind&pathElemString == 0 {
-				return EmptyDocument, fmt.Errorf(
-					"expected a path key string to search an object, but got %d instead: %w",
-					e.i, ErrPointerNotFound,
-				)
+				return current, errPointerGotIndex(e.i)
 			}
 
 			n, ok := current.AtInternedKey(e.s)
 			if !ok {
-				return EmptyDocument, fmt.Errorf(
-					"searching path key %q in object, but was not found: %w",
-					e.s.String(), ErrPointerNotFound,
-				)
+				return current, errPointerNoKey(e.s)
 			}
 
 			current = n
@@ -80,29 +98,53 @@ func (d Document) GetPointer(p Pointer) (Document, error) {
 		}
 
 		if current.Kind() != nodes.KindArray || e.kind&pathElemInt == 0 {
-			return EmptyDocument, fmt.Errorf(
-				"expected a numerical index to search an array, but got %q instead: %w",
-				e.s.String(), ErrPointerNotFound,
-			)
+			return current, errPointerGotKey(e.s)
 		}
 
 		n, ok := current.Elem(e.i)
 		if !ok {
-			return EmptyDocument, fmt.Errorf(
-				"searching element %d in array, but was not found: %w",
-				e.i, ErrPointerNotFound,
-			)
+			return current, errPointerNoIndex(e.i)
 		}
 
 		current = n
 	}
 
-	return Document{
-		options: d.options,
-		document: document{
-			root: current,
-		},
-	}, nil
+	return current, nil
+}
+
+// TODO: delegate to light.Node?
+func (d *Document) setNodePointer(root light.Node, p Pointer, value light.Node) (current light.Node, err error) {
+	current = root
+
+	for _, e := range p {
+		if current.Kind() == nodes.KindObject {
+			if e.kind&pathElemString == 0 {
+				return current, errPointerGotIndex(e.i)
+			}
+
+			n, ok := current.AtInternedKey(e.s)
+			if !ok {
+				return current, errPointerNoKey(e.s)
+			}
+
+			current = n
+
+			continue
+		}
+
+		if current.Kind() != nodes.KindArray || e.kind&pathElemInt == 0 {
+			return current, errPointerGotKey(e.s)
+		}
+
+		n, ok := current.Elem(e.i)
+		if !ok {
+			return current, errPointerNoIndex(e.i)
+		}
+
+		current = n
+	}
+
+	return current, nil
 }
 
 // JSONLookup implements the classical [github.com/go-openapi/jsonpointer.JSONPointable] interface, so users
@@ -110,7 +152,7 @@ func (d Document) GetPointer(p Pointer) (Document, error) {
 //
 // The returned value is always a JSON [Document].
 func (d Document) JSONLookup(pointer string) (any, error) {
-	p, err := MakePointer(pointer)
+	p, err := MakePointer(pointer) // TODO: borrow from pool
 	if err != nil {
 		return nil, err
 	}
@@ -273,4 +315,12 @@ func (p Pointer) String() string {
 	}
 
 	return w.String()
+}
+
+func errPointerGotIndex(i int) error {
+	return fmt.Errorf("expected a path key string to search an object, but got %d instead", i)
+}
+
+func errPointerNoKey(k values.InternedKey) error {
+	return fmt.Errorf("searching path key %q in object, but was not found", k.String())
 }

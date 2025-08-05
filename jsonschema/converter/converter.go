@@ -11,7 +11,7 @@ type Converter struct {
 }
 
 func New(opts ...Option) *Converter {
-	return &Converter{}
+	return &Converter{} // TODO: pool, as usual
 }
 
 // Convert a schema into another JSON schema version.
@@ -19,6 +19,6 @@ func New(opts ...Option) *Converter {
 // This may error if some constructs that are not portable to the target version are found.
 //
 // TODO: examples
-func (c *Converter) Convert(s jsonschema.Schema, to jsonschema.SchemaVersion) (jsonschema.Schema, error) {
-	return jsonschema.Make(), errors.New("not implemented")
+func (c *Converter) Convert(s jsonschema.Schema, to jsonschema.Version) (jsonschema.Schema, error) {
+	return jsonschema.Make(jsonschema.WithVersion(to)), errors.New("not implemented")
 }
