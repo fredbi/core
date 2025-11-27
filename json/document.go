@@ -1,6 +1,7 @@
 package json
 
 import (
+	"bytes"
 	"encoding"
 	"encoding/json"
 	"fmt"
@@ -197,6 +198,8 @@ func (d Document) Len() int {
 }
 
 // Decode builds a [Document] from a stream of JSON bytes.
+//
+// TODO: rename DecodeJSON
 func (d *Document) Decode(r io.Reader) error {
 	lex, redeem := d.lexerFromReaderFactory(r)
 	defer redeem()
@@ -213,6 +216,8 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 }
 
 // Encode the [Document] as a JSON stream to an [io.Writer].
+//
+// TODO: should renamed EncodeJSON
 func (d Document) Encode(w io.Writer) error {
 	jw, redeem := d.writerToWriterFactory(w)
 	defer redeem()
@@ -235,7 +240,7 @@ func (d Document) AppendText(b []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return w.Bytes(), nil
+	return w.Bytes(), nil // the returned slice is the provided one: so it's okay if we redeem the "wrapping" writer
 }
 
 // MarshalJSON writes the [Document] as JSON bytes.
@@ -251,7 +256,9 @@ func (d Document) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	return buf.Bytes(), nil
+	// There is no other way here than to allocate bytes and indulge into some data copy.
+	// Otherwise, we hit a bug here, as the buffer is redeemed and may be recycled before we collect the bytes
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 func (d Document) String() string {

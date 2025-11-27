@@ -1,0 +1,16 @@
+goos: linux
+goarch: amd64
+pkg: github.com/go-openapi/strfmt
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+BenchmarkIsUUID/IsUUID_-_google.uuid-16         	49882705	        24.01 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsUUID/IsUUID_-_regexp-16              	 4401944	       272.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsUUID/IsUUIDv3_-_google.uuid-16       	40785346	        29.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsUUID/IsUUIDv3_-_regexp-16            	 4117026	       274.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsUUID/IsUUIDv4_-_google.uuid-16       	39861030	        29.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsUUID/IsUUIDv4_-_regexp-16            	 4361757	       273.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsUUID/IsUUIDv5_-_google.uuid-16       	40207333	        29.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsUUID/IsUUIDv5_-_regexp-16            	 4128516	       272.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIsHostname/IsHostname_-_regexp-16      	  869583	      1492 ns/op	      32 B/op	       1 allocs/op
+BenchmarkIsHostname/IsHostname_-_idna-16        	 3583204	       343.3 ns/op	      40 B/op	       2 allocs/op
+PASS
+ok  
