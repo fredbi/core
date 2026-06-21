@@ -56,7 +56,7 @@ func (p *poolOfLexers) BorrowLexerWithReader(r io.Reader, opts ...Option) *L {
 // The internal buffer of the lexer is also reused, provided the WithBufferSize() option has not changed the size of
 // / pooled buffers.
 //
-// To maximize the amortizing effecto of the pool, make sure that all borrowed lexers are eventually redeemed to the pool.
+// To maximize the amortizing effect of the pool, make sure that all borrowed lexers are eventually redeemed to the pool.
 func BorrowLexerWithReader(r io.Reader, opts ...Option) *L {
 	return lexersPool.BorrowLexerWithReader(r, opts...)
 }
