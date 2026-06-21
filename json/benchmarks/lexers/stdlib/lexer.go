@@ -22,6 +22,7 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"io"
+	"iter"
 
 	"github.com/fredbi/core/json/lexers/token"
 )
@@ -103,6 +104,25 @@ func (l *Lexer) NextToken() token.T {
 	l.err = errors.New("unexpected standard library JSON token")
 
 	return token.None
+}
+
+// Tokens iterates over the JSON tokens up to (not including) EOF; check Ok/Err
+// after the loop.
+func (l *Lexer) Tokens() iter.Seq[token.T] {
+	return func(yield func(token.T) bool) {
+		for {
+			tok := l.NextToken()
+			if l.err != nil {
+				return
+			}
+			if tok.Kind() == token.EOF {
+				return
+			}
+			if !yield(tok) {
+				return
+			}
+		}
+	}
 }
 
 // Offset yields the number of bytes consumed so far.

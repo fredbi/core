@@ -1,6 +1,8 @@
 package lexers
 
 import (
+	"iter"
+
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/types"
 )
@@ -15,6 +17,12 @@ import (
 type Lexer interface {
 	// NextToken returns the next token from the JSON input.
 	NextToken() token.T
+
+	// Tokens iterates over the JSON tokens up to (not including) EOF.
+	//
+	// The range also ends on error; as with NextToken, errors are kept in the
+	// lexer's state (check Ok/Err after the loop).
+	Tokens() iter.Seq[token.T]
 
 	// Offset indicates the current position of the lexer in the input buffer or stream.
 	Offset() uint64
@@ -45,6 +53,12 @@ type Lexer interface {
 type VerbatimLexer interface {
 	// NextToken returns the next verbatim token from the JSON input.
 	NextToken() token.VT
+
+	// Tokens iterates over the verbatim JSON tokens up to (not including) EOF.
+	//
+	// The range also ends on error; as with NextToken, errors are kept in the
+	// lexer's state (check Ok/Err after the loop).
+	Tokens() iter.Seq[token.VT]
 
 	// Offset indicates the current position of the lexer
 	Offset() uint64
