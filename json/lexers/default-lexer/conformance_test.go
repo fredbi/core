@@ -101,10 +101,6 @@ func conformanceModes() []conformanceMode {
 // NOTE: populated from the 2026-06-21 baseline run; see
 // .claude/plans/default-lexer-roadmap.md (phase 0.1). Grouped by root cause.
 var conformanceXFail = map[string]bool{
-	// (C) comma with no preceding value (leading comma in array). Both L and VL.
-	"n_array_comma_and_number.json": true,
-	"n_array_missing_value.json":    true,
-
 	// (D) unterminated input reached via the look-ahead / expect-colon EOF paths
 	//     (which return EOF without erroring), and empty/blank-only documents.
 	//     Both L and VL.

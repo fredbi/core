@@ -250,6 +250,16 @@ func (l *L) NextToken() token.T { //nolint: gocognit
 
 					return token.None
 				}
+
+				if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
+					// a comma must follow a value or a closing delimiter,
+					// never an opening delimiter or a colon
+					l.err = codes.ErrMissingValue
+					l.next = token.None
+
+					return token.None
+				}
+
 				if l.isInObject() {
 					// TODO: is it possible to already have expectKey true at this point?
 					l.expectKey = true

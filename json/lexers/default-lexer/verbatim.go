@@ -198,6 +198,16 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 
 					return token.VNone
 				}
+
+				if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
+					// a comma must follow a value or a closing delimiter,
+					// never an opening delimiter or a colon
+					l.err = codes.ErrMissingValue
+					l.next = token.VNone
+
+					return token.VNone
+				}
+
 				if l.isInObject() {
 					// TODO: is it possible to already have expectKey true at this point?
 					l.expectKey = true

@@ -15,6 +15,7 @@ const (
 	ErrMissingComma             LexerError = "missing comma"
 	ErrTrailingComma            LexerError = "invalid trailing comma"
 	ErrMissingKey               LexerError = "missing key string"
+	ErrMissingValue             LexerError = "missing value before comma"
 	ErrInvalidExponent          LexerError = "invalid exponent in number"
 	ErrRepeatedExponent         LexerError = "duplicate exponent in number"
 	ErrRepeatedDecimalSeparator LexerError = "duplicate exponent in number"
