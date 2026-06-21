@@ -405,23 +405,26 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 }
 
 func (l *VL) errCheck(err error) token.VT {
+	hadToken := l.current.IsKnown()
 	l.current = token.VNone
 	l.next = token.VNone
 
 	if errors.Is(err, io.EOF) {
-		if l.isInContainer() {
+		switch {
+		case l.isInContainer():
 			if l.isInObject() {
 				l.err = codes.ErrNotInObject
 			} else {
 				l.err = codes.ErrNotInArray
 			}
+		case l.isAtEOF:
+			l.err = io.EOF
+		case !hadToken:
+			// end of input reached without any top-level value
+			l.err = codes.ErrNoData
 		}
 
-		if l.isAtEOF {
-			l.err = io.EOF
-		} else {
-			l.isAtEOF = true
-		}
+		l.isAtEOF = true
 
 		return token.MakeVerbatimEOF(l.blanks)
 	}
@@ -805,7 +808,10 @@ func (l *VL) expectColon(current token.VT) (token.VT, token.VT) {
 	for {
 		if err = l.readMore(); err != nil {
 			if errors.Is(err, io.EOF) {
-				return current, token.MakeVerbatimEOF(l.nextBlanks)
+				// EOF reached while expecting ':' after an object key
+				l.err = codes.ErrKeyColon
+
+				return token.VNone, token.VNone
 			}
 
 			l.err = err
@@ -858,6 +864,17 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 		if start == 0 {
 			if err = l.readMore(); err != nil {
 				if errors.Is(err, io.EOF) {
+					if l.isInContainer() {
+						// EOF reached before the container was closed
+						if l.isInObject() {
+							l.err = codes.ErrNotInObject
+						} else {
+							l.err = codes.ErrNotInArray
+						}
+
+						return token.VNone, token.VNone
+					}
+
 					return current, token.MakeVerbatimEOF(l.nextBlanks)
 				}
 

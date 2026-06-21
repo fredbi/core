@@ -7,6 +7,7 @@ type LexerError string
 
 const (
 	ErrUnterminatedString       LexerError = "unterminated string"
+	ErrNoData                   LexerError = "no JSON value found in input"
 	ErrNotInArray               LexerError = "mismatched ]"
 	ErrNotInObject              LexerError = "mismatched }"
 	ErrMissingObject            LexerError = "key must be defined in object"

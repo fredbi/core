@@ -101,15 +101,6 @@ func conformanceModes() []conformanceMode {
 // NOTE: populated from the 2026-06-21 baseline run; see
 // .claude/plans/default-lexer-roadmap.md (phase 0.1). Grouped by root cause.
 var conformanceXFail = map[string]bool{
-	// (D) unterminated input reached via the look-ahead / expect-colon EOF paths
-	//     (which return EOF without erroring), and empty/blank-only documents.
-	//     Both L and VL.
-	"n_array_unclosed_with_new_lines.json": true,
-	"n_structure_unclosed_array.json":      true,
-	"n_object_no-colon.json":               true,
-	"n_structure_no_data.json":             true,
-	"n_single_space.json":                  true,
-
 	// (E) VL-only: verbatim string scanning does not validate \u escapes.
 	"n_string_invalid_unicode_escape.json": true,
 }

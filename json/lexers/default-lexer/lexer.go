@@ -492,23 +492,26 @@ func (l *L) readMore() error {
 }
 
 func (l *L) errCheck(err error) token.T {
+	hadToken := l.current.IsKnown()
 	l.current = token.None
 	l.next = token.None
 
 	if errors.Is(err, io.EOF) {
-		if l.isInContainer() {
+		switch {
+		case l.isInContainer():
 			if l.isInObject() {
 				l.err = codes.ErrNotInObject
 			} else {
 				l.err = codes.ErrNotInArray
 			}
+		case l.isAtEOF:
+			l.err = io.EOF
+		case !hadToken:
+			// end of input reached without any top-level value
+			l.err = codes.ErrNoData
 		}
 
-		if l.isAtEOF {
-			l.err = io.EOF
-		} else {
-			l.isAtEOF = true
-		}
+		l.isAtEOF = true
 
 		return token.EOFToken
 	}
@@ -547,7 +550,10 @@ func (l *L) expectColon(current token.T) (token.T, token.T) {
 	for {
 		if err = l.readMore(); err != nil {
 			if errors.Is(err, io.EOF) {
-				return current, token.EOFToken
+				// EOF reached while expecting ':' after an object key
+				l.err = codes.ErrKeyColon
+
+				return token.None, token.None
 			}
 
 			l.err = err
@@ -593,6 +599,17 @@ func (l *L) lookAhead(current token.T, start byte) (token.T, token.T) {
 		if start == 0 {
 			if err = l.readMore(); err != nil {
 				if errors.Is(err, io.EOF) {
+					if l.isInContainer() {
+						// EOF reached before the container was closed
+						if l.isInObject() {
+							l.err = codes.ErrNotInObject
+						} else {
+							l.err = codes.ErrNotInArray
+						}
+
+						return token.None, token.None
+					}
+
 					return current, token.EOFToken
 				}
 
