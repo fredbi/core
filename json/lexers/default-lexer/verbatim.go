@@ -24,8 +24,6 @@ type VL struct {
 	nextBlanks []byte
 	current    token.VT
 	next       token.VT // the next token consumed whenever we need to look-ahead
-
-	options
 }
 
 // NewVerbatim yields a new JSON verbatim lexer consuming from an io.Reader.
@@ -103,6 +101,13 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 			case blank, tab, carriageReturn, lineFeed:
 				// save leading blanks
 				l.blanks = append(l.blanks, b)
+				if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					// circuit breaker: also bound the verbatim whitespace buffer
+					l.err = codes.ErrMaxValueBytes
+					l.next = token.VNone
+
+					return token.VNone
+				}
 
 				// ignore blanks
 				continue
@@ -841,6 +846,12 @@ func (l *VL) expectColon(current token.VT) (token.VT, token.VT) {
 			case blank, tab, carriageReturn, lineFeed:
 				// save leading blanks
 				l.nextBlanks = append(l.nextBlanks, b)
+				if l.maxValueBytes > 0 && len(l.nextBlanks) > l.maxValueBytes {
+					// circuit breaker: also bound the verbatim whitespace buffer
+					l.err = codes.ErrMaxValueBytes
+
+					return token.VNone, token.VNone
+				}
 
 				continue
 
@@ -914,6 +925,12 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 			case blank, tab, carriageReturn, lineFeed:
 				// save leading blanks
 				l.nextBlanks = append(l.nextBlanks, b)
+				if l.maxValueBytes > 0 && len(l.nextBlanks) > l.maxValueBytes {
+					// circuit breaker: also bound the verbatim whitespace buffer
+					l.err = codes.ErrMaxValueBytes
+
+					return token.VNone, token.VNone
+				}
 
 				continue
 

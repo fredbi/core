@@ -74,10 +74,17 @@ func WithMaxContainerStack(maxDepth int) Option {
 // size of a string or number.
 //
 // This avoids edge cases when memory is exhausted by faulty inputs
-// (e.g. a nasty stream pushes an infinite sequence after an opening double quote.
+// (e.g. a nasty stream pushes an infinite sequence after an opening double quote).
+//
+// For the verbatim lexer, this also bounds the buffer that accumulates a run of
+// non-significant whitespace, so a flood of blanks between tokens cannot exhaust
+// memory either.
 //
 // NOTE: this option is primarily intended to secure the lexing of JSON streams,
 // and should not be needed for lexers built with a full data buffer.
+//
+// It does NOT bound the total input size: to limit how many bytes are consumed
+// from an [io.Reader], wrap it with [io.LimitReader] (see the package overview).
 //
 // The default value is zero: there is no maximum and no circuit breaker enabled.
 func WithMaxValueBytes(size int) Option {
