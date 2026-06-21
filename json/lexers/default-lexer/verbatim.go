@@ -934,7 +934,7 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 				}
 
 				l.expectKey = false
-				l.lastStack = l.nestingLevel[len(l.nestingLevel)-1] // save the current stack for the current token
+				l.lastStack = uint64(l.depth()) // save the value's depth before the look-ahead pop
 				l.popContainer()
 
 				return current, token.MakeVerbatimDelimiter(token.ClosingBracket, l.nextBlanks)
@@ -947,7 +947,7 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 					return token.VNone, token.VNone
 				}
 
-				l.lastStack = l.nestingLevel[len(l.nestingLevel)-1] // save the current stack for the current token
+				l.lastStack = uint64(l.depth()) // save the value's depth before the look-ahead pop
 				l.popContainer()
 
 				return current, token.MakeVerbatimDelimiter(
