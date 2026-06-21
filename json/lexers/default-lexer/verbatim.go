@@ -539,6 +539,18 @@ func (l *VL) consumeString() token.VT {
 					return token.VNone
 				}
 
+				// validate the 4 hexadecimal digits of the \u escape; the
+				// verbatim lexer keeps the raw bytes rather than decoding them
+				_, ok0 := unhex(buf[0])
+				_, ok1 := unhex(buf[1])
+				_, ok2 := unhex(buf[2])
+				_, ok3 := unhex(buf[3])
+				if !ok0 || !ok1 || !ok2 || !ok3 {
+					l.err = codes.ErrUnicodeEscape
+
+					return token.VNone
+				}
+
 				l.currentValue = append(l.currentValue, buf[:]...)
 
 			default:

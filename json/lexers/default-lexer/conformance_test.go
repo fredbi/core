@@ -100,10 +100,7 @@ func conformanceModes() []conformanceMode {
 //
 // NOTE: populated from the 2026-06-21 baseline run; see
 // .claude/plans/default-lexer-roadmap.md (phase 0.1). Grouped by root cause.
-var conformanceXFail = map[string]bool{
-	// (E) VL-only: verbatim string scanning does not validate \u escapes.
-	"n_string_invalid_unicode_escape.json": true,
-}
+var conformanceXFail = map[string]bool{}
 
 func TestConformanceParsing(t *testing.T) {
 	dir := filepath.Join(currentDir(), "testdata", "JSONTestSuite", "test_parsing")
