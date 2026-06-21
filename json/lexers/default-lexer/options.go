@@ -10,14 +10,16 @@ type (
 		maxValueBytes      int
 		keepPreviousBuffer int
 		strictNumbers      bool
+		elideSeparator     bool
 	}
 )
 
 const defaultBufferBytes = 4096
 
 var defaultOptions = options{
-	strictNumbers: true,
-	bufferSize:    defaultBufferBytes,
+	strictNumbers:  true,
+	bufferSize:     defaultBufferBytes,
+	elideSeparator: true,
 }
 
 func (o *options) applyWithDefaults(opts []Option) {
@@ -37,6 +39,26 @@ func (o *options) applyWithDefaults(opts []Option) {
 func WithStrictNumber(enabled bool) Option {
 	return func(o *options) {
 		o.strictNumbers = enabled
+	}
+}
+
+// WithElideSeparator controls whether the structural separators "," and ":"
+// are emitted as tokens by the semantic lexer [L].
+//
+// When enabled (the default for [L]), these separators are validated against the
+// JSON grammar but not surfaced by [L.NextToken] / [L.Tokens]: the token stream
+// carries only values and the container delimiters "{", "}", "[", "]". This
+// matches the behavior of the standard encoding/json/jsontext lexer and yields
+// a simpler walk — the structure is unambiguous from the value/Key tokens and
+// the container delimiters.
+//
+// Disable it (WithElideSeparator(false)) to receive every separator token.
+//
+// This option has no effect on the verbatim lexer [VL], which always preserves
+// all tokens (including separators) for faithful round-tripping.
+func WithElideSeparator(enabled bool) Option {
+	return func(o *options) {
+		o.elideSeparator = enabled
 	}
 }
 

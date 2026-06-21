@@ -614,14 +614,19 @@ func testFixture(newLexer func() *L) func(*testing.T) {
 	}
 }
 
+// getLexer / getLexerWithBytes build a lexer that emits the full token stream,
+// including the "," and ":" separators. The package default is to elide them
+// (see WithElideSeparator); these helpers opt out so the tests below can assert
+// on the complete, raw token sequence. The default elision behavior is covered
+// by TestElideSeparator.
 func getLexer(fixture string) *L {
 	rdr := bytes.NewBufferString(fixture)
 
-	return New(rdr)
+	return New(rdr, WithElideSeparator(false))
 }
 
 func getLexerWithBytes(fixture string) *L {
-	return NewWithBytes([]byte(fixture))
+	return NewWithBytes([]byte(fixture), WithElideSeparator(false))
 }
 
 func currentDir() string {

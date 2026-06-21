@@ -123,13 +123,32 @@ func (l *L) Offset() uint64 {
 //
 // If the lexer is in an errored status, it will keep responding tokens with Kind Unknown.
 //
+// By default the structural separators "," and ":" are validated but not emitted
+// (see [WithElideSeparator]); pass WithElideSeparator(false) to receive them.
+//
 // Tokens are expected to have a short lifespan: when NextToken is
 // called again, the memory allocated to support the value of the
 // previously returned token is reused for the next token.
 //
 // If you want to keep tokens for later reuse, you may clone a token
 // using its [T.Clone] method.
-func (l *L) NextToken() token.T { //nolint: gocognit
+func (l *L) NextToken() token.T {
+	tok := l.scanToken()
+
+	if l.elideSeparator {
+		// skip the structural separators; the grammar was already validated by
+		// scanToken, which keeps them in l.current for context-sensitive checks
+		for tok.IsComma() || tok.IsColon() {
+			tok = l.scanToken()
+		}
+	}
+
+	return tok
+}
+
+// scanToken scans and returns the next raw token, including the "," and ":"
+// separators. It maintains the internal l.current/l.next look-ahead state.
+func (l *L) scanToken() token.T { //nolint: gocognit
 	if l.err != nil {
 		return token.None
 	}
