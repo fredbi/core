@@ -549,6 +549,7 @@ func (l *VL) consumeString() token.VT {
 func (l *VL) consumeNumber(start byte) (token.VT, token.VT) {
 	var (
 		isExponent     bool
+		exponentSign   bool
 		hasLeadingZero bool
 		hasFractional  bool
 		isFractional   bool
@@ -610,11 +611,14 @@ NUMBER:
 				l.currentValue = append(l.currentValue, b)
 
 			case b == '+' || b == '-':
-				if !isExponent || exponentPart > 0 {
+				if !isExponent || exponentPart > 0 || exponentSign {
+					// a sign is only valid right after the exponent marker,
+					// before any exponent digit and only once
 					l.err = codes.ErrInvalidSign
 
 					return token.VNone, token.VNone
 				}
+				exponentSign = true
 				l.currentValue = append(l.currentValue, b)
 
 			case b == 'e' || b == 'E':
@@ -682,7 +686,8 @@ NUMBER:
 		}
 	}
 
-	if isFractional && fractionalPart == 0 {
+	if hasFractional && fractionalPart == 0 {
+		// a decimal point must be followed by at least one fractional digit
 		l.err = codes.ErrInvalidFractional
 		return token.VNone, token.VNone
 	}

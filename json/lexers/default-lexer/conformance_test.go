@@ -101,14 +101,6 @@ func conformanceModes() []conformanceMode {
 // NOTE: populated from the 2026-06-21 baseline run; see
 // .claude/plans/default-lexer-roadmap.md (phase 0.1). Grouped by root cause.
 var conformanceXFail = map[string]bool{
-	// (A) number grammar: '.' with no fractional digit before exponent, and
-	//     double sign in exponent. Both L and VL.
-	"n_number_0.e1.json":      true,
-	"n_number_2.e3.json":      true,
-	"n_number_2.e+3.json":     true,
-	"n_number_2.e-3.json":     true,
-	"n_number_invalid+-.json": true,
-
 	// (B) unescaped control chars (U+0000..U+001F) inside strings. Both L and VL.
 	"n_string_unescaped_ctrl_char.json": true,
 	"n_string_unescaped_newline.json":   true,
