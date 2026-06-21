@@ -40,6 +40,13 @@ type L struct {
 	consumed   int
 	bufferized int
 
+	line      int    // current line, 1-based
+	lineStart uint64 // offset of the first byte of the current line
+	tokLine   int    // line of the most recent token's start
+	tokCol    int    // column of the most recent token's start, 1-based
+	nextLine  int    // pending position of the looked-ahead token (l.next)
+	nextCol   int
+
 	expectKey bool
 	isAtEOF   bool
 	lastStack uint64
@@ -117,6 +124,20 @@ func (l *L) Offset() uint64 {
 	return l.offset
 }
 
+// Line yields the 1-based line number at which the most recently returned token
+// starts. It is 0 before the first token.
+//
+// Line tracking is always on; its cost is one increment per newline byte.
+func (l *L) Line() int {
+	return l.tokLine
+}
+
+// Column yields the 1-based column at which the most recently returned token
+// starts. It is 0 before the first token.
+func (l *L) Column() int {
+	return l.tokCol
+}
+
 // NextToken returns the next JSON token consumed from the stream or slice of bytes.
 //
 // The last token is of Kind EOF.
@@ -158,6 +179,8 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 		l.current = l.next
 		l.next = token.None
 		l.lastStack = 0
+		l.tokLine = l.nextLine
+		l.tokCol = l.nextCol
 
 		return l.current
 	}
@@ -174,10 +197,22 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 			l.consumed++
 
 			switch b {
-			case blank, tab, carriageReturn, lineFeed:
-				// ignore blanks
+			case lineFeed:
+				l.line++
+				l.lineStart = l.offset
+
 				continue
 
+			case blank, tab, carriageReturn:
+				// ignore non-significant blank space
+				continue
+			}
+
+			// a significant byte starts a token: snapshot its position
+			l.tokLine = l.line
+			l.tokCol = int(l.offset - l.lineStart)
+
+			switch b {
 			case colon:
 				if l.current.Kind() != token.String {
 					// colon must be after a string litteral
@@ -587,10 +622,19 @@ func (l *L) expectColon(current token.T) (token.T, token.T) {
 			l.offset++
 
 			switch b {
-			case blank, tab, carriageReturn, lineFeed:
+			case lineFeed:
+				l.line++
+				l.lineStart = l.offset
+
+				continue
+
+			case blank, tab, carriageReturn:
 				continue
 
 			case colon:
+				l.nextLine = l.line
+				l.nextCol = int(l.offset - l.lineStart)
+
 				return current, token.MakeDelimiter(token.Colon)
 
 			default:
@@ -653,9 +697,22 @@ func (l *L) lookAhead(current token.T, start byte) (token.T, token.T) {
 			}
 
 			switch b {
-			case blank, tab, carriageReturn, lineFeed:
+			case lineFeed:
+				l.line++
+				l.lineStart = l.offset
+
 				continue
 
+			case blank, tab, carriageReturn:
+				continue
+			}
+
+			// the look-ahead token starts here: snapshot its position for when
+			// it is later surfaced as l.next
+			l.nextLine = l.line
+			l.nextCol = int(l.offset - l.lineStart)
+
+			switch b {
 			case comma:
 				if l.isInObject() {
 					// TODO: is it possible to already have expectKey true at this point?
@@ -724,6 +781,12 @@ func (l *L) reset() {
 	l.expectKey = false
 	l.isAtEOF = false
 	l.lastStack = 0
+	l.line = 1
+	l.lineStart = 0
+	l.tokLine = 0
+	l.tokCol = 0
+	l.nextLine = 0
+	l.nextCol = 0
 	l.currentValue = l.currentValue[:0] // TODO: possibly preallocate value buffer to some configurable size
 
 	if l.nestingLevel != nil {

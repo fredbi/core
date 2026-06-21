@@ -46,9 +46,15 @@ type T struct {
 // escaped unicode sequences. Blanks ahead of any token (including EOF) are stored in the token.
 //
 // Limitation: JSON data based on a non-UTF8 character set need to be converted beforehand.
+//
+// A [VT] also carries the source position (line and column, both 1-based) of the
+// start of the token's significant content, for tools that need exact positions
+// (linters, LSPs, formatters).
 type VT struct {
 	blanks []byte
 	T
+	line int
+	col  int
 }
 
 // None is a preallocated placeholder for any invalid or unrecognized JSON token.
@@ -316,6 +322,27 @@ func (t VT) Blanks() []byte {
 	return t.blanks
 }
 
+// Line returns the 1-based line number of the start of the token's significant
+// content (0 if not set).
+func (t VT) Line() int {
+	return t.line
+}
+
+// Col returns the 1-based column of the start of the token's significant content
+// (0 if not set).
+func (t VT) Col() int {
+	return t.col
+}
+
+// WithPosition returns a copy of the token stamped with the given 1-based line
+// and column.
+func (t VT) WithPosition(line, col int) VT {
+	t.line = line
+	t.col = col
+
+	return t
+}
+
 // Kind of token.
 func (t T) Kind() Kind {
 	return t.kind
@@ -400,6 +427,8 @@ func (t VT) Clone() VT {
 	return VT{
 		T:      t.T.Clone(),
 		blanks: slices.Clone(t.blanks),
+		line:   t.line,
+		col:    t.col,
 	}
 }
 

@@ -78,6 +78,9 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 		l.current = l.next
 		l.next = token.VNone
 		l.lastStack = 0
+		// keep the promoted Line()/Column() methods in sync with the token fields
+		l.tokLine = l.current.Line()
+		l.tokCol = l.current.Col()
 
 		return l.current
 	}
@@ -108,10 +111,20 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 
 					return token.VNone
 				}
+				if b == lineFeed {
+					l.line++
+					l.lineStart = l.offset
+				}
 
 				// ignore blanks
 				continue
+			}
 
+			// a significant byte starts a token: snapshot its position
+			l.tokLine = l.line
+			l.tokCol = int(l.offset - l.lineStart)
+
+			switch b {
 			case colon:
 				if l.current.Kind() != token.String {
 					// colon must be after a string litteral
@@ -129,7 +142,7 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 					return token.VNone
 				}
 
-				l.current = token.MakeVerbatimDelimiter(token.Colon, l.blanks)
+				l.current = token.MakeVerbatimDelimiter(token.Colon, l.blanks).WithPosition(l.tokLine, l.tokCol)
 				l.next = token.VNone
 
 				return l.current
@@ -154,7 +167,7 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 				l.expectKey = false
 
 				l.popContainer()
-				l.current = token.MakeVerbatimDelimiter(token.ClosingBracket, l.blanks)
+				l.current = token.MakeVerbatimDelimiter(token.ClosingBracket, l.blanks).WithPosition(l.tokLine, l.tokCol)
 				l.next = token.VNone
 
 				return l.current
@@ -177,7 +190,7 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 				}
 
 				l.popContainer()
-				l.current = token.MakeVerbatimDelimiter(token.ClosingSquareBracket, l.blanks)
+				l.current = token.MakeVerbatimDelimiter(token.ClosingSquareBracket, l.blanks).WithPosition(l.tokLine, l.tokCol)
 				l.next = token.VNone
 
 				return l.current
@@ -218,7 +231,7 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 					l.expectKey = true
 				}
 
-				l.current = token.MakeVerbatimDelimiter(token.Comma, l.blanks)
+				l.current = token.MakeVerbatimDelimiter(token.Comma, l.blanks).WithPosition(l.tokLine, l.tokCol)
 				l.next = token.VNone
 
 				return l.current
@@ -272,7 +285,7 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 					return token.VNone
 				}
 
-				l.current = token.MakeVerbatimDelimiter(token.OpeningBracket, l.blanks)
+				l.current = token.MakeVerbatimDelimiter(token.OpeningBracket, l.blanks).WithPosition(l.tokLine, l.tokCol)
 				l.next = token.VNone
 
 				return l.current
@@ -308,7 +321,7 @@ func (l *VL) NextToken() token.VT { //nolint: gocognit
 					return token.VNone
 				}
 
-				l.current = token.MakeVerbatimDelimiter(token.OpeningSquareBracket, l.blanks)
+				l.current = token.MakeVerbatimDelimiter(token.OpeningSquareBracket, l.blanks).WithPosition(l.tokLine, l.tokCol)
 				l.next = token.VNone
 
 				return l.current
@@ -489,14 +502,14 @@ func (l *VL) consumeString() token.VT {
 
 				if l.expectKey {
 					l.current, l.next = l.expectColon(
-						token.MakeVerbatimWithValue(token.Key, l.currentValue, l.blanks),
+						token.MakeVerbatimWithValue(token.Key, l.currentValue, l.blanks).WithPosition(l.tokLine, l.tokCol),
 					)
 					l.expectKey = false
 
 					return l.current
 				}
 
-				return token.MakeVerbatimWithValue(token.String, l.currentValue, l.blanks)
+				return token.MakeVerbatimWithValue(token.String, l.currentValue, l.blanks).WithPosition(l.tokLine, l.tokCol)
 
 			case slash:
 				if escapeSequence {
@@ -747,7 +760,7 @@ NUMBER:
 		return token.VNone, token.VNone
 	}
 
-	return l.lookAhead(token.MakeVerbatimWithValue(token.Number, l.currentValue, l.blanks), start)
+	return l.lookAhead(token.MakeVerbatimWithValue(token.Number, l.currentValue, l.blanks).WithPosition(l.tokLine, l.tokCol), start)
 }
 
 func (l *VL) consumeBoolean(start byte) (token.VT, token.VT) {
@@ -789,7 +802,7 @@ func (l *VL) consumeBoolean(start byte) (token.VT, token.VT) {
 		return token.VNone, token.VNone
 	}
 
-	return l.lookAhead(token.MakeVerbatimBoolean(value, l.blanks), 0)
+	return l.lookAhead(token.MakeVerbatimBoolean(value, l.blanks).WithPosition(l.tokLine, l.tokCol), 0)
 }
 
 func (l *VL) consumeNull(_ byte) (token.VT, token.VT) {
@@ -807,7 +820,7 @@ func (l *VL) consumeNull(_ byte) (token.VT, token.VT) {
 		return token.VNone, token.VNone
 	}
 
-	return l.lookAhead(token.MakeVerbatimNull(l.blanks), 0)
+	return l.lookAhead(token.MakeVerbatimNull(l.blanks).WithPosition(l.tokLine, l.tokCol), 0)
 }
 
 // expectColon scans the input for a ":" delimiter after a key string
@@ -852,11 +865,16 @@ func (l *VL) expectColon(current token.VT) (token.VT, token.VT) {
 
 					return token.VNone, token.VNone
 				}
+				if b == lineFeed {
+					l.line++
+					l.lineStart = l.offset
+				}
 
 				continue
 
 			case colon:
-				return current, token.MakeVerbatimDelimiter(token.Colon, l.nextBlanks)
+				return current, token.MakeVerbatimDelimiter(token.Colon, l.nextBlanks).
+					WithPosition(l.line, int(l.offset-l.lineStart))
 
 			default:
 				l.err = codes.ErrKeyColon
@@ -931,16 +949,27 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 
 					return token.VNone, token.VNone
 				}
+				if b == lineFeed {
+					l.line++
+					l.lineStart = l.offset
+				}
 
 				continue
+			}
 
+			// the look-ahead token starts here: capture its position
+			l.nextLine = l.line
+			l.nextCol = int(l.offset - l.lineStart)
+
+			switch b {
 			case comma:
 				if l.isInObject() {
 					// TODO: is it possible to already have expectKey true at this point?
 					l.expectKey = true
 				}
 
-				return current, token.MakeVerbatimDelimiter(token.Comma, l.nextBlanks)
+				return current, token.MakeVerbatimDelimiter(token.Comma, l.nextBlanks).
+					WithPosition(l.nextLine, l.nextCol)
 
 			case closingBracket:
 				if !l.isInObject() {
@@ -954,7 +983,8 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 				l.lastStack = uint64(l.depth()) // save the value's depth before the look-ahead pop
 				l.popContainer()
 
-				return current, token.MakeVerbatimDelimiter(token.ClosingBracket, l.nextBlanks)
+				return current, token.MakeVerbatimDelimiter(token.ClosingBracket, l.nextBlanks).
+					WithPosition(l.nextLine, l.nextCol)
 
 			case closingSquareBracket:
 				if !l.isInArray() {
@@ -967,10 +997,8 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 				l.lastStack = uint64(l.depth()) // save the value's depth before the look-ahead pop
 				l.popContainer()
 
-				return current, token.MakeVerbatimDelimiter(
-					token.ClosingSquareBracket,
-					l.nextBlanks,
-				)
+				return current, token.MakeVerbatimDelimiter(token.ClosingSquareBracket, l.nextBlanks).
+					WithPosition(l.nextLine, l.nextCol)
 
 			default:
 				l.err = codes.ErrInvalidToken
