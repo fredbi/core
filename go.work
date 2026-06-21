@@ -21,6 +21,7 @@ use (
 	./go-swagger
 	./go-swagger/examples
 	./json
+	./json/benchmarks
 	./json/jsonpath/tmp/asaiyusuke-jsonpath
 	./json/jsonpath/tmp/asaiyusuke-jsonpath/docs/cburgmer-json-path-comparison/implementations/Golang_github.com-AsaiYusuke-jsonpath
 	./json/jsonpath/tmp/gval
