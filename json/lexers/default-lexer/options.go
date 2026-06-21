@@ -58,7 +58,7 @@ func WithBufferSize(size int) Option {
 // This avoids edge cases when memory is exhausted by faulty inputs
 // (e.g. a nasty stream pushes an infinite sequence of "{" or "[").
 //
-// The lexer allocates 4 bytes (a uint64) every additional 63 nested levels.
+// The lexer allocates 8 bytes (a uint64) every additional 63 nested levels.
 //
 // NOTE: this option is primarily intended to secure the lexing of JSON streams,
 // and should not be needed for lexers built with a full data buffer.

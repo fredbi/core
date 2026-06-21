@@ -19,7 +19,7 @@ const (
 	ErrMissingValue             LexerError = "missing value before comma"
 	ErrInvalidExponent          LexerError = "invalid exponent in number"
 	ErrRepeatedExponent         LexerError = "duplicate exponent in number"
-	ErrRepeatedDecimalSeparator LexerError = "duplicate exponent in number"
+	ErrRepeatedDecimalSeparator LexerError = "duplicate decimal separator in number"
 	ErrInvalidFractional        LexerError = "invalid fractional part after decimal separator in number"
 	ErrInvalidSign              LexerError = "invalid sign of integer part in number"
 	ErrLeadingZero              LexerError = "forbidden leading zero for integer part in number"
