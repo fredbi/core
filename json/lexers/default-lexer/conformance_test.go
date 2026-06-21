@@ -101,11 +101,6 @@ func conformanceModes() []conformanceMode {
 // NOTE: populated from the 2026-06-21 baseline run; see
 // .claude/plans/default-lexer-roadmap.md (phase 0.1). Grouped by root cause.
 var conformanceXFail = map[string]bool{
-	// (B) unescaped control chars (U+0000..U+001F) inside strings. Both L and VL.
-	"n_string_unescaped_ctrl_char.json": true,
-	"n_string_unescaped_newline.json":   true,
-	"n_string_unescaped_tab.json":       true,
-
 	// (C) comma with no preceding value (leading comma in array). Both L and VL.
 	"n_array_comma_and_number.json": true,
 	"n_array_missing_value.json":    true,

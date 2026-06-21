@@ -22,6 +22,7 @@ const (
 	ErrInvalidSign              LexerError = "invalid sign of integer part in number"
 	ErrLeadingZero              LexerError = "forbidden leading zero for integer part in number"
 	ErrMissingInteger           LexerError = "number has no integer part"
+	ErrControlChar              LexerError = "unescaped control character in string"
 	ErrUnicodeEscape            LexerError = "invalid unicode escape sequence"
 	ErrUnknownEscape            LexerError = "unknown escape sequence"
 	ErrInvalidRune              LexerError = "invalid rune in unicode escape sequence"

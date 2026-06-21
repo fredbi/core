@@ -535,6 +535,13 @@ func (l *VL) consumeString() token.VT {
 					return token.VNone
 				}
 
+				if b < 0x20 {
+					// RFC 8259: control characters U+0000..U+001F must be escaped
+					l.err = codes.ErrControlChar
+
+					return token.VNone
+				}
+
 				l.currentValue = append(l.currentValue, b)
 			}
 		}
