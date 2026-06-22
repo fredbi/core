@@ -25,8 +25,13 @@ func (l *L) consumeNumber(start byte) (token.T, token.T) {
 		exponentPart   int
 	)
 
+	// The number is scanned without copying byte-by-byte: numStart marks the
+	// start of the pending segment in l.buffer. In whole-buffer mode the value
+	// aliases the input; otherwise the pending segment is bulk-copied into
+	// currentValue (once at the end, or flushed when a streaming buffer is
+	// refilled mid-number). This keeps the hot loop free of per-byte branches.
+	numStart := l.consumed - 1
 	l.currentValue = l.currentValue[:0]
-	l.currentValue = append(l.currentValue, start)
 
 	switch {
 	case start == decimalPoint:
@@ -42,19 +47,9 @@ func (l *L) consumeNumber(start byte) (token.T, token.T) {
 
 NUMBER:
 	for {
-		if err := l.readMore(); err != nil {
-			if errors.Is(err, io.EOF) {
-				break NUMBER
-			}
-
-			l.err = err
-
-			return token.None, token.None
-		}
-
 		for l.consumed < l.bufferized {
 
-			if l.maxValueBytes > 0 && len(l.currentValue) > l.maxValueBytes {
+			if l.maxValueBytes > 0 && len(l.currentValue)+l.consumed-numStart > l.maxValueBytes {
 				l.err = codes.ErrMaxValueBytes
 
 				return token.None, token.None
@@ -75,7 +70,6 @@ NUMBER:
 
 				hasFractional = true
 				isFractional = true
-				l.currentValue = append(l.currentValue, b)
 
 			case b == '+' || b == '-':
 				if !isExponent || exponentPart > 0 || exponentSign {
@@ -86,7 +80,6 @@ NUMBER:
 					return token.None, token.None
 				}
 				exponentSign = true
-				l.currentValue = append(l.currentValue, b)
 
 			case b == 'e' || b == 'E':
 				if isExponent {
@@ -97,7 +90,6 @@ NUMBER:
 
 				isExponent = true
 				isFractional = false
-				l.currentValue = append(l.currentValue, b)
 
 			case b == '0':
 				if hasLeadingZero && !isFractional && !isExponent {
@@ -119,16 +111,12 @@ NUMBER:
 					}
 				}
 
-				l.currentValue = append(l.currentValue, b)
-
 			case b >= '1' && b <= '9':
 				if hasLeadingZero && !isFractional && !isExponent {
 					l.err = codes.ErrLeadingZero
 
 					return token.None, token.None
 				}
-
-				l.currentValue = append(l.currentValue, b)
 
 				switch {
 				case isFractional:
@@ -151,6 +139,25 @@ NUMBER:
 				break NUMBER
 			}
 		}
+
+		// buffer exhausted mid-number: in streaming mode preserve the pending
+		// segment before readMore overwrites it
+		if !l.wholeBuffer {
+			l.currentValue = append(l.currentValue, l.buffer[numStart:l.consumed]...)
+			numStart = l.consumed
+		}
+
+		if err := l.readMore(); err != nil {
+			if errors.Is(err, io.EOF) {
+				break NUMBER
+			}
+
+			l.err = err
+
+			return token.None, token.None
+		}
+
+		numStart = 0 // the buffer was refilled: the pending segment restarts at 0
 	}
 
 	if hasFractional && fractionalPart == 0 {
@@ -177,5 +184,21 @@ NUMBER:
 		return token.None, token.None
 	}
 
-	return l.lookAhead(token.MakeWithValue(token.Number, l.currentValue), start)
+	// a terminator byte (start != 0) was consumed past the number; EOF (start == 0) was not
+	numEnd := l.consumed
+	if start != 0 {
+		numEnd--
+	}
+
+	var value []byte
+	if l.wholeBuffer {
+		// alias the contiguous number bytes in the input buffer (cap == len)
+		value = l.buffer[numStart:numEnd:numEnd]
+	} else {
+		// bulk-copy the final pending segment after any earlier flushed segments
+		l.currentValue = append(l.currentValue, l.buffer[numStart:numEnd]...)
+		value = l.currentValue
+	}
+
+	return l.lookAhead(token.MakeWithValue(token.Number, value), start)
 }

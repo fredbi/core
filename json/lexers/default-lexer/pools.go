@@ -24,6 +24,7 @@ func (p *poolOfLexers) BorrowWithBytes(data []byte, opts ...Option) *L {
 	l.bufferized = len(data)
 	l.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
+	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
 	l.reset()
 
 	return l
@@ -35,6 +36,7 @@ func (p *poolOfLexers) BorrowLexerWithReader(r io.Reader, opts ...Option) *L {
 	// TODO: in reset
 	l.r = r
 	l.bufferized = 0
+	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
 	l.reset()
 
 	if cap(l.buffer) < l.bufferSize {

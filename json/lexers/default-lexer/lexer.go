@@ -47,9 +47,10 @@ type L struct {
 	nextLine  int    // pending position of the looked-ahead token (l.next)
 	nextCol   int
 
-	expectKey bool
-	isAtEOF   bool
-	lastStack uint64
+	expectKey   bool
+	isAtEOF     bool
+	wholeBuffer bool // the buffer holds the entire input (no refills): values may alias it
+	lastStack   uint64
 
 	options
 }
@@ -68,6 +69,7 @@ func New(r io.Reader, opts ...Option) *L {
 	l.r = r
 	l.buffer = make([]byte, l.bufferSize)
 	l.bufferized = 0
+	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
 
 	l.reset()
 
@@ -88,6 +90,7 @@ func NewWithBytes(data []byte, opts ...Option) *L {
 	l.bufferized = len(data)
 	l.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
+	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
 
 	l.reset()
 
