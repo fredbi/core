@@ -42,7 +42,23 @@ as far as it goes (target ~650–750; the spike's 935 is partly its lighter vali
 so the real gap is smaller). A dedicated push `Tokens()` (hybrid "C") is deferred
 until a high-throughput `Tokens()` consumer materializes (YAGNI).
 
-Status: 1a landed. Next = build the A+ `scanOne` core (bytes first), gated as below.
+Status: 1a landed; A+ build underway.
+
+**A+ build progress:**
+- ✅ **step 1 — fold value look-ahead** (`e64cafa`): numbers/bool/null no longer call
+  `lookAhead` (like strings); terminator validated by the next token's start-checks.
+  `L.lookAhead` now dead (remove in cleanup). **Semantic decision (approved):**
+  trailing-garbage errors are deferred one token (`trueth`→`true` then error); the
+  document is still rejected on drain, so conformance + node decoders unaffected;
+  only a non-draining single-token consumer would miss trailing garbage. ~+10%
+  (citm ~498→546, canada ~228→254, ints ~200→218).
+- ⏳ **step 2 — fold elision** into the scan (skip `,`/`:` inline; drop the
+  `NextToken` filter re-entry).
+- ⏳ **step 3 — fold the key→colon path** (`expectColon`) into the single pass.
+- ⏳ **step 4 — unify the main loop** as `scanOne` (local cursor, whole-buffer fast
+  path), remove dead `lookAhead`/`current-next`/`lastStack`.
+- then: L/VL merge, streaming, line/col re-verify, pooling, migrate consumers,
+  delete prototype `P` + old duplication.
 
 ## Invariants / gates (every stage)
 
