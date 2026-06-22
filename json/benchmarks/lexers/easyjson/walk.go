@@ -15,22 +15,37 @@ import "github.com/mailru/easyjson/jlexer"
 // Sink prevents the compiler from eliminating the walk.
 var Sink int
 
-// Walk fully tokenizes data with jlexer, descending into every container, and
-// returns the lexer's error state (nil on success).
-func Walk(data []byte) error {
+// Walk fully tokenizes data with jlexer, descending into every container, taking
+// numbers as raw bytes (no numeric conversion). Returns the lexer error.
+func Walk(data []byte) error { return walk(data, false) }
+
+// WalkConvertNumbers is like Walk but converts each number with Float64(), which
+// is where jlexer actually validates number grammar (Raw/JsonNumber do not). This
+// rebalances the comparison against the default-lexer, which always validates
+// numbers while lexing — though Float64 also *loses precision*, which the
+// default-lexer never does.
+func WalkConvertNumbers(data []byte) error { return walk(data, true) }
+
+func walk(data []byte, convertNumbers bool) error {
 	l := &jlexer.Lexer{Data: data}
-	walkValue(l)
+	walkValue(l, convertNumbers)
 
 	return l.Error()
 }
 
-func walkValue(l *jlexer.Lexer) {
+func walkValue(l *jlexer.Lexer, convertNumbers bool) {
 	switch l.CurrentToken() {
 	case jlexer.TokenString:
 		Sink += len(l.String())
 
 	case jlexer.TokenNumber:
-		Sink += len(l.Raw()) // raw bytes, no numeric conversion
+		if convertNumbers {
+			if l.Float64() != 0 { // validates via strconv.ParseFloat (lossy)
+				Sink++
+			}
+		} else {
+			Sink += len(l.Raw()) // raw bytes, no numeric conversion
+		}
 
 	case jlexer.TokenBool:
 		if l.Bool() {
@@ -47,7 +62,7 @@ func walkValue(l *jlexer.Lexer) {
 			for l.Ok() && !l.IsDelim('}') {
 				Sink += len(l.String()) // key
 				l.WantColon()
-				walkValue(l)
+				walkValue(l, convertNumbers)
 				l.WantComma()
 			}
 			l.Delim('}')
@@ -55,7 +70,7 @@ func walkValue(l *jlexer.Lexer) {
 		case l.IsDelim('['):
 			l.Delim('[')
 			for l.Ok() && !l.IsDelim(']') {
-				walkValue(l)
+				walkValue(l, convertNumbers)
 				l.WantComma()
 			}
 			l.Delim(']')

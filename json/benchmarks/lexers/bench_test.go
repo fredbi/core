@@ -163,6 +163,20 @@ func BenchmarkLexers(b *testing.B) {
 						_ = easyjson.Walk(w.Data)
 					}
 				})
+
+				// easyjson with number conversion (Float64): this is where jlexer
+				// actually validates number grammar, so it is the fair comparison
+				// against the always-validating default-lexer (Float64 is lossy,
+				// which the default-lexer avoids).
+				b.Run("easyjson-f64/bytes", func(b *testing.B) {
+					b.SetBytes(int64(len(w.Data)))
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for range b.N {
+						_ = easyjson.WalkConvertNumbers(w.Data)
+					}
+				})
 			}
 
 			// phase-2 push-core prototype (bytes mode, separators elided)
