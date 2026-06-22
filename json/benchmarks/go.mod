@@ -2,11 +2,15 @@ module github.com/fredbi/core/json/benchmarks
 
 go 1.24.2
 
-require github.com/fredbi/core/json v0.0.0-00010101000000-000000000000
+require (
+	github.com/fredbi/core/json v0.0.0-00010101000000-000000000000
+	github.com/mailru/easyjson v0.9.2
+)
 
 require (
 	github.com/fredbi/core/swag/conv v0.0.0-00010101000000-000000000000 // indirect
 	github.com/fredbi/core/swag/pools v0.0.0-00010101000000-000000000000 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
 )
 
 replace (
