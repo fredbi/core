@@ -224,13 +224,19 @@ func testNumber(newLexer func(string) *L) func(*testing.T) {
 		})
 
 		t.Run("error path", func(t *testing.T) {
+			// drain to error: with the look-ahead folded out, a valid value may be
+			// surfaced before trailing garbage is rejected on the next token.
 			assertNumberKO := func(t testing.TB, fixture string) {
 				lex := newLexer(fixture)
-				tok := lex.NextToken()
-				require.False(t, lex.Ok())
+				for {
+					tok := lex.NextToken()
+					if !lex.Ok() || tok.IsEOF() {
+						break
+					}
+				}
+				require.Falsef(t, lex.Ok(), "expected an error for %q", fixture)
 				require.Error(t, lex.Err())
 				t.Logf("expected error: %v", lex.Err())
-				require.Equal(t, token.Unknown, tok.Kind())
 			}
 
 			t.Run("invalid integer (leading zero)", func(t *testing.T) {
@@ -315,13 +321,19 @@ func testBoolean(newLexer func(string) *L) func(t *testing.T) {
 		})
 
 		t.Run("error path", func(t *testing.T) {
+			// drain to error: a valid literal may be surfaced before trailing
+			// garbage is rejected on the next token (look-ahead folded out).
 			assertBooleanKO := func(t testing.TB, fixture string) {
 				lex := newLexer(fixture)
-				tok := lex.NextToken()
-				require.False(t, lex.Ok())
+				for {
+					tok := lex.NextToken()
+					if !lex.Ok() || tok.IsEOF() {
+						break
+					}
+				}
+				require.Falsef(t, lex.Ok(), "expected an error for %q", fixture)
 				require.Error(t, lex.Err())
 				t.Logf("expected error: %v", lex.Err())
-				require.Equal(t, token.Unknown, tok.Kind())
 			}
 
 			t.Run("True", func(t *testing.T) {

@@ -46,5 +46,5 @@ func (l *L) consumeBoolean(start byte) (token.T, token.T) {
 		return token.None, token.None
 	}
 
-	return l.lookAhead(token.MakeBoolean(value), 0)
+	return token.MakeBoolean(value), token.None
 }

@@ -187,7 +187,11 @@ NUMBER:
 	// a terminator byte (start != 0) was consumed past the number; EOF (start == 0) was not
 	numEnd := l.consumed
 	if start != 0 {
+		// un-consume the terminator: with the look-ahead folded out, the next
+		// scan validates it via the standard start-of-token checks
 		numEnd--
+		l.consumed = numEnd
+		l.offset--
 	}
 
 	var value []byte
@@ -200,5 +204,5 @@ NUMBER:
 		value = l.currentValue
 	}
 
-	return l.lookAhead(token.MakeWithValue(token.Number, value), start)
+	return token.MakeWithValue(token.Number, value), token.None
 }

@@ -593,7 +593,7 @@ func (l *L) consumeNull(_ byte) (token.T, token.T) {
 		return token.None, token.None
 	}
 
-	return l.lookAhead(token.NullToken, 0)
+	return token.NullToken, token.None
 }
 
 // expectColon scans the input for a ":" delimiter after a key string
