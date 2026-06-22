@@ -57,9 +57,15 @@ Status: 1a landed; A+ build underway.
   grammar + push-equivalence green. ints ~218→244, canada ~254→276, twitter
   ~501→536; citm flat. Cumulative vs pre-phase-2: twitter +69%, citm +19%,
   ints +22%, canada +21%, strings +92%.
-- ⏳ **step 3 — fold the key→colon path** (`expectColon`) into the single pass.
+- ✅ **step 3 — fold the key→colon path** (`11dea62`): keys return `Key` directly +
+  set `l.afterKey`; the next scan requires/consumes `:` inline; stray-colon errors
+  preserved. Removed the dead stash branch (nothing stashes `l.next` now).
+  `expectColon`/`lookAhead` now dead (delete in step 4). Lesson: validating
+  key→colon via `l.current.Kind()` per token taxed numbers (+13-19%); a dedicated
+  `afterKey` bool + dropping the stash-branch check fixed it. Net vs step 2:
+  citm −11%, twitter −11%, canada flat, ints +1.7%, geomean −5%.
 - ⏳ **step 4 — unify the main loop** as `scanOne` (local cursor, whole-buffer fast
-  path), remove dead `lookAhead`/`current-next`/`lastStack`.
+  path), delete dead `lookAhead`/`expectColon`/`current-next`/`lastStack`/`nextLine/Col`.
 - then: L/VL merge, streaming, line/col re-verify, pooling, migrate consumers,
   delete prototype `P` + old duplication.
 
