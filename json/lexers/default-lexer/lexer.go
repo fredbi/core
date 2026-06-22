@@ -34,7 +34,6 @@ type L struct {
 	nestingLevel   []uint64 // the stack of nested containers. Every bit represent an extra nesting. Capped if maxContainerStack > 0
 
 	current token.T
-	next    token.T // the next token consumed whenever we need to look-ahead
 
 	offset     uint64
 	consumed   int
@@ -44,14 +43,16 @@ type L struct {
 	lineStart uint64 // offset of the first byte of the current line
 	tokLine   int    // line of the most recent token's start
 	tokCol    int    // column of the most recent token's start, 1-based
-	nextLine  int    // pending position of the looked-ahead token (l.next)
+	// nextLine/nextCol/lastStack are still used by the verbatim lexer VL (its
+	// look-ahead writes them on the embedded L); they go with the L/VL merge.
+	nextLine  int
 	nextCol   int
+	lastStack uint64
 
 	expectKey   bool
 	afterKey    bool // the previous token was an object key: a ':' must follow
 	isAtEOF     bool
 	wholeBuffer bool // the buffer holds the entire input (no refills): values may alias it
-	lastStack   uint64
 
 	options
 }
@@ -202,7 +203,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				l.afterKey = false
 				if b != colon {
 					l.err = codes.ErrKeyColon
-					l.next = token.None
 
 					return token.None
 				}
@@ -224,7 +224,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				} else {
 					l.err = codes.ErrMissingKey
 				}
-				l.next = token.None
 
 				return token.None
 
@@ -232,7 +231,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				if l.current.IsComma() {
 					// closing bracket shouldn't appear after a comma
 					l.err = codes.ErrTrailingComma
-					l.next = token.None
 
 					return token.None
 				}
@@ -240,7 +238,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				if !l.isInObject() {
 					// closing bracket should only appear in an object context
 					l.err = codes.ErrNotInObject
-					l.next = token.None
 
 					return token.None
 				}
@@ -249,7 +246,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				l.popContainer()
 				l.current = token.MakeDelimiter(token.ClosingBracket)
-				l.next = token.None
 
 				return l.current
 
@@ -257,7 +253,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				if l.current.IsComma() {
 					// closing square bracket shouldn't appear after a comma
 					l.err = codes.ErrTrailingComma
-					l.next = token.None
 
 					return token.None
 				}
@@ -265,35 +260,30 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				if !l.isInArray() {
 					// closing square bracket should only appear in an array context
 					l.err = codes.ErrNotInArray
-					l.next = token.None
 
 					return token.None
 				}
 
 				l.popContainer()
 				l.current = token.MakeDelimiter(token.ClosingSquareBracket)
-				l.next = token.None
 
 				return l.current
 
 			case comma:
 				if l.current.IsComma() {
 					l.err = codes.ErrRepeatedComma
-					l.next = token.None
 
 					return token.None
 				}
 
 				if l.expectKey {
 					l.err = codes.ErrMissingKey
-					l.next = token.None
 
 					return token.None
 				}
 
 				if !l.isInContainer() {
 					l.err = codes.ErrCommaInContainer
-					l.next = token.None
 
 					return token.None
 				}
@@ -302,7 +292,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 					// a comma must follow a value or a closing delimiter,
 					// never an opening delimiter or a colon
 					l.err = codes.ErrMissingValue
-					l.next = token.None
 
 					return token.None
 				}
@@ -313,7 +302,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				}
 
 				l.current = token.MakeDelimiter(token.Comma)
-				l.next = token.None
 
 				if l.elideSeparator {
 					continue // skip the comma; context recorded in l.current
@@ -325,14 +313,12 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				if l.current.IsKnown() {
 					if l.current.Kind() != token.Delimiter {
 						l.err = codes.ErrInvalidToken
-						l.next = token.None
 
 						return token.None
 					}
 
 					if l.current.Delimiter().IsClosing() {
 						l.err = codes.ErrMissingComma
-						l.next = token.None
 
 						return token.None
 					}
@@ -341,14 +327,12 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 						if l.current.Delimiter() != token.OpeningSquareBracket &&
 							l.current.Delimiter() != token.Comma {
 							l.err = codes.ErrMissingComma
-							l.next = token.None
 
 							return token.None
 						}
 					} else {
 						if !l.current.IsColon() {
 							l.err = codes.ErrMissingKey
-							l.next = token.None
 
 							return token.None
 						}
@@ -357,7 +341,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				if l.expectKey {
 					l.err = codes.ErrMissingKey
-					l.next = token.None
 
 					return token.None
 				}
@@ -365,13 +348,11 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				l.expectKey = true
 				l.pushObject()
 				if l.err != nil {
-					l.next = token.None
 
 					return token.None
 				}
 
 				l.current = token.MakeDelimiter(token.OpeningBracket)
-				l.next = token.None
 
 				return l.current
 
@@ -379,14 +360,12 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 				if l.current.IsKnown() {
 					if l.current.Kind() != token.Delimiter {
 						l.err = codes.ErrInvalidToken
-						l.next = token.None
 
 						return token.None
 					}
 
 					if l.current.Delimiter().IsClosing() {
 						l.err = codes.ErrMissingComma
-						l.next = token.None
 
 						return token.None
 					}
@@ -394,20 +373,17 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				if l.expectKey {
 					l.err = codes.ErrMissingKey
-					l.next = token.None
 
 					return token.None
 				}
 
 				l.pushArray()
 				if l.err != nil {
-					l.next = token.None
 
 					return token.None
 				}
 
 				l.current = token.MakeDelimiter(token.OpeningSquareBracket)
-				l.next = token.None
 
 				return l.current
 
@@ -417,7 +393,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 					if !l.current.Delimiter().AcceptValue() {
 						l.err = codes.ErrDelimitedValue
 						l.current = token.None
-						l.next = token.None
 
 						return l.current
 					}
@@ -433,7 +408,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 					if !l.current.Delimiter().AcceptValue() {
 						l.err = codes.ErrDelimitedValue
 						l.current = token.None
-						l.next = token.None
 
 						return l.current
 					}
@@ -441,12 +415,11 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				if l.expectKey {
 					l.err = codes.ErrMissingKey
-					l.next = token.None
 
 					return token.None
 				}
 
-				l.current, l.next = l.consumeBoolean(b)
+				l.current = l.consumeBoolean(b)
 
 				return l.current
 
@@ -456,7 +429,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 					if !l.current.Delimiter().AcceptValue() {
 						l.err = codes.ErrDelimitedValue
 						l.current = token.None
-						l.next = token.None
 
 						return l.current
 					}
@@ -464,12 +436,11 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				if l.expectKey {
 					l.err = codes.ErrMissingKey
-					l.next = token.None
 
 					return token.None
 				}
 
-				l.current, l.next = l.consumeNumber(b)
+				l.current = l.consumeNumber(b)
 
 				return l.current
 
@@ -479,7 +450,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 					if !l.current.Delimiter().AcceptValue() {
 						l.err = codes.ErrDelimitedValue
 						l.current = token.None
-						l.next = token.None
 
 						return l.current
 					}
@@ -487,19 +457,16 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				if l.expectKey {
 					l.err = codes.ErrMissingKey
-					l.next = token.None
 
 					return token.None
 				}
 
-				l.current, l.next = l.consumeNull(b)
+				l.current = l.consumeNull(b)
 
 				return l.current
 
 			default:
 				l.err = codes.ErrInvalidToken
-				l.current = l.next
-				l.next = token.None
 
 				return token.None
 			}
@@ -545,7 +512,6 @@ func (l *L) readMore() error {
 func (l *L) errCheck(err error) token.T {
 	hadToken := l.current.IsKnown()
 	l.current = token.None
-	l.next = token.None
 
 	if errors.Is(err, io.EOF) {
 		switch {
@@ -572,186 +538,22 @@ func (l *L) errCheck(err error) token.T {
 	return l.current
 }
 
-func (l *L) consumeNull(_ byte) (token.T, token.T) {
+func (l *L) consumeNull(_ byte) token.T {
 	var buf [3]byte
 	if err := l.consumeN(buf[:]); err != nil {
 		l.err = codes.ErrInvalidToken
 
-		return token.None, token.None
+		return token.None
 	}
 
 	// n[ull]
 	if !bytes.Equal(buf[:], []byte("ull")) {
 		l.err = codes.ErrInvalidToken
 
-		return token.None, token.None
+		return token.None
 	}
 
-	return token.NullToken, token.None
-}
-
-// expectColon scans the input for a ":" delimiter after a key string
-// has been found.
-func (l *L) expectColon(current token.T) (token.T, token.T) {
-	var (
-		err error
-		b   byte
-	)
-
-	for {
-		if err = l.readMore(); err != nil {
-			if errors.Is(err, io.EOF) {
-				// EOF reached while expecting ':' after an object key
-				l.err = codes.ErrKeyColon
-
-				return token.None, token.None
-			}
-
-			l.err = err
-
-			return token.None, token.None
-		}
-
-		for l.consumed < l.bufferized {
-
-			b = l.buffer[l.consumed]
-			l.consumed++
-			l.offset++
-
-			switch b {
-			case lineFeed:
-				l.line++
-				l.lineStart = l.offset
-
-				continue
-
-			case blank, tab, carriageReturn:
-				continue
-
-			case colon:
-				l.nextLine = l.line
-				l.nextCol = int(l.offset - l.lineStart)
-
-				return current, token.MakeDelimiter(token.Colon)
-
-			default:
-				l.err = codes.ErrKeyColon
-
-				return token.None, token.None
-			}
-		}
-	}
-}
-
-// lookAhead to verify the end of a value token,
-// i.e. followed by EOF, a comma or a closing delimiter.
-//
-// We do not expect a value to appear here.
-//
-// start is the byte that may have already been consumed.
-func (l *L) lookAhead(current token.T, start byte) (token.T, token.T) {
-	var (
-		err error
-		b   byte
-	)
-
-	for {
-		if start == 0 {
-			if err = l.readMore(); err != nil {
-				if errors.Is(err, io.EOF) {
-					if l.isInContainer() {
-						// EOF reached before the container was closed
-						if l.isInObject() {
-							l.err = codes.ErrNotInObject
-						} else {
-							l.err = codes.ErrNotInArray
-						}
-
-						return token.None, token.None
-					}
-
-					return current, token.EOFToken
-				}
-
-				l.err = err
-
-				return token.None, token.None
-			}
-		}
-
-		for {
-			if start == 0 {
-				if l.consumed >= l.bufferized {
-					break
-				}
-
-				b = l.buffer[l.consumed]
-				l.consumed++
-				l.offset++
-			} else {
-				b = start
-				start = 0
-			}
-
-			switch b {
-			case lineFeed:
-				l.line++
-				l.lineStart = l.offset
-
-				continue
-
-			case blank, tab, carriageReturn:
-				continue
-			}
-
-			// the look-ahead token starts here: snapshot its position for when
-			// it is later surfaced as l.next
-			l.nextLine = l.line
-			l.nextCol = int(l.offset - l.lineStart)
-
-			switch b {
-			case comma:
-				if l.isInObject() {
-					// TODO: is it possible to already have expectKey true at this point?
-					l.expectKey = true
-				}
-
-				return current, token.MakeDelimiter(token.Comma)
-
-			case closingBracket:
-				if !l.isInObject() {
-					l.err = codes.ErrNotInObject
-					l.next = token.None
-
-					return token.None, token.None
-				}
-
-				l.expectKey = false
-				l.lastStack = uint64(l.depth()) // save the value's depth before the look-ahead pop
-				l.popContainer()
-
-				return current, token.MakeDelimiter(token.ClosingBracket)
-
-			case closingSquareBracket:
-				if !l.isInArray() {
-					l.err = codes.ErrNotInArray
-					l.next = token.None
-
-					return token.None, token.None
-				}
-
-				l.lastStack = uint64(l.depth()) // save the value's depth before the look-ahead pop
-				l.popContainer()
-
-				return current, token.MakeDelimiter(token.ClosingSquareBracket)
-
-			default:
-				l.err = codes.ErrInvalidToken
-
-				return token.None, token.None
-			}
-		}
-	}
+	return token.NullToken
 }
 
 func (l *L) Reset() {
@@ -770,7 +572,6 @@ func (l *L) Reset() {
 
 func (l *L) reset() {
 	l.err = nil
-	l.next = token.None
 	l.current = token.None
 	l.offset = 0
 	l.consumed = 0

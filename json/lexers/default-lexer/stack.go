@@ -56,9 +56,9 @@ func (l *L) isInContainer() bool {
 //	Input: [ { "a": 1 } ]
 //	Level: 1 2   22 2 1 0
 func (l *L) IndentLevel() int {
+	// lastStack is still set by the verbatim lexer's look-ahead (see L.lastStack);
+	// the semantic lexer L no longer uses it (look-ahead folded out).
 	if l.lastStack > 0 {
-		// a value whose trailing closing delimiter was already consumed by the
-		// look-ahead: report the depth captured before that pop
 		return int(l.lastStack)
 	}
 

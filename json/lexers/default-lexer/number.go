@@ -13,7 +13,7 @@ import (
 // start is the previously consumed byte that decided to parse a number.
 //
 // Refer to https://www.rfc-editor.org/rfc/rfc8259#page-7
-func (l *L) consumeNumber(start byte) (token.T, token.T) {
+func (l *L) consumeNumber(start byte) token.T {
 	var (
 		isExponent     bool
 		exponentSign   bool
@@ -52,7 +52,7 @@ NUMBER:
 			if l.maxValueBytes > 0 && len(l.currentValue)+l.consumed-numStart > l.maxValueBytes {
 				l.err = codes.ErrMaxValueBytes
 
-				return token.None, token.None
+				return token.None
 			}
 
 			b := l.buffer[l.consumed]
@@ -65,7 +65,7 @@ NUMBER:
 					// only 1 decimal separator allowed, exponent is integer
 					l.err = codes.ErrRepeatedDecimalSeparator
 
-					return token.None, token.None
+					return token.None
 				}
 
 				hasFractional = true
@@ -77,7 +77,7 @@ NUMBER:
 					// before any exponent digit and only once
 					l.err = codes.ErrInvalidSign
 
-					return token.None, token.None
+					return token.None
 				}
 				exponentSign = true
 
@@ -85,7 +85,7 @@ NUMBER:
 				if isExponent {
 					l.err = codes.ErrRepeatedExponent
 
-					return token.None, token.None
+					return token.None
 				}
 
 				isExponent = true
@@ -96,7 +96,7 @@ NUMBER:
 					// no leading zeroes on integer part, unless this is just 0
 					l.err = codes.ErrLeadingZero
 
-					return token.None, token.None
+					return token.None
 				}
 
 				switch {
@@ -115,7 +115,7 @@ NUMBER:
 				if hasLeadingZero && !isFractional && !isExponent {
 					l.err = codes.ErrLeadingZero
 
-					return token.None, token.None
+					return token.None
 				}
 
 				switch {
@@ -131,7 +131,7 @@ NUMBER:
 				if b == 0 {
 					l.err = codes.ErrInvalidToken
 
-					return token.None, token.None
+					return token.None
 				}
 
 				start = b
@@ -154,7 +154,7 @@ NUMBER:
 
 			l.err = err
 
-			return token.None, token.None
+			return token.None
 		}
 
 		numStart = 0 // the buffer was refilled: the pending segment restarts at 0
@@ -163,25 +163,25 @@ NUMBER:
 	if hasFractional && fractionalPart == 0 {
 		// a decimal point must be followed by at least one fractional digit
 		l.err = codes.ErrInvalidFractional
-		return token.None, token.None
+		return token.None
 	}
 
 	if isExponent && exponentPart == 0 {
 		l.err = codes.ErrInvalidExponent
 
-		return token.None, token.None
+		return token.None
 	}
 
 	if hasLeadingZero && integerPart > 1 {
 		l.err = codes.ErrLeadingZero
 
-		return token.None, token.None
+		return token.None
 	}
 
 	if integerPart == 0 {
 		l.err = codes.ErrMissingInteger
 
-		return token.None, token.None
+		return token.None
 	}
 
 	// a terminator byte (start != 0) was consumed past the number; EOF (start == 0) was not
@@ -204,5 +204,5 @@ NUMBER:
 		value = l.currentValue
 	}
 
-	return token.MakeWithValue(token.Number, value), token.None
+	return token.MakeWithValue(token.Number, value)
 }
