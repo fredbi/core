@@ -157,35 +157,31 @@ func (l *L) Column() int {
 // If you want to keep tokens for later reuse, you may clone a token
 // using its [T.Clone] method.
 func (l *L) NextToken() token.T {
-	tok := l.scanToken()
-
-	if l.elideSeparator {
-		// skip the structural separators; the grammar was already validated by
-		// scanToken, which keeps them in l.current for context-sensitive checks
-		for tok.IsComma() || tok.IsColon() {
-			tok = l.scanToken()
-		}
-	}
-
-	return tok
+	return l.scanToken()
 }
 
-// scanToken scans and returns the next raw token, including the "," and ":"
-// separators. It maintains the internal l.current/l.next look-ahead state.
+// scanToken scans and returns the next token. When elideSeparator is set, the
+// structural separators "," and ":" are validated and skipped inline (their
+// context is recorded in l.current) rather than surfaced — no per-separator
+// re-entry. The key->colon path still stashes the colon in l.next.
 func (l *L) scanToken() token.T { //nolint: gocognit
 	if l.err != nil {
 		return token.None
 	}
 
 	if l.next.Kind() != token.Unknown {
-		// we have already looked ahead: return the Look-Ahead token
-		l.current = l.next
+		// a stashed look-ahead token (currently only the colon after a key)
+		tok := l.next
 		l.next = token.None
+		l.current = tok
 		l.lastStack = 0
 		l.tokLine = l.nextLine
 		l.tokCol = l.nextCol
 
-		return l.current
+		if !(l.elideSeparator && (tok.IsComma() || tok.IsColon())) {
+			return tok
+		}
+		// elided separator: fall through and scan the next token
 	}
 
 	for {
@@ -235,6 +231,10 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				l.current = token.MakeDelimiter(token.Colon)
 				l.next = token.None
+
+				if l.elideSeparator {
+					continue // skip the colon; context recorded in l.current
+				}
 
 				return l.current
 
@@ -324,6 +324,10 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 
 				l.current = token.MakeDelimiter(token.Comma)
 				l.next = token.None
+
+				if l.elideSeparator {
+					continue // skip the comma; context recorded in l.current
+				}
 
 				return l.current
 
