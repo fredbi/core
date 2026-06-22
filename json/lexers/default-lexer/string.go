@@ -10,7 +10,160 @@ import (
 	"github.com/fredbi/core/json/lexers/token"
 )
 
+// consumeString scans a string value (the opening quote is already consumed).
+//
+// In whole-buffer mode it takes the fast path: a local-cursor scan that aliases
+// the input for unescaped strings (zero copy) and falls back to copying only on
+// the first escape. Streaming uses the buffer-refilling path.
 func (l *L) consumeString() token.T {
+	if l.wholeBuffer {
+		return l.consumeStringWhole()
+	}
+
+	return l.consumeStringStreaming()
+}
+
+// consumeStringWhole scans a string when the whole input is in l.buffer. The
+// cursor is a pure local; in whole-buffer mode l.offset always equals the buffer
+// index, so it (and l.consumed) are written back only at exit points.
+func (l *L) consumeStringWhole() token.T {
+	data := l.buffer
+	n := l.bufferized
+	start := l.consumed // first content byte
+	i := start
+
+	// fast path: look for the closing quote or the first escape / control char
+	for i < n {
+		c := data[i]
+		if c == doubleQuote {
+			if l.maxValueBytes > 0 && i-start > l.maxValueBytes {
+				l.consumed, l.offset = i, uint64(i)
+				l.err = codes.ErrMaxValueBytes
+
+				return token.None
+			}
+			value := data[start:i:i] // alias the input (cap == len)
+			i++                      // past the closing quote
+			l.consumed, l.offset = i, uint64(i)
+
+			return l.finishStringValue(value)
+		}
+		if c == escape {
+			break
+		}
+		if c < 0x20 {
+			l.consumed, l.offset = i, uint64(i)
+			l.err = codes.ErrControlChar
+
+			return token.None
+		}
+		i++
+	}
+	if i >= n {
+		l.consumed, l.offset = i, uint64(i)
+		l.err = codes.ErrUnterminatedString
+
+		return token.None
+	}
+
+	// slow path: an escape was found; copy the clean prefix then unescape the rest
+	l.currentValue = append(l.currentValue[:0], data[start:i]...)
+
+	for i < n {
+		if l.maxValueBytes > 0 && len(l.currentValue) > l.maxValueBytes {
+			l.consumed, l.offset = i, uint64(i)
+			l.err = codes.ErrMaxValueBytes
+
+			return token.None
+		}
+
+		c := data[i]
+		switch {
+		case c == doubleQuote:
+			i++
+			l.consumed, l.offset = i, uint64(i)
+
+			return l.finishStringValue(l.currentValue)
+
+		case c == escape:
+			i++
+			if i >= n {
+				l.consumed, l.offset = i, uint64(i)
+				l.err = codes.ErrUnterminatedString
+
+				return token.None
+			}
+			switch data[i] {
+			case doubleQuote:
+				l.currentValue = append(l.currentValue, '"')
+			case escape:
+				l.currentValue = append(l.currentValue, '\\')
+			case slash:
+				l.currentValue = append(l.currentValue, '/')
+			case 'b':
+				l.currentValue = append(l.currentValue, '\b')
+			case 'f':
+				l.currentValue = append(l.currentValue, '\f')
+			case 'n':
+				l.currentValue = append(l.currentValue, '\n')
+			case 't':
+				l.currentValue = append(l.currentValue, '\t')
+			case 'r':
+				l.currentValue = append(l.currentValue, '\r')
+			case 'u':
+				// hand off to the surrogate-aware decoder, which reads from
+				// l.consumed; offset==index lets us sync trivially
+				l.consumed = i + 1 // past 'u'
+				l.offset = uint64(l.consumed)
+				r, err := l.unescapeUnicodeSequence()
+				if err != nil {
+					l.err = err
+
+					return token.None
+				}
+				l.currentValue = utf8.AppendRune(l.currentValue, r)
+				i = l.consumed
+				continue
+			default:
+				l.consumed, l.offset = i, uint64(i)
+				l.err = codes.ErrUnknownEscape
+
+				return token.None
+			}
+			i++
+
+		case c < 0x20:
+			l.consumed, l.offset = i, uint64(i)
+			l.err = codes.ErrControlChar
+
+			return token.None
+
+		default:
+			l.currentValue = append(l.currentValue, c)
+			i++
+		}
+	}
+
+	l.consumed, l.offset = i, uint64(i)
+	l.err = codes.ErrUnterminatedString
+
+	return token.None
+}
+
+// finishStringValue turns a scanned string body into a Key (in object key
+// position) or String token, handling the trailing colon for keys.
+func (l *L) finishStringValue(value []byte) token.T {
+	if l.expectKey {
+		l.current, l.next = l.expectColon(token.MakeWithValue(token.Key, value))
+		l.expectKey = false
+
+		return l.current
+	}
+
+	return token.MakeWithValue(token.String, value)
+}
+
+func (l *L) consumeStringStreaming() token.T {
 	var escapeSequence bool
 	l.currentValue = l.currentValue[:0]
 

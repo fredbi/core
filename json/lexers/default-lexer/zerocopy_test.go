@@ -50,7 +50,8 @@ func TestZeroCopyNumbers(t *testing.T) {
 		assert.Equal(t, `[12345]`, string(data), "append to value must not scribble into the input")
 	})
 
-	t.Run("bytes mode: strings are copied, not aliased", func(t *testing.T) {
+	t.Run("bytes mode: unescaped string aliases the input", func(t *testing.T) {
+		// since phase 2 stage 1, unescaped strings are zero-copy in bytes mode
 		data := []byte(`["hello"]`)
 		lex := NewWithBytes(data)
 
@@ -58,13 +59,21 @@ func TestZeroCopyNumbers(t *testing.T) {
 		require.Equal(t, "hello", string(tok.Value()))
 
 		data[2] = 'J' // 'h'
-		assert.Equal(t, "hello", string(tok.Value()), "string value must be copied, not aliased")
+		assert.Equal(t, "Jello", string(tok.Value()), "unescaped string should alias the input")
 	})
 
-	t.Run("escaped string decodes correctly", func(t *testing.T) {
-		lex := NewWithBytes([]byte(`["a\nb\"cé"]`))
+	t.Run("escaped string falls back to copy and decodes correctly", func(t *testing.T) {
+		data := []byte(`["a\nb\"cé"]`)
+		lex := NewWithBytes(data)
 		tok := nextOfKind(t, lex, token.String)
-		assert.Equal(t, "a\nb\"cé", string(tok.Value()))
+		require.Equal(t, "a\nb\"cé", string(tok.Value()))
+
+		// an escaped string is copied into currentValue, not aliased
+		clone := string(tok.Value())
+		for i := range data {
+			data[i] = '?'
+		}
+		assert.Equal(t, "a\nb\"cé", clone)
 	})
 
 	t.Run("streaming: number is copied and correct across buffer boundaries", func(t *testing.T) {
