@@ -164,6 +164,20 @@ func BenchmarkLexers(b *testing.B) {
 					}
 				})
 			}
+
+			// phase-2 push-core prototype (bytes mode, separators elided)
+			b.Run("push-proto/bytes", func(b *testing.B) {
+				b.SetBytes(int64(len(w.Data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					p := deflex.NewPush(w.Data)
+					for tok := range p.Tokens() {
+						sink += int(tok.Kind())
+					}
+				}
+			})
 		})
 	}
 }
