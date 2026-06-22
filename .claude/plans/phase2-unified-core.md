@@ -52,8 +52,11 @@ Status: 1a landed; A+ build underway.
   document is still rejected on drain, so conformance + node decoders unaffected;
   only a non-draining single-token consumer would miss trailing garbage. ~+10%
   (citm ~498→546, canada ~228→254, ints ~200→218).
-- ⏳ **step 2 — fold elision** into the scan (skip `,`/`:` inline; drop the
-  `NextToken` filter re-entry).
+- ✅ **step 2 — fold elision** (`54bb43b`): `scanToken` skips `,`/`:` inline
+  (context kept in `l.current`); `NextToken` no longer post-filters. Conformance +
+  grammar + push-equivalence green. ints ~218→244, canada ~254→276, twitter
+  ~501→536; citm flat. Cumulative vs pre-phase-2: twitter +69%, citm +19%,
+  ints +22%, canada +21%, strings +92%.
 - ⏳ **step 3 — fold the key→colon path** (`expectColon`) into the single pass.
 - ⏳ **step 4 — unify the main loop** as `scanOne` (local cursor, whole-buffer fast
   path), remove dead `lookAhead`/`current-next`/`lastStack`.
