@@ -1,6 +1,7 @@
 package lexers
 
 import (
+	"iter"
 	"strings"
 	"testing"
 
@@ -190,6 +191,27 @@ func BenchmarkLexers(b *testing.B) {
 					for tok := range p.Tokens() {
 						sink += int(tok.Kind())
 					}
+				}
+			})
+
+			// push core consumed through iter.Pull (the A-vs-B bridge cost for a
+			// pull NextToken built on a push core)
+			b.Run("push-proto-pull/bytes", func(b *testing.B) {
+				b.SetBytes(int64(len(w.Data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					p := deflex.NewPush(w.Data)
+					next, stop := iter.Pull(p.Tokens())
+					for {
+						tok, ok := next()
+						if !ok {
+							break
+						}
+						sink += int(tok.Kind())
+					}
+					stop()
 				}
 			})
 		})
