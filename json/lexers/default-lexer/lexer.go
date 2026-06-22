@@ -48,6 +48,7 @@ type L struct {
 	nextCol   int
 
 	expectKey   bool
+	afterKey    bool // the previous token was an object key: a ':' must follow
 	isAtEOF     bool
 	wholeBuffer bool // the buffer holds the entire input (no refills): values may alias it
 	lastStack   uint64
@@ -169,21 +170,6 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 		return token.None
 	}
 
-	if l.next.Kind() != token.Unknown {
-		// a stashed look-ahead token (currently only the colon after a key)
-		tok := l.next
-		l.next = token.None
-		l.current = tok
-		l.lastStack = 0
-		l.tokLine = l.nextLine
-		l.tokCol = l.nextCol
-
-		if !(l.elideSeparator && (tok.IsComma() || tok.IsColon())) {
-			return tok
-		}
-		// elided separator: fall through and scan the next token
-	}
-
 	for {
 		if err := l.readMore(); err != nil {
 			return l.errCheck(err)
@@ -211,32 +197,36 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 			l.tokLine = l.line
 			l.tokCol = int(l.offset - l.lineStart)
 
-			switch b {
-			case colon:
-				if l.current.Kind() != token.String {
-					// colon must be after a string litteral
-					l.err = codes.ErrMissingKey
-					l.next = token.None
-
-					return token.None
-				}
-
-				if !l.isInObject() {
-					// colon must appear in an object context
-					l.err = codes.ErrMissingObject
+			// an object key must be followed by the ':' name-separator
+			if l.afterKey {
+				l.afterKey = false
+				if b != colon {
+					l.err = codes.ErrKeyColon
 					l.next = token.None
 
 					return token.None
 				}
 
 				l.current = token.MakeDelimiter(token.Colon)
-				l.next = token.None
-
 				if l.elideSeparator {
 					continue // skip the colon; context recorded in l.current
 				}
 
 				return l.current
+			}
+
+			switch b {
+			case colon:
+				// a stray colon: only an object key (handled above) may precede one
+				if l.current.Kind() == token.String {
+					// a string value (not a key) followed by a colon
+					l.err = codes.ErrMissingObject
+				} else {
+					l.err = codes.ErrMissingKey
+				}
+				l.next = token.None
+
+				return token.None
 
 			case closingBracket:
 				if l.current.IsComma() {
@@ -786,6 +776,7 @@ func (l *L) reset() {
 	l.consumed = 0
 	l.errContext = nil
 	l.expectKey = false
+	l.afterKey = false
 	l.isAtEOF = false
 	l.lastStack = 0
 	l.line = 1

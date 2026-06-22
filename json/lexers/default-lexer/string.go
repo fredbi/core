@@ -154,10 +154,11 @@ func (l *L) consumeStringWhole() token.T {
 // position) or String token, handling the trailing colon for keys.
 func (l *L) finishStringValue(value []byte) token.T {
 	if l.expectKey {
-		l.current, l.next = l.expectColon(token.MakeWithValue(token.Key, value))
+		// the following colon is validated on the next scan (see l.afterKey)
 		l.expectKey = false
+		l.afterKey = true
 
-		return l.current
+		return token.MakeWithValue(token.Key, value)
 	}
 
 	return token.MakeWithValue(token.String, value)
@@ -211,16 +212,7 @@ func (l *L) consumeStringStreaming() token.T {
 					continue
 				}
 
-				if l.expectKey {
-					l.current, l.next = l.expectColon(
-						token.MakeWithValue(token.Key, l.currentValue),
-					)
-					l.expectKey = false
-
-					return l.current
-				}
-
-				return token.MakeWithValue(token.String, l.currentValue)
+				return l.finishStringValue(l.currentValue)
 
 			case slash:
 				if escapeSequence {
