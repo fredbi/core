@@ -84,7 +84,15 @@ Protect and measure before changing anything.
   with an xfail set keeping the suite green while the backlog is worked.
   **Baseline: y_ 95/95 pass (no false-rejects), n_ 172/188 (16 false-accepts).**
 
-#### 0.1 baseline findings (16 false-accepts + extras)
+- ✅ **0.4/0.5 conformance fixes (groups A–E) + deep-nesting bug (step F).**
+  All 16 false-accepts fixed and the severe nesting bug resolved; the parsing
+  suite is now **100% conformant (y_ 95/95, n_ 188/188, xfail 0)**. Committed as
+  groups A (numbers), B (control chars), C (value-less comma), D (EOF/empty
+  paths), E (VL `\u` validation), F (stack rewrite + `IndentLevel` fix, with
+  `stack_test.go` covering deep nesting & the `maxContainerStack` breaker).
+  New error codes: `ErrControlChar`, `ErrMissingValue`, `ErrNoData`.
+
+#### 0.1 baseline findings (16 false-accepts + extras) — ✅ all resolved
 
 | # | Group | Files | Root cause | Affects |
 |---|-------|-------|------------|---------|
@@ -113,41 +121,112 @@ Protect and measure before changing anything.
   …) are all **accepted** — we don't evaluate numbers, so no overflow. UTF-16/BOM
   inputs are rejected (UTF-8-only, as documented).
 
-- ⏳ **0.2 Benchmark harness + baseline.** Flesh out `benchmarks/comparative`
-  with at least stdlib `jsontext` to capture a baseline now (full field added in
-  Phase 4). Record ns/op + B/op + allocs/op for a few representative fixtures
-  (small object, big array, deeply nested, long strings, huge numbers).
-- ⏳ **0.3 Security-by-default audit.** Review guards against hostile streams:
+- ✅ **0.2 Benchmark harness + baseline.** New module `json/benchmarks/` (own
+  go.mod, in go.work) isolates heavy deps. `lexers/` compares implementations via
+  the `lexers.Lexer` interface: `default-lexer` (bytes / pooled / verbatim) vs a
+  `stdlib` baseline on `encoding/json` v1 (UseNumber). 11 synthetic workloads
+  (`workloads/`) + 4 vendored real-world datasets (canada/citm/twitter/golang,
+  gzip-embedded, BSD). `TestWorkloadsLex` guards that all inputs lex cleanly.
+  **Baseline: default-lexer ~5–10× stdlib throughput with flat single-digit
+  allocs/op (1 when pooled) vs stdlib's 10^5–10^6.** (jsontext / easyjson / jsonv2
+  baselines deferred to Phase 4.)
+- ✅ **0.3 Security-by-default audit.** Stance: total input bounded by the caller
+  via `io.LimitReader`; lexer keeps two orthogonal breakers (depth, per-value
+  memory); guards off by default with a documented hardening recipe. Fixed two
+  bugs: VL's shadow `options` struct made its value cap dead (removed), and the
+  verbatim blanks buffer was unbounded (now under `WithMaxValueBytes`). Added
+  `security_test.go`. No `WithStreamDefaults` bundle (avoided magic numbers).
+  <details><summary>original 0.3 notes</summary>
+
+  Review guards against hostile streams:
   unbounded nesting, unbounded value size, buffer growth. Decide **safe defaults
   for streaming mode** (today both breakers default to 0 = unlimited). 🔬
-- ⏳ **0.4 seriot.ch pitfalls pass.** Walk https://seriot.ch/security/parsing_json.html;
-  map each documented pitfall to a test case + our behavior. Overlaps with 0.1.
-- ⏳ **0.5 Fix known nits** (§2 🐛) + raise coverage on existing code (pools path).
+  </details>
+- ✅ **0.4 seriot.ch pitfalls pass.** Effectively covered by the JSONTestSuite
+  conformance work (groups A–E + step F); the suite encodes the seriot cases.
+- ✅ **0.5 Fix known nits.** `stackScale` comment & `IndentLevel` (step F), pools
+  path exercised (benchmarks + tests), `ErrRepeatedDecimalSeparator` message and
+  `options.go` "4 bytes → 8 bytes" doc all fixed.
 
-### Phase 1 — Interface & API surface  ⏳
+### Phase 1 — Interface & API surface  ✅
 
 Additive, low-risk; done before the refactor so the core targets the final shape.
 
-- ⏳ **1.1 Iterator API.** Add a range-over-func walk to the `Lexer`/`VerbatimLexer`
-  interfaces (Go 1.23+). Signature TBD (`iter.Seq[token.T]` + check `Err()`, vs
-  `iter.Seq2`). 🔬
-- ⏳ **1.2 `WithElideSeparator` option.** Skip `,` tokens in the emit loop
-  (grammar still validated internally). **Default ON for semantic `L`**, off for
-  verbatim. Reconcile with existing tests that assert comma tokens. 🔬
-- ⏳ **1.3 Line/column tracking.** Verbatim tokens expose line/col, not just
-  offset (TUI/GUI/LSP positioning). Cheap in `VL` (already scans blanks);
-  optional in `L`. 🔬
-- ⏳ **1.4 Zero-copy / offset path (design).** For callers that fully own the
-  input `[]byte`: expose token values as offsets/sub-slices into the source
-  instead of copies, when no unescaping/normalization is needed. 🔬
+- ✅ **1.1 Iterator API.** Added `Tokens() iter.Seq[token.T]` (and
+  `iter.Seq[token.VT]`) to the interfaces, implemented on `L`/`VL`/stdlib baseline.
+  EOF ends the range; errors via `Err()` after the loop. **Wrapper impl measures
+  identical to the manual loop (free ergonomics, no speedup).** A faster *native
+  push* iterator is intentionally deferred to Phase 2: the push core (scan loop
+  that yields directly, no `current`/`next` stash) becomes the shared foundation
+  for both `NextToken` and `Tokens()` — built once, not duplicated.
+- ✅ **1.2 `WithElideSeparator` option.** Default-ON for `L`: elides **both `,`
+  and `:`** (jsontext parity; `Key` token makes `:` redundant). `scanToken` still
+  produces/validates them (context checks intact); `NextToken` filters; `Tokens()`
+  inherits it. `VL` ignores the option (always preserves all tokens). Existing
+  tests opt out via the `getLexer` helpers; new `elide_test.go` covers the default.
+  ⚠️ **Migration debt:** `json/nodes/light`, `json/constrained`, `json/dynamic`
+  still rely on separators and break under the new default — they construct lexers
+  centrally in `json/options.go` and `json/dynamic/options.go`. Migrate to the
+  elided model (the "revisit node.go deeply" work) — until then their tests fail.
+- ✅ **1.3 Line/column tracking.** Always-on for both (1-based); negligible cost
+  (one increment per newline + a token-start snapshot) — semantic `L` benchmarks
+  unchanged. `token.VT` carries `line`/`col` (`Line()`/`Col()`/`WithPosition`);
+  `token.T` stays lean and `L`/`VL` expose `Line()`/`Column()` methods. Kept off
+  the `Lexer` interface (stdlib baseline can't provide positions; an optional
+  `PositionedLexer` could come later). Tests in `position_test.go` (incl. streaming
+  buffer-crossing + CRLF).
+- ✅ **1.4 Zero-copy values (numbers).** In whole-buffer mode (`wholeBuffer` flag)
+  a number's value aliases the input (`buffer[start:end:end]`, cap==len) instead
+  of copying into `currentValue`. `consumeNumber` is branch-free (validate, no
+  per-byte append; alias or single bulk-copy at the end; flush-on-refill for
+  streaming). **Measured +23% (ints) / +31% (canada) throughput, fewer allocs.**
+  Key lesson: the constraint is *buffer stability*, not caller ownership — bytes
+  mode is safe (noopReader never overwrites; look-ahead's readMore is a no-op),
+  streaming is not (refill, incl. during look-ahead). **Strings stay on the copy
+  path**: a lazy-copy-on-escape variant added hot-path cost + an escaped-string
+  regression for no gain → deferred to Phase 4 with a fast happy-path scanner
+  (IndexByte/SIMD). Streaming zero-copy + a rotating-buffer knob also Phase 4+.
 
 ### Phase 2 — Consolidation: de-duplicate L / VL  ⏳
 
 Risky remodel, executed with Phase 0 net in place and Phase 1 shape known.
 
-- ⏳ **2.1 Design the shared core.** Candidate: extract a lowest-level byte
-  scanner producing grammar events; `L` and `VL` become thin policy layers
-  (blank handling, token construction). Alternatives in Open decisions. 🔬
+#### Profiling insights (2026-06-22, `lexers/profile_test.go`) — inform the design
+
+- **Allocations are already optimal — don't chase them.** The 6/8 allocs/op in the
+  headline benchmark are pure measurement bias (a fresh lexer per iteration:
+  `new(L)`, nesting-stack word, `currentValue` growth, +4KB buffer for readers).
+  **Pooled/recycled, scanning is 0 allocs/op.**
+- **CPU is dominated by `scanToken` (the main loop): ~55% flat / 92% cum** (citm,
+  pooled bytes). Then `consumeString` 17%, `consumeNumber` 10%, `readMore` 4%.
+- **Hottest lines are per-byte bookkeeping, not logic:** `offset++`/`consumed++`,
+  the `for consumed < bufferized` condition, and the blank/`lineFeed` switch
+  dispatch. ⇒ **The Phase 2 push-core's main lever:** scan with `consumed`/`offset`
+  (and line state) in **locals**, writing back to the `L` struct only at token
+  boundaries — removes per-byte struct writes the pull model can't avoid.
+- **Inlining:** small predicates/stack helpers inline (`isInObject`, `push*`,
+  `popContainer`, `depth`, `unhex`); the big scan funcs don't (too complex —
+  expected). Near-miss: `push` cost 82 vs budget 80 — trivial trim fully inlines
+  the container-push path.
+
+#### easyjson comparison — the headroom target (2026-06-22)
+
+Added `mailru/easyjson/jlexer` (the pull []byte lexer that inspired this one) as a
+benchmark point (`lexers/easyjson/`), numbers taken raw (no conversion). **easyjson
+is faster on every workload: ~2.5–2.7× on number-heavy input (ints/canada), ~1.3×
+on real docs (citm/twitter).** Cleanest cell = numbers (raw, ~0 alloc both sides):
+our number scanning is ~2.5× slower than achievable → the per-byte main-loop cost
+is the tax. BUT easyjson allocates a string per value (`String()`, ~10⁴ allocs on
+citm) where we reuse a buffer (single digits). **Phase 2 target: close the per-byte
+scan gap with the push-core while keeping zero-alloc strings + zero-copy numbers →
+win on both speed and allocations.**
+
+- ⏳ **2.1 Design the shared core — now a *push* core.** Decision (from 1.1): the
+  shared lowest-level scanner drives its own loop and emits tokens via a yield
+  callback; `L`/`VL` become thin adapters. `NextToken` is the pull adapter (a
+  push→pull bridge or a thin re-entry), `Tokens()` the native push adapter. This
+  delivers the dedup *and* the iterator speedup in one rewrite. Must stay
+  conformance- and benchmark-neutral (Phase 0 suite is the gate).
 - ⏳ **2.2 Migrate** `L` then `VL` onto the shared core; keep all tests green
   (Phase 0 suite is the gate). Re-run benchmarks; no perf regression allowed.
 
