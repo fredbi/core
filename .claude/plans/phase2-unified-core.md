@@ -64,8 +64,20 @@ Status: 1a landed; A+ build underway.
   key→colon via `l.current.Kind()` per token taxed numbers (+13-19%); a dedicated
   `afterKey` bool + dropping the stash-branch check fixed it. Net vs step 2:
   citm −11%, twitter −11%, canada flat, ints +1.7%, geomean −5%.
-- ⏳ **step 4 — unify the main loop** as `scanOne` (local cursor, whole-buffer fast
-  path), delete dead `lookAhead`/`expectColon`/`current-next`/`lastStack`/`nextLine/Col`.
+- 🚧 **step 4 — unify the main loop + delete dead code.**
+  - ✅ **4a (`2111a67`): deleted `L.lookAhead` + `L.expectColon`** (~165 lines),
+    removed `L.next` (consumeNumber/Boolean/Null now single-return; dead
+    `l.next=None` writes gone). citm ~630→660, twitter ~605→634, ints ~244→251;
+    smaller hot struct. `lastStack`/`nextLine`/`nextCol` KEPT — still used by VL's
+    look-ahead via the embedded L; they go with the merge.
+  - ⏳ **4b: localize the main-loop cursor** (whole-buffer fast path; needs an
+    offset-base for streaming so line/col + error offsets stay exact). Delicate.
+- **Cumulative vs pre-phase-2 (MB/s): citm 458→660, twitter 318→634, ints 200→251,
+  strings_plain 379→728.**
+
+> Note: the L/VL merge (the big remaining dedup, ~750 dup lines) would also let us
+> drop the kept `lastStack`/`nextLine`/`nextCol`. Consider sequencing it before or
+> after 4b.
 - then: L/VL merge, streaming, line/col re-verify, pooling, migrate consumers,
   delete prototype `P` + old duplication.
 
