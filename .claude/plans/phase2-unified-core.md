@@ -75,6 +75,34 @@ Status: 1a landed; A+ build underway.
 - **Cumulative vs pre-phase-2 (MB/s): citm 458→660, twitter 318→634, ints 200→251,
   strings_plain 379→728.**
 
+### Number-scanner rewrite (2026-06-23), prompted by the jsontext study
+
+Studying jsontext (encoding/json/v2) — the closest non-SIMD peer — explained
+its number speed: an inlinable `ConsumeSimpleNumber` fast path (no call, no
+state machine for plain ints) + a digit-run state machine (`uint()`-BCE loops,
+grammar checked only at run transitions) over a whole buffer. Key insight: our
+number bottleneck was **per-token call + state-machine overhead**, not per-byte
+scanning (the reverted "1b" spike couldn't fix it because `consumeNumber` stayed
+a non-inlined call).
+
+- ✅ **inline simple-number fast path (`4a309ec`):** plain integer (optionally
+  negative) scanned inline in `scanToken`, aliased, no call — whole-buffer +
+  no-cap only. Digit case first in the switch (common path = first branch).
+  **ints 205→~552 (+175%, beats easyjson-raw 515 while validating).** citm
+  +8-10%, floats/mixed +5%. The positive-only variant already captured the whole
+  ints win — confirms the overhead diagnosis.
+- ✅ **digit-run `consumeNumberWhole` (`9bee708`):** fraction/exponent + malformed
+  forms in whole-buffer mode scanned with digit runs (validate at transitions).
+  `scanToken` dispatches directly (inline int → `consumeNumberWhole` →
+  `consumeNumberStreaming` for streaming/capped; no dispatcher hop). **floats
+  240→475 (+98%), canada 235→495 (+111%);** citm/twitter −2/−3% (code-layout
+  jitter). Deferred-error semantics (e.g. `1.2.3`→`1.2` then rejected `.3`); no
+  test asserts a number error code; conformance unaffected.
+- Cumulative number standings (MB/s, bytes): ints 205→552 (2.7×, jsontext 785),
+  floats 262→475 (1.8×), canada 246→495 (2.0×, jsontext 593, easyjson-raw 527).
+  Allocations unchanged (still aliasing). Strings still ~900 (>easyjson, <jsontext
+  1421 — strings are the next study target if we chase jsontext further).
+
 > Note: the L/VL merge (the big remaining dedup, ~750 dup lines) would also let us
 > drop the kept `lastStack`/`nextLine`/`nextCol`. Consider sequencing it before or
 > after 4b.
