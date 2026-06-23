@@ -4,6 +4,7 @@ import (
 	"iter"
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // Resettable is an interface for types that want to recycle a clean instance from a [Pool].
@@ -28,10 +29,24 @@ func resetIfResettable[T any](v *T) {
 	}
 }
 
+// borrow state of a [redeemable] wrapper, used to detect double-redeem.
+const (
+	stateIdle     uint32 = iota // sitting in the pool (or freshly created), not checked out
+	stateBorrowed               // checked out by a borrower
+)
+
 type redeemable[T any] struct {
 	inner    *T
 	redeemer func()
+	// state guards against a double-redeem (the same wrapper Put into the pool twice, which would
+	// let one object be handed to two borrowers). It is set to stateBorrowed on borrow and atomically
+	// flipped back to stateIdle on redeem; a redeem that finds it already idle panics.
+	state atomic.Uint32
 }
+
+// redeemPanic is the message raised when a slot is redeemed while already idle.
+const redeemPanic = "pools: double redeem detected (object already returned to the pool); " +
+	"a borrowed object must be redeemed exactly once"
 
 // Pool wraps a [sync.Pool] to make it available for any type.
 //
@@ -73,6 +88,9 @@ func NewRedeemable[T any]() *PoolRedeemable[T] {
 		New: func() any {
 			r := &redeemable[T]{inner: new(T)}
 			r.redeemer = func() {
+				if !r.state.CompareAndSwap(stateBorrowed, stateIdle) {
+					panic(redeemPanic)
+				}
 				resetIfResettable(r.inner)
 				p.pool.Put(r)
 			}
@@ -103,6 +121,10 @@ func (p *Pool[T]) Borrow() *T {
 // The instance is reset (if it implements [Resettable]) before being returned to the pool.
 // After calling Redeem, the caller must drop its reference to ptr: continuing to use it is a
 // use-after-redeem bug.
+//
+// Unlike [PoolRedeemable], this plain pool holds no per-object state, so it cannot detect a
+// double-redeem of the same pointer (which corrupts the pool). Use [PoolRedeemable] when you want
+// that guard, or the debug build for full tracking.
 func (p *Pool[T]) Redeem(ptr *T) {
 	if ptr == nil {
 		return
@@ -119,8 +141,12 @@ func (p *Pool[T]) Redeem(ptr *T) {
 // The instance is reset (if it implements [Resettable]) both when borrowed and when the returned
 // redeem closure is called. After calling the redeem closure, the caller must drop its reference
 // to the returned instance.
+//
+// Calling the redeem closure more than once panics (see [redeemable.state]): a borrowed instance
+// must be redeemed exactly once.
 func (p *PoolRedeemable[T]) BorrowWithRedeem() (*T, func()) {
 	container := p.pool.Get().(*redeemable[T])
+	container.state.Store(stateBorrowed)
 	resetIfResettable(container.inner)
 
 	return container.inner, container.redeemer
@@ -131,10 +157,15 @@ func (p *PoolRedeemable[T]) BorrowWithRedeem() (*T, func()) {
 // This is useful to borrow and redeem slices from a pool, without having to constantly manipulate
 // pointers to the slice.
 //
-// The wrapper must remain the single source of truth for the slice header: always mutate through
-// its methods ([Slice.Append], [Slice.Grow], [Slice.Concat]). If you grow the raw slice returned
-// by [Slice.Slice] using the builtin append, the regrown backing array lives only in your local
-// copy and is lost when the wrapper is redeemed.
+// The wrapper holds the authoritative slice header. Its mutating methods ([Slice.Append],
+// [Slice.Concat], [Slice.Grow]) return the current backing slice for convenience, so it reads as an
+// idiomatic []T. But the returned slice is only a snapshot of the wrapper's state at that moment:
+// if you keep it and grow it yourself with the builtin append and it reallocates, the new backing
+// array lives only in your local copy and is NOT tracked by the wrapper — it will not be recycled
+// when the wrapper is redeemed (and a later borrower would get the old, smaller array).
+//
+// Rule of thumb: it is fine to read or pass the returned []T to a consumer; but if you plan to
+// grow the slice, keep calling the wrapper's methods so the growth is tracked and recycled.
 type Slice[T any] struct {
 	length int
 	inner  []T
@@ -142,13 +173,18 @@ type Slice[T any] struct {
 
 // Slice returns the inner slice.
 //
-// Treat the result as a read-only view for ranging. To grow or append, use the wrapper methods so
-// the new backing array is tracked and recycled (see [Slice]).
+// Treat the result as a read-only view (for ranging or passing to a consumer), valid until the next
+// mutation or redeem. To grow or append, use the wrapper methods so the new backing array is
+// tracked and recycled (see [Slice]).
 func (s *Slice[T]) Slice() []T {
 	return s.inner
 }
 
-// Grow the inner slice.
+// Grow the inner slice so it can accommodate at least size more elements without reallocating, and
+// return the current backing slice.
+//
+// Growth is tracked by the wrapper, so the enlarged backing array is recycled on redeem. See
+// [Slice] for the caveat about growing the returned slice yourself.
 func (s *Slice[T]) Grow(size int) []T {
 	s.inner = slices.Grow(s.inner, size)
 
@@ -163,20 +199,21 @@ func (s *Slice[T]) Cap() int {
 	return cap(s.inner)
 }
 
-// Append elements to the inner slice.
+// Append elements to the inner slice and return the current backing slice.
 //
-// This should be prefered to the append builtin if you plan that the slice will
-// grow and you want to reuse the newly allocated space.
+// This should be prefered to the append builtin if you plan that the slice will grow and you want
+// the newly allocated space to be tracked and recycled. See [Slice] for the caveat about growing
+// the returned slice yourself.
 func (s *Slice[T]) Append(elems ...T) []T {
 	s.inner = append(s.inner, elems...)
 
 	return s.inner
 }
 
-// Concat another slice to the inner slice.
+// Concat another slice to the inner slice and return the current backing slice.
 //
 // Unlike [slices.Concat], this reuses the inner slice's capacity instead of always allocating a
-// fresh backing array.
+// fresh backing array. See [Slice] for the caveat about growing the returned slice yourself.
 func (s *Slice[T]) Concat(slice []T) []T {
 	s.inner = append(s.inner, slice...)
 
@@ -219,7 +256,9 @@ func (s *Slice[T]) Clip() {
 //
 // Use [PoolSlice.BorrowWithSizeAndRedeem] or [Slice.Grow] to grow the capacity of the inner slice.
 type PoolSlice[T any] struct {
-	*PoolRedeemable[Slice[T]]
+	// redeemable is held as an unexported field rather than embedded, so the underlying
+	// [PoolRedeemable] and its [sync.Pool] are not part of PoolSlice's public surface.
+	redeemable *PoolRedeemable[Slice[T]]
 }
 
 // PoolSliceOption alters the default settings to allocate new pooled slices
@@ -252,11 +291,8 @@ func NewPoolSlice[T any](opts ...PoolSliceOption) *PoolSlice[T] {
 		apply(&o)
 	}
 
-	p := &PoolSlice[T]{
-		PoolRedeemable: &PoolRedeemable[Slice[T]]{},
-	}
-
-	p.pool = sync.Pool{
+	rp := &PoolRedeemable[Slice[T]]{}
+	rp.pool = sync.Pool{
 		New: func() any {
 			s := &redeemable[Slice[T]]{
 				inner: &Slice[T]{
@@ -266,22 +302,26 @@ func NewPoolSlice[T any](opts ...PoolSliceOption) *PoolSlice[T] {
 			}
 
 			s.redeemer = func() {
+				if !s.state.CompareAndSwap(stateBorrowed, stateIdle) {
+					panic(redeemPanic)
+				}
 				s.inner.Reset()
-				p.pool.Put(s)
+				rp.pool.Put(s)
 			}
 
 			return s
 		},
 	}
 
-	return p
+	return &PoolSlice[T]{redeemable: rp}
 }
 
 // BorrowWithRedeem returns the slice wrapper and the redeem closure to relinquish the allocated wrapper.
 //
-// The wrapper is reset (elements zeroed, length restored) when the redeem closure is called.
+// The wrapper is reset (elements zeroed, length restored) both on borrow and when the redeem
+// closure is called. Calling the redeem closure more than once panics.
 func (p *PoolSlice[T]) BorrowWithRedeem() (*Slice[T], func()) {
-	return p.PoolRedeemable.BorrowWithRedeem()
+	return p.redeemable.BorrowWithRedeem()
 }
 
 // BorrowWithSizeAndRedeem borrows a slice []T from the pool and ensures that its capacity

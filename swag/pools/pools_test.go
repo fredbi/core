@@ -91,6 +91,45 @@ func TestRedeemableBorrowWithRedeem(t *testing.T) {
 	redeem2()
 }
 
+func TestRedeemableDoubleRedeemPanics(t *testing.T) {
+	p := NewRedeemable[resettable]()
+
+	_, redeem := p.BorrowWithRedeem()
+	redeem() // first redeem: fine
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected a panic on double redeem")
+		}
+	}()
+	redeem() // second redeem: must panic
+}
+
+func TestRedeemableReborrowRearmsState(t *testing.T) {
+	p := NewRedeemable[resettable]()
+
+	// borrow/redeem several times: the state must be re-armed on each borrow so redeem keeps working.
+	for i := 0; i < 5; i++ {
+		_, redeem := p.BorrowWithRedeem()
+		redeem()
+	}
+}
+
+func TestPoolSliceDoubleRedeemPanics(t *testing.T) {
+	p := NewPoolSlice[int]()
+
+	s, redeem := p.BorrowWithRedeem()
+	s.Append(1, 2, 3)
+	redeem()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected a panic on double redeem of a pooled slice")
+		}
+	}()
+	redeem()
+}
+
 func TestRedeemableZeroAllocRedeem(t *testing.T) {
 	p := NewRedeemable[resettable]()
 

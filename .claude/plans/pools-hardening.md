@@ -7,10 +7,11 @@
 
 ## Progress
 
-- ✅ **Phase 1 — Correctness + tests** (C1, C2, C3, C7). 11 tests, 85.2% cov, race-clean.
-- ⏳ Phase 2 — API hardening (§4) — next; resolves C5/C6 + open decisions D1/D2/D3.
+- ✅ **Phase 1 — Correctness + tests** (C1, C2, C3, C5, C7). D2 resolved (reset both sides).
+- ✅ **Phase 2 — API hardening** (§4). D1 + D3 resolved. C6 closed (docs), de-embedded PoolSlice,
+  always-on double-redeem panic guard on the redeemable pools. 14 tests, 86.4% cov, race-clean.
 - ⏳ Phase 3 — Slice bloat (§5)
-- ⏳ Phase 4 — Debug pool (§6) — resolves C4
+- ⏳ Phase 4 — Debug pool (§6) — full double-redeem/leak/ABA tracking + plain `Pool[T]` coverage
 - ⏳ Phase 5 — Shared pools (§7)
 
 ## Legend
@@ -71,9 +72,9 @@ A small, **exactly-correct** generic pooling toolkit:
 | C1 | ✅ | high | `Redeem(nil)` / typed-nil `*T` is stored (interface non-nil), later handed back → nil-receiver `Reset()` panic / nil borrow. | Guard `if ptr == nil { return }` before `Put`. |
 | C2 | ✅ | high | `Reset()` runs **on borrow**, so idle pooled objects pin their whole reference graph across a GC cycle. | **D2 resolved: reset on BOTH borrow and redeem.** Redeem clears refs promptly (no idle pinning); borrow guarantees a clean object regardless of history. `Reset` must be idempotent (runs ≥2×/cycle). |
 | C3 | ✅ | high | `Slice.Reset()` reslices `[:length]`, never zeroing `[len:cap]` (and `[0:length]` for `WithLength`) → leaks element pointers, exposes stale data. | `clear()` whole used region before reslice; `WithLength` region zeroed. Append-monotonic-len invariant makes this complete. |
-| C4 | ⏳ | high | Double-redeem / use-after-redeem is silent; cached redeemer makes `defer`+manual easy → `sync.Pool` corruption (one object to two borrowers). | Primary answer is the debug pool (§6). Cheap partial guard → D3. |
+| C4 | 🚧 | high | Double-redeem / use-after-redeem is silent; cached redeemer makes `defer`+manual easy → `sync.Pool` corruption (one object to two borrowers). | **D3 resolved (partial, Phase 2):** always-on `atomic.Uint32` state on the redeemable wrapper panics loudly on a redeem of an already-idle slot; re-armed on borrow. Catches the common double-redeem. **Residual:** ABA (redeem racing a re-borrow of the same slot) and plain `Pool[T]` (no wrapper) → debug build, Phase 4. |
 | C5 | ⏳ | med | Embedding `sync.Pool` exposes `.Get()/.Put()` returning the wrong type (`*redeemable[T]`, `any`). | **Done early:** `sync.Pool` is now an unexported `pool` field (no longer embedded). Public surface = `Borrow`/`Redeem`/`BorrowWithRedeem`. |
-| C6 | ⏳ | med | `Slice.Slice()` returns raw `[]T`, inviting builtin `append` whose regrown array is lost on redeem (defeats the whole point). | Doc warning added now; full reshape (wrapper-only + `Detach()`) → §4 / D1. |
+| C6 | ✅ | med | `Slice.Slice()` returns raw `[]T`, inviting builtin `append` whose regrown array is lost on redeem (defeats the whole point). | **D1 resolved:** keep idiomatic `[]T` returns but document the snapshot/growth caveat hard ("use the wrapper if you plan to grow"). Also de-embedded `PoolSlice`'s `*PoolRedeemable` → unexported field. |
 | C7 | ✅ | low | `Pool[*X]` yields `**X`; `Concat` always allocates (defeats reuse). | Value-type contract documented; `Concat` now append-based. |
 
 **Phase 1 added the missing test suite** (was `t.SkipNow()`): borrow/redeem round-trips,
@@ -188,10 +189,12 @@ else builds on.
 
 ## 9. Open design decisions (🔬)
 
-- **D1 (§4.2):** `Slice` API shape — keep live `[]T` (doc only) vs. wrapper-only with
-  `Detach()`. *Leaning wrapper-only.*
+- ~~**D1 (§4.2):** `Slice` API shape.~~ **Resolved: keep idiomatic `[]T` returns + hard docs**
+  (snapshot semantics; use the wrapper to grow). De-embedded `PoolSlice` internals.
 - ~~**D2 (§3 C2):** reset-on-redeem only, or both sides behind an option?~~ **Resolved: reset on both borrow and redeem** (memory window + last-moment defensiveness). `Reset` contract is now "must be idempotent".
-- **D3 (§3 C4):** any cheap non-debug double-redeem guard worth its cost?
+- ~~**D3 (§3 C4):** any cheap non-debug double-redeem guard worth its cost?~~ **Resolved: yes —**
+  always-on atomic-state panic guard on the redeemable wrapper (re-armed on borrow). Residual ABA +
+  plain `Pool[T]` deferred to the Phase 4 debug build.
 - **D4 (§5):** defaults from benchmarks — cap-on-redeem alone, or ship buckets too?
 - **D5 (§3 C3):** zero element tail always, or fast-path value types that don't need it
   (via a `Resettable`-style marker / `reflect`-free detection)?
