@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/fredbi/core/json/benchmarks/lexers/easyjson"
+	"github.com/fredbi/core/json/benchmarks/lexers/jsontext"
 	"github.com/fredbi/core/json/benchmarks/lexers/stdlib"
 	"github.com/fredbi/core/json/benchmarks/lexers/workloads"
 	jlex "github.com/fredbi/core/json/lexers"
@@ -111,6 +112,15 @@ func TestWorkloadsLex(t *testing.T) {
 				t.Errorf("%s / easyjson: unexpected error: %v", w.Name, err)
 			}
 		}
+
+		// jsontext (encoding/json/v2) tokenizer; iterative, but it enforces a
+		// default max nesting depth of 10000, so skip the deeply-nested
+		// synthetics (the default-lexer has no such cap).
+		if !deeplyNested(w.Name) {
+			if err := jsontext.Walk(w.Data); err != nil {
+				t.Errorf("%s / jsontext: unexpected error: %v", w.Name, err)
+			}
+		}
 	}
 }
 
@@ -176,6 +186,22 @@ func BenchmarkLexers(b *testing.B) {
 
 					for range b.N {
 						_ = easyjson.WalkConvertNumbers(w.Data)
+					}
+				})
+			}
+
+			// jsontext (encoding/json/v2): fully-validating streaming tokenizer,
+			// numbers validated but not converted -> the closest peer to the
+			// default-lexer. Fed a *bytes.Buffer for the zero-copy bytes path.
+			// Skips the deeply-nested synthetics (default max depth 10000).
+			if !deeplyNested(w.Name) {
+				b.Run("jsontext/bytes", func(b *testing.B) {
+					b.SetBytes(int64(len(w.Data)))
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for range b.N {
+						_ = jsontext.Walk(w.Data)
 					}
 				})
 			}
