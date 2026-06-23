@@ -34,15 +34,15 @@ var Bytes = pools.NewPoolSlice[byte](pools.WithMaxCapacity(maxSharedCapacity))
 
 var buffers = pools.New[bytes.Buffer]()
 
-// GetBuffer borrows a reset [bytes.Buffer] from the shared pool.
-func GetBuffer() *bytes.Buffer {
+// BorrowBuffer borrows a reset [bytes.Buffer] from the shared pool.
+func BorrowBuffer() *bytes.Buffer {
 	return buffers.Borrow()
 }
 
-// PutBuffer returns a [bytes.Buffer] to the shared pool. A nil buffer is ignored, and a buffer that
+// RedeemBuffer returns a [bytes.Buffer] to the shared pool. A nil buffer is ignored, and a buffer that
 // has grown beyond 64 KiB is dropped (left for the GC) rather than bloating the shared pool. The
-// buffer is reset before being recycled; do not use it after calling PutBuffer.
-func PutBuffer(b *bytes.Buffer) {
+// buffer is reset before being recycled; do not use it after calling RedeemBuffer.
+func RedeemBuffer(b *bytes.Buffer) {
 	if b == nil || b.Cap() > maxSharedCapacity {
 		return
 	}
@@ -51,21 +51,21 @@ func PutBuffer(b *bytes.Buffer) {
 
 var readers = pools.New[bytes.Reader]()
 
-// GetReader borrows a [bytes.Reader] from the shared pool, positioned to read from b.
+// BorrowReader borrows a [bytes.Reader] from the shared pool, positioned to read from b.
 //
 // [bytes.Reader] is not auto-resettable (its Reset takes an argument), so it is reinitialized here
-// explicitly. Pair every GetReader with a [PutReader].
-func GetReader(b []byte) *bytes.Reader {
+// explicitly. Pair every BorrowReader with a [RedeemReader].
+func BorrowReader(b []byte) *bytes.Reader {
 	r := readers.Borrow()
 	r.Reset(b)
 
 	return r
 }
 
-// PutReader returns a [bytes.Reader] to the shared pool, first clearing its reference to the
+// RedeemReader returns a [bytes.Reader] to the shared pool, first clearing its reference to the
 // underlying data so the idle pooled reader does not keep that data alive. A nil reader is ignored;
-// do not use the reader after calling PutReader.
-func PutReader(r *bytes.Reader) {
+// do not use the reader after calling RedeemReader.
+func RedeemReader(r *bytes.Reader) {
 	if r == nil {
 		return
 	}

@@ -18,9 +18,10 @@
   redeemable pools), foreign-redeem, borrow-of-still-borrowed, leaks — with call sites. C4 fully
   closed. Both modes test+race clean; release zero-alloc preserved. 88.5% cov (release).
 - ✅ **Phase 5 — Shared pools** (§7). New `swag/pools/shared` subpackage: `Bytes` (capped
-  `[]byte` PoolSlice), `GetBuffer`/`PutBuffer` (capped `bytes.Buffer`), `GetReader`/`PutReader`
-  (`bytes.Reader`, manual reset to release data). 64 KiB cap on the shared pools. 100% cov,
-  race-clean, both tags.
+  `[]byte` PoolSlice), `BorrowBuffer`/`RedeemBuffer` (capped `bytes.Buffer`),
+  `BorrowReader`/`RedeemReader` (`bytes.Reader`, manual reset to release data). 64 KiB cap on the
+  shared pools. Naming follows the `Borrow`/`Redeem` lifecycle convention (not `Get`/`Put`). 100%
+  cov, race-clean, both tags.
 
 **All phases complete.** All findings C1–C7 and decisions D1–D4 resolved.
 
@@ -194,14 +195,17 @@ duplication into one generic type:
 
 Package `swag/pools/shared` — ready-made process-wide pools so consumers share warm pools:
 - `Bytes` — capped `*PoolSlice[byte]`; borrow via `BorrowWithRedeem`, grow via the wrapper.
-- `GetBuffer`/`PutBuffer` — `bytes.Buffer` (`Pool[bytes.Buffer]`, value-type contract per C7).
-  `Put` enforces the cap (drops oversized) — the generic `Pool` has no redeem hook, so capping lives
-  in the helper.
-- `GetReader`/`PutReader` — `bytes.Reader`. Not auto-`Resettable` (its `Reset` takes `[]byte`), so
-  `Get` reinitializes and `Put` calls `Reset(nil)` to release the underlying data before recycling.
+- `BorrowBuffer`/`RedeemBuffer` — `bytes.Buffer` (`Pool[bytes.Buffer]`, value-type contract per C7).
+  `Redeem` enforces the cap (drops oversized) — the generic `Pool` has no redeem hook, so capping
+  lives in the helper.
+- `BorrowReader`/`RedeemReader` — `bytes.Reader`. Not auto-`Resettable` (its `Reset` takes `[]byte`),
+  so `Borrow` reinitializes and `Redeem` calls `Reset(nil)` to release the underlying data before
+  recycling.
 - All shared pools capped at 64 KiB so an occasional large object does not bloat process memory.
+- Naming: `Borrow`/`Redeem` everywhere (not `Get`/`Put`), to make the lifecycle obligation explicit
+  and avoid the impression of a cache.
 - API-shape note: `Bytes` is exposed as a pool (the wrapper tracks growth); buffer/reader use
-  `Get`/`Put` helpers (the pools are unexported) so the cap/clear discipline can't be bypassed.
+  helper funcs (the pools are unexported) so the cap/clear discipline can't be bypassed.
 
 ---
 
