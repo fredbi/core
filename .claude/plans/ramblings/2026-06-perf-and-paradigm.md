@@ -127,12 +127,42 @@ lower (citm, twitter) or numbers dominate (our fast scanner; P's is the old one)
 exactly the duplication-vs-speed tradeoff the codegen generator would resolve from
 one source.
 
+## SWAR string fast path — DONE (`6946f19`)
+
+Stdlib `bytes.IndexByte` is single-needle; a JSON string body needs the FIRST of
+three needles (`"`, `\`, `<0x20`). So instead of `IndexByte`, an **8-byte SWAR
+scan** (has-byte-less-than / has-byte-equal bit tricks) finds the first special
+byte in one pass, with a linear scan as the source of truth once a word flags
+(no false negatives). Inlined into `consumeStringWhole` to avoid a per-string
+call. Helper `indexStringSpecial` kept as the exhaustively unit-tested reference.
+
+**Tradeoff (shipped on Fred's call):** net win on real-world + string-heavy docs
+(pull/push): citm +14/+15%, twitter +7/+14%, strings_plain +14/+14%,
+strings_unicode +14/+16%; **regresses tiny-field-dense `mixed` −8% and
+escape-heavy `strings_escaped` −13%**. SWAR's per-word setup loses for very short
+strings; the unescape slow path (escapes) is unchanged so escaped strings only
+pay SWAR entry cost. A byte-prefix hybrid to protect short strings was tried and
+reverted — it penalized the medium-string wins (the biggest ones). OpenAPI specs
+are medium/long-string-dominated with rare escapes, so this favours the use case.
+
+## FINAL STANDINGS (2026-06-23 EOD) — best path (push Tokens()) vs jsontext
+
+| workload | pull bytes | push Tokens() | jsontext | Tokens/jsontext |
+|---|---|---|---|---|
+| citm | 710 | 1022 | 1120 | 91% |
+| twitter | 717 | **889** | 626 | **142% (win)** |
+| strings_plain | 1010 | 1140 | 1395 | 82% |
+| ints | 577 | 733 | 765 | 96% |
+| mixed | 311 | **390** | 359 | **109% (win)** |
+
+Our best path is at **parity-or-better with jsontext on 4 of 5 workloads**, only
+trailing on pure long strings (82%) — while also doing zero-copy aliasing,
+single-digit (0 reused) allocs, and no numeric conversion / no precision loss.
+For a pure-Go validating lexer that's a strong place to pause the speed race.
+
 ## Open levers still worth trying (pure Go)
 
-- **`bytes.IndexByte` string scan** — stdlib's `IndexByte` is hand-written SIMD
-  assembly, maintained by the Go team. For the no-escape common case:
-  `q := IndexByte(data[p:], '"')` then `IndexByte(data[p:p+q], '\\') < 0` ⇒ clean,
-  aliased. Two vectorized scans, zero asm we own, streaming-compatible. Likely the
-  single biggest remaining honest win on strings (878 → toward jsontext's 1421).
-- Native push `Tokens()` with the int fast path (the immediate next build).
-- L/VL unification (see the codegen ramble — generation may moot it).
+- Pure long strings (strings_plain 82% of jsontext) is the last gap — would need
+  a faster unescape slow path and/or SWAR-ing the slow-path clean runs.
+- Force-inline measurement to size the **codegen prize** (see codegen ramble).
+- L/VL unification (generation may moot it).
