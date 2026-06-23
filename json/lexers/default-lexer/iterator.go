@@ -24,6 +24,15 @@ import (
 // does not rewind.
 func (l *L) Tokens() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
+		// whole-buffer fast path: a native push scan loop that keeps the cursor
+		// in a local across the whole scan (no per-byte struct writes). Streaming
+		// and value-capped modes keep the proven NextToken loop.
+		if l.wholeBuffer && l.maxValueBytes == 0 {
+			l.scanPush(yield)
+
+			return
+		}
+
 		for {
 			tok := l.NextToken()
 			if l.err != nil {

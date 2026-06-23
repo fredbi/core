@@ -146,6 +146,20 @@ func BenchmarkLexers(b *testing.B) {
 				})
 			}
 
+			// default-lexer native push Tokens() iterator (whole-buffer fast path)
+			b.Run("default-lexer/tokens", func(b *testing.B) {
+				b.SetBytes(int64(len(w.Data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					lex := deflex.NewWithBytes(w.Data)
+					for tok := range lex.Tokens() {
+						sink += int(tok.Kind())
+					}
+				}
+			})
+
 			// default-lexer reused across iterations via ResetWithBytes: the
 			// lexer is allocated once outside the loop, so steady-state scanning
 			// should report 0 allocs/op (the construction bias is amortized away).
