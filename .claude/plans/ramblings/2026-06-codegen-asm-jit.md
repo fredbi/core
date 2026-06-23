@@ -46,9 +46,43 @@ returning new positions — so that flattening collapses the locals into one fra
 and the compiler register-allocates across the whole scan. The codegen target
 dictates the golden-source discipline.
 
-Before committing: **measure the prize.** Force-inline the scanners by hand in a
-throwaway and benchmark. Beating the budget worth ~25–30% ⇒ build the generator;
-~5% ⇒ don't, lean on generics for the L/VL unification instead.
+Before committing: **measure the prize.** → DONE 2026-06-24, see below.
+
+### MEASURED (2026-06-24): the force-inline prize is ~3–7% — NOT worth a generator for speed
+
+How to measure force-inline in Go (there is no `//go:inline` pragma):
+1. **Inline map:** `go build -gcflags=-m=2` → costs of the hot callees. Ours:
+   consumeStringWhole 702, consumeNumberWhole 384, consumeBoolean 254,
+   consumeNull 105, scanPush 2446 — all ≫ budget 80, so every value token in
+   scanPush crosses a real (non-inlined) call.
+2. **Budget crank — dead end.** `-d=inlbudgetslack=N` only applies under the
+   experimental new inliner; a plain build still reports "budget 80". No usable
+   `inlbudget` flag.
+3. **PGO is the clean force-inline tool** (mirrors the Go team's
+   `cmd/compile/internal/test/pgo_inl_test.go`): generate a CPU profile
+   (`-cpuprofile`), build with `-pgo=<file>` (compiler: `-gcflags=-pgoprofile=…
+   -d=pgoinlinebudget=N,pgoinlinecdfthreshold=90`), verify with `-m=2` that the
+   scanners now `inlining call to …` inside scanPush, then benchstat on/off. PGO
+   is profile-driven: only HOT call sites inline, so profile the workload whose
+   scanners you want collapsed (string-heavy citm collapsed the string chain;
+   token-dense mixed collapsed string+number+bool+null).
+
+**Result:** with the scanners verifiably inlined into scanPush, speedup was
+**+2–3% on most workloads, +7.1% on the most token-dense (mixed)** — citm even
+−3% (noise). The big scanners do real per-byte work; the call boundary +
+cursor-sync is negligible beside it. (Contrast the int fast path, which won big
+because it removed a state-machine *setup*, i.e. WORK, not just a call.) The
+prototype P's large mixed lead (589 vs ~400) is therefore **validation cost +
+leaner algorithm, not inlining** — i.e. the price of full conformance, which we
+keep.
+
+**Decision:** the inline/codegen road is **NOT justified for speed** (~3–7%). Our
+readable modular code is already within 3–7% of fully-inlined. PGO could harvest
+that 3–7% with zero generator, but a *library* can't propagate PGO to consumers'
+builds, so it isn't worth shipping a default.pgo either. The generator's only
+remaining justification is **L/VL unification / maintainability** — weigh that on
+its own merits, not as a performance play. The "race of inlining" worry is moot:
+there is no meaningful inlining prize left to chase.
 
 Cheaper alternative for the L/VL half only: **Go generics with a concrete policy
 type param** (not interface) can monomorphize + devirtualize — one generic lexer,
