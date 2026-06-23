@@ -488,10 +488,16 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 							return l.current
 						}
 					}
-					// complicated number: fall through to the full scanner
+
+					// complicated whole-buffer number (fraction/exponent or a
+					// malformed form): the digit-run scanner aliases the buffer
+					// directly, with no dispatcher hop.
+					l.current = l.consumeNumberWhole(b)
+
+					return l.current
 				}
 
-				l.current = l.consumeNumber(b)
+				l.current = l.consumeNumberStreaming(b)
 
 				return l.current
 
