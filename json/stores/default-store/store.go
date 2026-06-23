@@ -111,6 +111,85 @@ func (s *Store) Get(h stores.Handle) values.Value {
 	}
 }
 
+// AppendValueBytes is the allocation-free counterpart of [Store.Get], for transient values.
+//
+// It decodes the value identified by h and appends its bytes to dst, returning the value together
+// with the possibly-grown dst (for reuse on the next call). When dst has spare capacity it does not
+// allocate. Boolean and null values carry no bytes and leave dst unchanged.
+//
+// Unlike Get, the returned value is a full copy into caller-owned memory: it never aliases the
+// Store's arena, so it stays valid even if the Store is modified or recycled. It does however alias
+// dst, so it is only valid until the caller next writes to or discards dst. Use this for values that
+// are consumed immediately (e.g. a short-lived, per-request Store); use Get for values you keep.
+//
+// Typical reuse pattern:
+//
+//	var scratch []byte
+//	for _, h := range handles {
+//		var v values.Value
+//		v, scratch = store.AppendValueBytes(scratch[:0], h)
+//		consume(v)
+//	}
+func (s *Store) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []byte) {
+	header := uint8(h & headerMask) //nolint:gosec
+
+	switch header {
+	case headerNull:
+		return values.NullValue, dst
+	case headerFalse:
+		return values.FalseValue, dst
+	case headerTrue:
+		return values.TrueValue, dst
+	case headerInlinedNumber:
+		size, payload := inlined(h)
+		start := len(dst)
+		dst = appendInlinedBCD(dst, size, payload)
+		return values.MakeRawValue(token.MakeWithValue(token.Number, dst[start:])), dst
+	case headerInlinedASCII:
+		_, payload := inlined(h)
+		start := len(dst)
+		dst = appendUnpackASCII(dst, payload)
+		return values.MakeRawValue(token.MakeWithValue(token.String, dst[start:])), dst
+	case headerInlinedString:
+		size, payload := inlined(h)
+		if size == 0 {
+			return values.EmptyStringValue, dst
+		}
+		start := len(dst)
+		dst = appendInlinedBytes(dst, size, payload)
+		return values.MakeRawValue(token.MakeWithValue(token.String, dst[start:])), dst
+	case headerNumber:
+		size, offset := withOffset(h)
+		assertOffsetInArena(offset, len(s.arena))
+		start := len(dst)
+		dst = appendBCDAsNumber(dst, s.arena[offset:offset+size])
+		return values.MakeRawValue(token.MakeWithValue(token.Number, dst[start:])), dst
+	case headerString:
+		size, offset := withOffset(h)
+		assertOffsetInArena(offset, len(s.arena))
+		start := len(dst)
+		dst = append(dst, s.arena[offset:offset+size]...)
+		return values.MakeRawValue(token.MakeWithValue(token.String, dst[start:])), dst
+	case headerCompressedString:
+		size, offset := withOffset(h)
+		assertOffsetInArena(offset, len(s.arena))
+		start := len(dst)
+		dst = s.appendUncompressString(dst, s.arena[offset:offset+size])
+		return values.MakeRawValue(token.MakeWithValue(token.String, dst[start:])), dst
+	case headerInlinedCompressedString:
+		// this case is not active: flate's minimum size is 9 bytes
+		size, payload := inlined(h)
+		var buffer [8]byte
+		out := unpackString(size, payload, buffer[:])
+		start := len(dst)
+		dst = s.appendUncompressString(dst, out)
+		return values.MakeRawValue(token.MakeWithValue(token.String, dst[start:])), dst
+	default:
+		assertValidHeader(header)
+		return values.NullValue, dst
+	}
+}
+
 // WriteTo writes the value pointed to be the [stores.Handle] to a JSON [writers.StoreWriter].
 //
 // This avoids unnessary buffering when transferring the value down to the writer.

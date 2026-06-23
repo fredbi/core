@@ -128,48 +128,35 @@ func TestStoreAllocations(t *testing.T) {
 		)
 	})
 
-	t.Run("with provided bytes factory", func(t *testing.T) {
-		var buffer [256]byte
-		s := New(
-			WithBytesFactory(func() []byte {
-				return buffer[:0]
-			}),
-		)
-		s.PutToken(token.MakeBoolean(true))
-		s.PutToken(token.MakeWithValue(token.String, []byte("abcd")))
-		s.PutToken(token.MakeWithValue(token.String, []byte("abcdefgh")))
-		s.PutToken(token.MakeWithValue(token.String, bytes.Repeat([]byte("a"), 129)))
+	t.Run("with caller-provided scratch (AppendValueBytes)", func(t *testing.T) {
+		s := New()
+		scratch := make([]byte, 0, 256)
 
-		t.Run("should not require any allocation for small integer values", func(t *testing.T) {
+		t.Run("should not allocate for a small integer value", func(t *testing.T) {
 			input := token.MakeWithValue(token.Number, []byte("1234"))
+			h := s.PutToken(input)
 			allocs := testing.AllocsPerRun(runs, func() {
-				h := s.PutToken(input)
-				_ = s.Get(h)
+				_, scratch = s.AppendValueBytes(scratch[:0], h)
 			})
 			assert.InDelta(t, 0.00, allocs, epsilon)
 		})
 
-		t.Run("should not require any allocation for small string values", func(t *testing.T) {
+		t.Run("should not allocate for a small string value", func(t *testing.T) {
 			input := token.MakeWithValue(token.String, []byte("abcd"))
+			h := s.PutToken(input)
 			allocs := testing.AllocsPerRun(runs, func() {
-				h := s.PutToken(input)
-				_ = s.Get(h)
+				_, scratch = s.AppendValueBytes(scratch[:0], h)
 			})
 			assert.InDelta(t, 0.00, allocs, epsilon)
 		})
 
-		t.Run("should not require allocation for compressed string values", func(t *testing.T) {
+		t.Run("should not allocate for a compressed string value", func(t *testing.T) {
 			input := token.MakeWithValue(token.String, bytes.Repeat([]byte("a"), 129))
+			h := s.PutToken(input)
 			allocs := testing.AllocsPerRun(runs, func() {
-				h := s.PutToken(input) // 1 alloc, amortized
-				_ = s.Get(h)           // 1 alloc (required)
+				_, scratch = s.AppendValueBytes(scratch[:0], h)
 			})
-			assert.InDelta(
-				t,
-				0.00,
-				allocs,
-				epsilon,
-			) // this works because the resize heuristics remain within the provided buffer
+			assert.InDelta(t, 0.00, allocs, epsilon)
 		})
 	})
 }

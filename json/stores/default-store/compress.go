@@ -90,6 +90,28 @@ func (s *Store) uncompressString(value []byte, buffer ...[]byte) []byte {
 	return out
 }
 
+// appendUncompressString decompresses value and appends the result to dst, returning the extended
+// slice. It is the append-style counterpart of [Store.uncompressString] used by
+// [Store.AppendValueBytes]; the scratch reader/writer/inflater come from pools, so it does not
+// allocate beyond growing dst.
+func (s *Store) appendUncompressString(dst, value []byte) []byte {
+	rdr, redeemReader := poolOfReaders.BorrowWithRedeem()
+	rdr.Set(value)
+	wrt, redeemWriter := borrowBufferWithRedeem(s.uncompressRatioHeuristic(len(value)))
+	defer redeemWriter()
+
+	inflater, redeemInflater := borrowFlateReaderWithRedeem(rdr, s.dict)
+
+	_, err := io.Copy(wrt, inflater)
+	assertCompressInflateError(err)
+	_ = inflater.Close()
+
+	redeemInflater()
+	redeemReader()
+
+	return append(dst, wrt.Bytes()...)
+}
+
 func (s *Store) uncompressStringReader(value []byte) (io.Reader, func()) {
 	rdr, redeemReader := borrowBufferWithRedeem(
 		len(value),

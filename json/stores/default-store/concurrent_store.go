@@ -79,6 +79,24 @@ func (s *ConcurrentStore) Get(h stores.Handle) values.Value {
 	}
 }
 
+// AppendValueBytes is the allocation-free counterpart of [ConcurrentStore.Get]. See
+// [Store.AppendValueBytes] for semantics.
+func (s *ConcurrentStore) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []byte) {
+	header := uint8(h & headerMask) //nolint:gosec
+
+	switch header {
+	case headerNumber, headerString, headerCompressedString:
+		// these read the shared arena: guard against a concurrent Put
+		s.rwx.RLock()
+		defer s.rwx.RUnlock()
+
+		return s.Store.AppendValueBytes(dst, h)
+	default:
+		// null, bool and inlined values do not touch the arena
+		return s.Store.AppendValueBytes(dst, h)
+	}
+}
+
 // WriteTo writes the value pointed to be the [stores.Handle] to a JSON [writers.StoreWriter].
 //
 // This avoids unnessary allocations when transferring the value to the writer.

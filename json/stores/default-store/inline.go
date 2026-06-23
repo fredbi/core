@@ -116,6 +116,41 @@ func unpackASCII(size int, payload uint64, buffer ...[]byte) []byte {
 	return out[:maxInlineBytes+1]
 }
 
+// appendInlinedBytes appends the size bytes packed in payload to dst (append-style counterpart of
+// [unpackString], for an inlined string value).
+func appendInlinedBytes(dst []byte, size int, payload uint64) []byte {
+	var buf [maxInlineBytes + 1]byte
+	binary.LittleEndian.PutUint64(buf[:], payload)
+
+	return append(dst, buf[:size]...)
+}
+
+// appendInlinedBCD decodes the size BCD nibbles packed in payload and appends the decimal digits to
+// dst (append-style counterpart of [unpackBCD], for an inlined number value).
+func appendInlinedBCD(dst []byte, size int, payload uint64) []byte {
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], payload)
+
+	return appendBCDAsNumber(dst, buf[:size])
+}
+
+// appendUnpackASCII unpacks the 8 ASCII characters (7 bits each) packed in payload and appends them
+// to dst (append-style counterpart of [unpackASCII]).
+//
+//nolint:mnd
+func appendUnpackASCII(dst []byte, payload uint64) []byte {
+	return append(dst,
+		byte(payload&uint64(0x000000000000007f)),
+		byte((payload&uint64(0x0000000000003f80))>>asciiBits),
+		byte((payload&uint64(0x00000000001fc000))>>(2*asciiBits)),
+		byte((payload&uint64(0x000000000fe00000))>>(3*asciiBits)),
+		byte((payload&uint64(0x00000007f0000000))>>(4*asciiBits)),
+		byte((payload&uint64(0x000003f800000000))>>(5*asciiBits)),
+		byte((payload&uint64(0x0001fc0000000000))>>(6*asciiBits)),
+		byte((payload&uint64(0x00fe000000000000))>>(7*asciiBits)),
+	)
+}
+
 // packBCD packs a slice of BCD nibbles into a uint64.
 func packBCD(value []byte) uint64 {
 	return packBytes(value)

@@ -1,11 +1,5 @@
 package store
 
-import (
-	"slices"
-
-	"github.com/fredbi/core/swag/pools"
-)
-
 const (
 	defaultMinArenaSize      = 4096
 	defaultEnableCompression = true
@@ -16,10 +10,8 @@ type Option = func(*options)
 
 type options struct {
 	compressionOptions
-	enableCompression  bool
-	minArenaSize       int
-	bytesFactory       func() []byte
-	pooledBytesFactory func() *pools.Slice[byte]
+	enableCompression bool
+	minArenaSize      int
 }
 
 func applyOptionsWithDefaults(opts []Option) options {
@@ -69,19 +61,6 @@ func WithCompressionOptions(opts ...CompressionOption) Option {
 	}
 }
 
-// WithBytesFactory affects how Get allocates the returned buffer.
-func WithBytesFactory(bytesFactory func() []byte) Option {
-	return func(o *options) {
-		o.bytesFactory = bytesFactory
-	}
-}
-
-func WithPooledBytesFactory(pooledBytesFactory func() *pools.Slice[byte]) Option {
-	return func(o *options) {
-		o.pooledBytesFactory = pooledBytesFactory
-	}
-}
-
 // TODO: SetWriter method to clone existing store with a writer?
 
 func (o *options) Reset() {
@@ -90,21 +69,11 @@ func (o *options) Reset() {
 	}
 }
 
+// getBuffer allocates a fresh buffer for a value decoded by [Store.Get].
+//
+// It is always a fresh allocation: the returned buffer is aliased by the [values.Value] that Get
+// hands back, which the caller may keep, share and read concurrently. For a zero-allocation,
+// caller-owned alternative for transient values, see [Store.AppendValueBytes].
 func (o *options) getBuffer(capacity int) []byte {
-	switch {
-	case o.pooledBytesFactory != nil: // preferred, because the pools.Slice may recycle capacity from previous growths
-		buffer := o.pooledBytesFactory()
-		buffer.Grow(capacity)
-
-		return buffer.Slice()
-
-	case o.bytesFactory != nil:
-		buffer := o.bytesFactory()
-		buffer = slices.Grow(buffer, capacity)
-
-		return buffer[:0]
-
-	default:
-		return make([]byte, 0, capacity)
-	}
+	return make([]byte, 0, capacity)
 }
