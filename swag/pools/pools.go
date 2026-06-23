@@ -8,9 +8,15 @@ import (
 
 // Resettable is an interface for types that want to recycle a clean instance from a [Pool].
 //
-// When T (or rather *T) implements Resettable, the pool calls Reset on an instance when it is
-// redeemed, so that no references held by the instance are retained while it sits idle in the
-// pool, and so that the next borrower receives a clean object.
+// When T (or rather *T) implements Resettable, the pool calls Reset on an instance both when it is
+// redeemed and when it is borrowed:
+//
+//   - on redeem, so that no references held by the instance are retained while it sits idle in the
+//     pool (which would pin a reference graph alive across a GC cycle);
+//   - on borrow, so that the next borrower receives a clean object regardless of how the instance
+//     reached the pool.
+//
+// Reset must be safe to call more than once on the same instance (it runs at least twice per cycle).
 type Resettable interface {
 	Reset()
 }
@@ -46,19 +52,13 @@ type PoolRedeemable[T any] struct {
 // New builds a new [Pool] to recycle allocations of type T explicitly using [Pool.Redeem]
 // and the allocated pointer.
 //
-// Freshly allocated instances of type T are set to their zero value (then Reset if Resettable).
-//
-// Instances are reset (if they implement [Resettable]) when they are redeemed, not when they are
-// borrowed: this clears any references they hold promptly, so the pool does not pin a reference
-// graph alive across a GC cycle.
+// Freshly allocated instances of type T are set to their zero value; like recycled instances they
+// are reset (if [Resettable]) when borrowed, so [Pool.Borrow] always yields a clean object.
 func New[T any]() *Pool[T] {
 	p := &Pool[T]{}
 	p.pool = sync.Pool{
 		New: func() any {
-			v := new(T)
-			resetIfResettable(v)
-
-			return v
+			return new(T)
 		},
 	}
 
@@ -72,7 +72,6 @@ func NewRedeemable[T any]() *PoolRedeemable[T] {
 	p.pool = sync.Pool{
 		New: func() any {
 			r := &redeemable[T]{inner: new(T)}
-			resetIfResettable(r.inner)
 			r.redeemer = func() {
 				resetIfResettable(r.inner)
 				p.pool.Put(r)
@@ -87,9 +86,13 @@ func NewRedeemable[T any]() *PoolRedeemable[T] {
 
 // Borrow an instance from the pool.
 //
-// The returned instance is clean: it was reset when last redeemed (or is a fresh zero value).
+// If the type implements [Resettable], the returned instance is reset before being handed out, so
+// it is always clean.
 func (p *Pool[T]) Borrow() *T {
-	return p.pool.Get().(*T)
+	target := p.pool.Get().(*T)
+	resetIfResettable(target)
+
+	return target
 }
 
 // Redeem a borrowed instance to the pool.
@@ -113,11 +116,12 @@ func (p *Pool[T]) Redeem(ptr *T) {
 //
 // This is useful for instance to use with defer.
 //
-// The instance is reset (if it implements [Resettable]) when the returned redeem closure is
-// called, not when it is borrowed. After calling the redeem closure, the caller must drop its
-// reference to the returned instance.
+// The instance is reset (if it implements [Resettable]) both when borrowed and when the returned
+// redeem closure is called. After calling the redeem closure, the caller must drop its reference
+// to the returned instance.
 func (p *PoolRedeemable[T]) BorrowWithRedeem() (*T, func()) {
 	container := p.pool.Get().(*redeemable[T])
+	resetIfResettable(container.inner)
 
 	return container.inner, container.redeemer
 }

@@ -38,26 +38,24 @@ func TestPoolBorrowRedeem(t *testing.T) {
 	}
 }
 
-func TestPoolResetHappensOnRedeemNotBorrow(t *testing.T) {
+func TestPoolResetOnBorrowAndRedeem(t *testing.T) {
 	p := New[resettable]()
 
-	a := p.Borrow() // fresh: reset once in New
-	resetsAfterBorrow := a.resets
-	p.Redeem(a) // reset again on redeem
-	resetsAfterRedeem := a.resets
-
-	if resetsAfterRedeem != resetsAfterBorrow+1 {
-		t.Fatalf("expected exactly one reset on redeem: before=%d after=%d", resetsAfterBorrow, resetsAfterRedeem)
+	a := p.Borrow() // fresh: new(T), then reset on borrow
+	if a.resets != 1 {
+		t.Fatalf("expected 1 reset after fresh borrow, got %d", a.resets)
+	}
+	p.Redeem(a) // reset on redeem
+	if a.resets != 2 {
+		t.Fatalf("expected 2 resets after redeem, got %d", a.resets)
 	}
 
-	// A second borrow of the same recycled object must NOT trigger another reset
-	// (reset is on the redeem path, not the borrow path).
-	b := p.Borrow()
+	b := p.Borrow() // recycled: reset on borrow
 	if b != a {
 		t.Skip("pool did not return the same instance; reset-timing assertion not applicable")
 	}
-	if b.resets != resetsAfterRedeem {
-		t.Fatalf("borrow must not reset: got %d, want %d", b.resets, resetsAfterRedeem)
+	if b.resets != 3 {
+		t.Fatalf("expected 3 resets after re-borrow, got %d", b.resets)
 	}
 }
 

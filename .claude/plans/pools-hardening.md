@@ -69,7 +69,7 @@ A small, **exactly-correct** generic pooling toolkit:
 | ID | Status | Severity | Finding | Fix |
 |----|--------|----------|---------|-----|
 | C1 | ✅ | high | `Redeem(nil)` / typed-nil `*T` is stored (interface non-nil), later handed back → nil-receiver `Reset()` panic / nil borrow. | Guard `if ptr == nil { return }` before `Put`. |
-| C2 | ✅ | high | `Reset()` runs **on borrow**, so idle pooled objects pin their whole reference graph across a GC cycle. | Reset **on redeem** (clear refs promptly). Fresh objects reset in `New` to keep the borrow-time clean guarantee. (Optional borrow-side reset → D2.) |
+| C2 | ✅ | high | `Reset()` runs **on borrow**, so idle pooled objects pin their whole reference graph across a GC cycle. | **D2 resolved: reset on BOTH borrow and redeem.** Redeem clears refs promptly (no idle pinning); borrow guarantees a clean object regardless of history. `Reset` must be idempotent (runs ≥2×/cycle). |
 | C3 | ✅ | high | `Slice.Reset()` reslices `[:length]`, never zeroing `[len:cap]` (and `[0:length]` for `WithLength`) → leaks element pointers, exposes stale data. | `clear()` whole used region before reslice; `WithLength` region zeroed. Append-monotonic-len invariant makes this complete. |
 | C4 | ⏳ | high | Double-redeem / use-after-redeem is silent; cached redeemer makes `defer`+manual easy → `sync.Pool` corruption (one object to two borrowers). | Primary answer is the debug pool (§6). Cheap partial guard → D3. |
 | C5 | ⏳ | med | Embedding `sync.Pool` exposes `.Get()/.Put()` returning the wrong type (`*redeemable[T]`, `any`). | **Done early:** `sync.Pool` is now an unexported `pool` field (no longer embedded). Public surface = `Borrow`/`Redeem`/`BorrowWithRedeem`. |
@@ -190,7 +190,7 @@ else builds on.
 
 - **D1 (§4.2):** `Slice` API shape — keep live `[]T` (doc only) vs. wrapper-only with
   `Detach()`. *Leaning wrapper-only.*
-- **D2 (§3 C2):** reset-on-redeem only, or both sides behind an option?
+- ~~**D2 (§3 C2):** reset-on-redeem only, or both sides behind an option?~~ **Resolved: reset on both borrow and redeem** (memory window + last-moment defensiveness). `Reset` contract is now "must be idempotent".
 - **D3 (§3 C4):** any cheap non-debug double-redeem guard worth its cost?
 - **D4 (§5):** defaults from benchmarks — cap-on-redeem alone, or ship buckets too?
 - **D5 (§3 C3):** zero element tail always, or fast-path value types that don't need it
