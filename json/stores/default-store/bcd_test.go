@@ -31,6 +31,17 @@ func TestBCD(t *testing.T) {
 		const expected = "123.45E-5"
 		t.Run("should retrieve the original number", checkBCD(expected))
 	})
+
+	t.Run("with positive exponent sign", func(t *testing.T) {
+		// regression: '+' was missing from the BCD maps, so "e+20" decoded as "e020".
+		const expected = "3.8000341818029997e+20"
+		t.Run("should retrieve the original number", checkBCD(expected))
+	})
+
+	t.Run("with uppercase positive exponent sign", func(t *testing.T) {
+		const expected = "1.5E+9"
+		t.Run("should retrieve the original number", checkBCD(expected))
+	})
 }
 
 func checkBCD(expected string) func(*testing.T) {

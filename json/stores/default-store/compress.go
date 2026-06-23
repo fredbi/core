@@ -99,7 +99,7 @@ func (s *Store) uncompressStringReader(value []byte) (io.Reader, func()) {
 	) // since we don't use [bytes.Reader] we indulge into an extra copy
 	inflater, redeemInflater := borrowFlateReaderWithRedeem(rdr, s.dict)
 
-	return rdr, func() {
+	return inflater, func() {
 		_ = inflater.Close()
 		redeemInflater()
 		redeemReader()

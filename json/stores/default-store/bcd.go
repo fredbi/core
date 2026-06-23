@@ -25,6 +25,7 @@ var bcdEncoding = map[byte]byte{
 	'e': 0xb,
 	'E': 0xc,
 	'-': 0xd,
+	'+': 0xe,
 }
 
 //nolint:gochecknoglobals
@@ -43,6 +44,7 @@ var bcdDecoding = map[byte]byte{
 	0xb: 'e',
 	0xc: 'E',
 	0xd: '-',
+	0xe: '+',
 }
 
 const digitsPerByte = 2
