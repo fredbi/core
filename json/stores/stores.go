@@ -33,8 +33,21 @@ type Store interface {
 	// Whenever used in the context of a [VerbatimStore], a [Handle] representing non-significant blank space
 	// returns a string [Value].
 	//
-	// Notice that the default store provides some options to control how the returned value is allocated.
+	// A value returned by Get owns its memory and may be kept, shared and (for stores that support it)
+	// read concurrently. For a zero-allocation alternative for transient values, see [Store.AppendValueBytes].
 	Get(Handle) values.Value
+
+	// AppendValueBytes is the allocation-free counterpart of [Store.Get], for transient values.
+	//
+	// It decodes the value for the given [Handle], appends its bytes to dst, and returns the value
+	// together with the possibly-grown dst (to reuse on the next call). When dst has spare capacity it
+	// does not allocate.
+	//
+	// The returned value is copied into dst (caller-owned memory): unlike [Store.Get] it never aliases
+	// the Store, so it stays valid even after the Store is modified or recycled. It does alias dst, so
+	// it is valid only until the caller next writes to or discards dst. Use [Store.Get] for a value
+	// that must outlive its scratch buffer.
+	AppendValueBytes(dst []byte, h Handle) (values.Value, []byte)
 
 	// WriteTo writes the value pointed to by the [Handle] to a [writers.StoreWriter].
 	//

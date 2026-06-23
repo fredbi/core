@@ -212,6 +212,26 @@ func packBlanks(value []byte) uint64 {
 	return r
 }
 
+// appendUnpackBlanks appends the blank characters packed in payload to dst (append-style counterpart
+// of [unpackBlanks], used by [VerbatimStore.AppendValueBytes]).
+func appendUnpackBlanks(dst []byte, size int, payload uint64) []byte {
+	for offsetBits := 0; offsetBits < size*bitsPerBlank; offsetBits += bitsPerBlank {
+		u := byte(payload >> offsetBits & blankEncodingMask)
+		switch u {
+		case blankEncoding:
+			dst = append(dst, blank)
+		case tabEncoding:
+			dst = append(dst, tab)
+		case lineFeedEncoding:
+			dst = append(dst, lineFeed)
+		case carriageReturnEncoding:
+			dst = append(dst, carriageReturn)
+		}
+	}
+
+	return dst
+}
+
 // unpackBlanks retrieves the string of blank characters packed in a uint64.
 //
 // A preallocated buffer may be provided. Otherwise, the function allocates a slice of bytes to store the result.

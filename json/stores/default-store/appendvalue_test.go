@@ -59,6 +59,26 @@ func TestAppendValueBytesReuseScratch(t *testing.T) {
 	}
 }
 
+// TestVerbatimAppendValueBytesBlanks checks the VerbatimStore override decodes blank handles (which
+// the inherited Store.AppendValueBytes would not), matching VerbatimStore.Get.
+func TestVerbatimAppendValueBytesBlanks(t *testing.T) {
+	for name, blanks := range map[string][]byte{
+		"inlined blanks":    []byte("  \t\n "),
+		"compressed blanks": bytes.Repeat([]byte(" \t"), 64),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := NewVerbatim()
+			h := s.PutBlanks(blanks)
+
+			want := s.Get(h)
+			got, _ := s.AppendValueBytes(nil, h)
+
+			assert.Equal(t, want.Kind(), got.Kind())
+			assert.Equal(t, blanks, got.Bytes())
+		})
+	}
+}
+
 // TestAppendValueBytesIndependentOfStore proves an AppendValueBytes value survives store recycling,
 // because it copies into caller memory (unlike a Get large-string alias).
 func TestAppendValueBytesIndependentOfStore(t *testing.T) {

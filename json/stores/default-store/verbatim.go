@@ -69,6 +69,34 @@ func (s *VerbatimStore) Get(h stores.Handle) values.Value {
 	return s.getBlankValue(header, h)
 }
 
+// AppendValueBytes is the allocation-free counterpart of [VerbatimStore.Get]. See
+// [Store.AppendValueBytes] for semantics. Blank-space handles decode into dst as a string value, as
+// they do with [VerbatimStore.Get].
+func (s *VerbatimStore) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []byte) {
+	header := uint8(h & headerMask) //nolint:gosec
+
+	switch header {
+	case headerInlinedBlank:
+		size, payload := inlinedBlanks(h)
+		if size == 0 {
+			return values.EmptyStringValue, dst
+		}
+		start := len(dst)
+		dst = appendUnpackBlanks(dst, size, payload)
+
+		return values.MakeRawValue(token.MakeWithValue(token.String, dst[start:])), dst
+	case headerCompressedBlank:
+		size, offset := withOffset(h)
+		assertOffsetInArena(offset, len(s.blankArena))
+		start := len(dst)
+		dst = s.appendUncompressString(dst, s.blankArena[offset:offset+size])
+
+		return values.MakeRawValue(token.MakeWithValue(token.String, dst[start:])), dst
+	default: // not a blank string
+		return s.Store.AppendValueBytes(dst, h)
+	}
+}
+
 func (s *VerbatimStore) GetVerbatim(h stores.VerbatimHandle) values.VerbatimValue {
 	blanks := s.Get(h.Blanks())
 	value := s.Get(h.Value())
