@@ -17,7 +17,12 @@
   `AssertNoLeaks(TB)` + `ResetTracking()` over a registry. Catches double-redeem (incl. ABA on the
   redeemable pools), foreign-redeem, borrow-of-still-borrowed, leaks — with call sites. C4 fully
   closed. Both modes test+race clean; release zero-alloc preserved. 88.5% cov (release).
-- ⏳ Phase 5 — Shared pools (§7)
+- ✅ **Phase 5 — Shared pools** (§7). New `swag/pools/shared` subpackage: `Bytes` (capped
+  `[]byte` PoolSlice), `GetBuffer`/`PutBuffer` (capped `bytes.Buffer`), `GetReader`/`PutReader`
+  (`bytes.Reader`, manual reset to release data). 64 KiB cap on the shared pools. 100% cov,
+  race-clean, both tags.
+
+**All phases complete.** All findings C1–C7 and decisions D1–D4 resolved.
 
 ## Legend
 
@@ -185,12 +190,18 @@ duplication into one generic type:
 
 ---
 
-## 7. Shared common pools — Phase 5 (in brief, lighter detail)
+## 7. Shared common pools — Phase 5  ✅
 
-Ready-made shared pools in a sub-package so consumers share warm pools:
-- `Bytes` (`*PoolSlice[byte]`), a `*bytes.Buffer` pool, a `*bytes.Reader` pool.
-- Caveat: shared `[]byte` is safe; shared stateful objects need disciplined Reset.
-- Value-type contract from C7 applies (`Pool[bytes.Buffer]`, not `Pool[*bytes.Buffer]`).
+Package `swag/pools/shared` — ready-made process-wide pools so consumers share warm pools:
+- `Bytes` — capped `*PoolSlice[byte]`; borrow via `BorrowWithRedeem`, grow via the wrapper.
+- `GetBuffer`/`PutBuffer` — `bytes.Buffer` (`Pool[bytes.Buffer]`, value-type contract per C7).
+  `Put` enforces the cap (drops oversized) — the generic `Pool` has no redeem hook, so capping lives
+  in the helper.
+- `GetReader`/`PutReader` — `bytes.Reader`. Not auto-`Resettable` (its `Reset` takes `[]byte`), so
+  `Get` reinitializes and `Put` calls `Reset(nil)` to release the underlying data before recycling.
+- All shared pools capped at 64 KiB so an occasional large object does not bloat process memory.
+- API-shape note: `Bytes` is exposed as a pool (the wrapper tracks growth); buffer/reader use
+  `Get`/`Put` helpers (the pools are unexported) so the cap/clear discipline can't be bypassed.
 
 ---
 
