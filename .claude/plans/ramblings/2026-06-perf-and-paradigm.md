@@ -99,6 +99,34 @@ be duplicated (pull writes struct + returns per token; push keeps locals +
 yields — different control flow, no clean Go reuse), but the **value scanners can
 be single-sourced** if written as `(data, pos) -> (newPos, value, err)`.
 
+### DONE (`0858b3f`) — push `Tokens()` landed, cursor-sync variant
+
+`scanPush` (whole-buffer fast path of `Tokens()`): local cursor across the whole
+scan, mirrors `scanToken` validation exactly, reuses the value scanners by
+syncing `l.consumed`/`l.offset` around each call, inline int fast path duplicated.
+**318/318 JSONTestSuite fixtures: stream + error-state identical to `NextToken`.**
+
+| workload | pull NextToken | **push Tokens()** | Δ | proto P | jsontext |
+|---|---|---|---|---|---|
+| ints | 560 | 736 | +31% | 318 | 785 |
+| floats | 514 | 652 | +27% | 454 | — |
+| canada | 552 | 675 | +22% | 420 | 593 |
+| strings | 877 | 978 | +12% | 1153 | 1421 |
+| citm | 696 | 997 | +43% | 920 | 1122 |
+| twitter | 636 | 792 | +25% | 911 | **631 (we win)** |
+| mixed | 334 | 420 | +26% | 589 | — |
+
+**Delta analysis (where push Tokens() trails the bare prototype P):** pure strings
+(978 vs 1153) and tiny-token-dense `mixed` (420 vs 589). Cause: our per-value
+**cursor-sync + full-scanner call** (`consumeString` key-detection,
+`consumeBoolean`) is paid on every tiny token and not amortized; P inlines those
+leanly with lighter validation. We *beat* P wherever values are larger / density
+lower (citm, twitter) or numbers dominate (our fast scanner; P's is the old one).
+**Next lever:** inline the no-escape string / bool / null cases directly in
+`scanPush` (+ `bytes.IndexByte` string scan) to recover the strings/mixed gap —
+exactly the duplication-vs-speed tradeoff the codegen generator would resolve from
+one source.
+
 ## Open levers still worth trying (pure Go)
 
 - **`bytes.IndexByte` string scan** — stdlib's `IndexByte` is hand-written SIMD
