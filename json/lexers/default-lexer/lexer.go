@@ -440,6 +440,57 @@ func (l *L) scanToken() token.T { //nolint: gocognit
 					return token.None
 				}
 
+				// Fast path (whole-buffer, no value cap): a plain integer,
+				// optionally negative, is aliased with no function call and no
+				// grammar state machine, mirroring jsontext's ConsumeSimpleNumber
+				// (extended to a leading '-'). The tight digit run uses uint()
+				// index comparisons so the bounds check is elided. Fractions,
+				// exponents and leading-zero forms fall through to the full scanner.
+				if l.wholeBuffer && l.maxValueBytes == 0 {
+					buf := l.buffer[:l.bufferized]
+					numStart := l.consumed - 1
+					runFrom := l.consumed
+					var firstDigit byte
+					ok := true
+
+					switch {
+					case b >= '0' && b <= '9':
+						firstDigit = b
+					case b == minusSign:
+						// '-' must be followed by at least one digit
+						if uint(l.consumed) < uint(len(buf)) && buf[l.consumed] >= '0' && buf[l.consumed] <= '9' {
+							firstDigit = buf[l.consumed]
+							runFrom = l.consumed + 1
+						} else {
+							ok = false // full scanner reports the error
+						}
+					default: // decimalPoint: missing integer part
+						ok = false
+					}
+
+					if ok {
+						n := runFrom
+						for uint(n) < uint(len(buf)) && '0' <= buf[n] && buf[n] <= '9' {
+							n++
+						}
+
+						leadingZero := firstDigit == '0' && n > runFrom
+						var term byte
+						if uint(n) < uint(len(buf)) {
+							term = buf[n]
+						}
+
+						if !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
+							l.offset += uint64(n - l.consumed)
+							l.consumed = n
+							l.current = token.MakeWithValue(token.Number, l.buffer[numStart:n:n])
+
+							return l.current
+						}
+					}
+					// complicated number: fall through to the full scanner
+				}
+
 				l.current = l.consumeNumber(b)
 
 				return l.current
