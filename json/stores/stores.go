@@ -10,8 +10,17 @@ import (
 // Handle distributed by a [Store], which corresponds to some [values.Value].
 type Handle uint64
 
-// HandleZero is the zero value of a [Handle], which corresponds to the "null" JSON value.
+// HandleZero is the zero value of a [Handle]. It represents "no value" (an absent or unset value),
+// which is distinct from a JSON null: resolving it yields [values.UndefinedValue], not a null.
+//
+// Reserving the zero value for absence means an uninitialized Handle is never mistaken for a
+// legitimate null. Use [Handle.IsZero] to test for it.
 const HandleZero Handle = 0
+
+// IsZero reports whether the [Handle] is the zero handle [HandleZero], i.e. "no value".
+func (h Handle) IsZero() bool {
+	return h == HandleZero
+}
 
 // Resolve this [Handle] against a [Store].
 //
@@ -71,7 +80,8 @@ type Store interface {
 
 	// PutNull puts a null value into the [Store].
 	//
-	// This is equivalent to [Store.PutValue] with a null [values.Value].
+	// This is equivalent to [Store.PutValue] with a null [values.Value]. The returned [Handle] is the
+	// (non-zero) null handle, distinct from [HandleZero] which represents the absence of a value.
 	PutNull() Handle
 
 	// PutBool puts a bool value into the [Store].

@@ -82,7 +82,8 @@ func (m *testHandlesMap) Get() verifyHandle {
 	defer m.Unlock()
 
 	if len(m.handles) == 0 {
-		return verifyHandle{stores.Handle(0), values.NullValue}
+		// the zero Handle now resolves to the undefined value, not null
+		return verifyHandle{stores.HandleZero, values.UndefinedValue}
 	}
 
 	i := rand.IntN(len(m.handles))

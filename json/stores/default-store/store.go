@@ -84,6 +84,8 @@ func (s *Store) Get(h stores.Handle) values.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	switch header {
+	case headerNone:
+		return values.UndefinedValue
 	case headerNull:
 		return values.NullValue
 	case headerFalse:
@@ -134,6 +136,8 @@ func (s *Store) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []b
 	header := uint8(h & headerMask) //nolint:gosec
 
 	switch header {
+	case headerNone:
+		return values.UndefinedValue, dst
 	case headerNull:
 		return values.NullValue, dst
 	case headerFalse:
@@ -197,6 +201,9 @@ func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	switch header {
+	case headerNone:
+		// undefined value (the zero Handle): marshals as empty, so write nothing
+		return
 	case headerNull:
 		writer.Null()
 	case headerFalse:
@@ -277,7 +284,7 @@ func (s *Store) PutToken(tok token.T) stores.Handle {
 
 	default:
 		assertValidToken(tok)
-		return stores.Handle(headerNull)
+		return stores.HandleZero // no value for an unsupported token
 	}
 }
 
@@ -300,11 +307,14 @@ func (s *Store) PutValue(v values.Value) stores.Handle {
 		assertValidValue(
 			v,
 		) // moved to guards: it is normally not possible to build an invalid values.Value
-		return stores.Handle(headerNull)
+		return stores.HandleZero // no value for an undefined/unsupported value
 	}
 }
 
-// PutNull is a shorthand for putting a null value. The returned [stores.Handle] is always 0.
+// PutNull is a shorthand for putting a null value.
+//
+// The returned [stores.Handle] is the constant null handle (a non-zero value): the zero Handle
+// ([stores.HandleZero]) is reserved for "no value", which is distinct from a JSON null.
 func (s *Store) PutNull() stores.Handle {
 	return stores.Handle(headerNull)
 }

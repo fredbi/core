@@ -10,6 +10,13 @@ import (
 )
 
 var (
+	// UndefinedValue represents the absence of a value: it is what a [Store] returns for the zero
+	// [stores.Handle] ("no value").
+	//
+	// It is distinct from [NullValue]: per the JSON value model a null is a defined value, whereas an
+	// undefined value marks absence (and marshals as empty). [Value.IsDefined] reports the difference.
+	UndefinedValue = Value{kind: token.Unknown}
+
 	// NullValue represents the (unique) value of the null type.
 	NullValue = Value{kind: token.Null, z: types.Null}
 
@@ -45,6 +52,12 @@ type Value struct {
 // Kind of value, which may be [token.String], [token.Number], [token.Boolean], or [token.Null].
 func (v Value) Kind() token.Kind {
 	return v.kind
+}
+
+// IsDefined reports whether the value is defined, i.e. it is not the [UndefinedValue] (the absence of
+// a value). A null value is defined.
+func (v Value) IsDefined() bool {
+	return v.kind != token.Unknown
 }
 
 // StringValue returns the underlying JSON [types.String] for string values.

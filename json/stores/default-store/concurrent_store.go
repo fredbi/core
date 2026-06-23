@@ -43,6 +43,8 @@ func (s *ConcurrentStore) Get(h stores.Handle) values.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
 	switch header {
+	case headerNone:
+		return values.UndefinedValue
 	case headerNull:
 		return values.NullValue
 	case headerFalse:
@@ -123,7 +125,7 @@ func (s *ConcurrentStore) PutToken(tok token.T) stores.Handle {
 
 	default:
 		assertValidToken(tok)
-		return stores.Handle(headerNull)
+		return stores.HandleZero
 	}
 }
 
@@ -144,7 +146,7 @@ func (s *ConcurrentStore) PutValue(v values.Value) stores.Handle {
 
 	default:
 		assertValidValue(v)
-		return stores.Handle(headerNull)
+		return stores.HandleZero
 	}
 }
 
