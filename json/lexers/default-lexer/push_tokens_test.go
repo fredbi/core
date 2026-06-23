@@ -80,3 +80,38 @@ func errString(err error) string {
 
 	return err.Error()
 }
+
+// naive reference for indexStringSpecial.
+func refIndexStringSpecial(b []byte) int {
+	for i := 0; i < len(b); i++ {
+		if c := b[i]; c == '"' || c == '\\' || c < 0x20 {
+			return i
+		}
+	}
+	return len(b)
+}
+
+func TestIndexStringSpecial(t *testing.T) {
+	// exhaustive-ish: every length up to past two words, every special position,
+	// plus high bytes (>=0x80) which must not trigger false positives.
+	for n := 0; n <= 20; n++ {
+		for pos := 0; pos <= n; pos++ {
+			for _, special := range []byte{'"', '\\', 0x00, 0x1f, '\n', '\t'} {
+				b := make([]byte, n)
+				for k := range b {
+					b[k] = 'x' // safe filler
+				}
+				if pos < n {
+					b[pos] = special
+				}
+				// sprinkle a high byte that must be ignored
+				if n > 2 {
+					b[(pos+1)%n] = 0xC3
+				}
+				got := indexStringSpecial(b)
+				want := refIndexStringSpecial(b)
+				require.Equalf(t, want, got, "n=%d pos=%d special=%#x b=%v", n, pos, special, b)
+			}
+		}
+	}
+}
