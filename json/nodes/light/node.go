@@ -444,11 +444,8 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 			key := values.MakeInternedKey(string(tok.Value()))
 			ctx.P = addKeyToPath(pth, ctx.P, key)
 
-			tok = l.NextToken() // skip the colon separator following the key
-			if !tok.IsColon() {
-				l.SetErr(codes.ErrKeyColon)
-				return
-			}
+			// note: the key/value ":" separator is elided by the semantic lexer (it validates the
+			// grammar but does not emit "," and ":"), so the next token is the value itself.
 
 			if ctx.DO.BeforeKey != nil {
 				// hook: callback before key is processed
@@ -491,22 +488,7 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 				return
 			}
 
-			separator := l.NextToken()
-			if !l.Ok() {
-				return
-			}
-
-			if separator.IsComma() {
-				continue
-			}
-
-			if separator.IsEndObject() {
-				return
-			}
-
-			l.SetErr(codes.ErrInvalidToken)
-
-			return
+			// the "," member separator is elided: loop back to read the next key or the closing "}".
 		}
 	}
 }
@@ -579,21 +561,7 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 				return
 			}
 
-			separator := l.NextToken()
-			if !l.Ok() {
-				return
-			}
-
-			if separator.IsComma() {
-				continue
-			}
-
-			if separator.IsEndArray() {
-				return
-			}
-
-			l.SetErr(codes.ErrMissingComma)
-			return
+			// the "," element separator is elided: loop back to read the next element or the closing "]".
 		}
 	}
 }
