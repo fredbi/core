@@ -249,6 +249,13 @@ func (s *Slice[T]) Clip() {
 	s.inner = slices.Clip(s.inner)
 }
 
+// resetWithCapacity discards the current backing array and replaces it with a fresh one of the
+// configured length and the given capacity. It is used by a capacity-capped pool to stop recycling
+// an oversized backing array (the old array is left for the GC).
+func (s *Slice[T]) resetWithCapacity(capacity int) {
+	s.inner = make([]T, s.length, max(s.length, capacity))
+}
+
 // PoolSlice is a pool of [Slice[T]].
 //
 // [PoolSlice.BorrowWithRedeem] will return an empty inner slice by default.
@@ -267,11 +274,28 @@ type PoolSliceOption func(*poolSliceOptions)
 type poolSliceOptions struct {
 	minCapacity int
 	length      int
+	maxCapacity int
 }
 
 func WithMinimumCapacity(size int) PoolSliceOption {
 	return func(o *poolSliceOptions) {
 		o.minCapacity = size
+	}
+}
+
+// WithMaxCapacity bounds the capacity of recycled slices.
+//
+// When a borrowed slice has grown past size at redeem time, its (oversized) backing array is
+// discarded and replaced with a fresh one sized to the minimum capacity, instead of being recycled.
+// This stops the pool from accumulating large backing arrays after an occasional large request,
+// keeping the steady-state memory bounded.
+//
+// The trade-off: a workload that genuinely needs slices larger than size will reallocate on every
+// cycle. Set size from the high-water mark you actually expect, not below it. A size of 0 (the
+// default) means no cap: grown slices are recycled as-is.
+func WithMaxCapacity(size int) PoolSliceOption {
+	return func(o *poolSliceOptions) {
+		o.maxCapacity = size
 	}
 }
 
@@ -305,7 +329,11 @@ func NewPoolSlice[T any](opts ...PoolSliceOption) *PoolSlice[T] {
 				if !s.state.CompareAndSwap(stateBorrowed, stateIdle) {
 					panic(redeemPanic)
 				}
-				s.inner.Reset()
+				if o.maxCapacity > 0 && s.inner.Cap() > o.maxCapacity {
+					s.inner.resetWithCapacity(o.minCapacity)
+				} else {
+					s.inner.Reset()
+				}
 				rp.pool.Put(s)
 			}
 

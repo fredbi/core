@@ -10,7 +10,9 @@
 - ✅ **Phase 1 — Correctness + tests** (C1, C2, C3, C5, C7). D2 resolved (reset both sides).
 - ✅ **Phase 2 — API hardening** (§4). D1 + D3 resolved. C6 closed (docs), de-embedded PoolSlice,
   always-on double-redeem panic guard on the redeemable pools. 14 tests, 86.4% cov, race-clean.
-- ⏳ Phase 3 — Slice bloat (§5)
+- ✅ **Phase 3 — Slice bloat** (§5). D4 resolved: `WithMaxCapacity` (drop-and-replace oversized
+  backing on redeem); buckets deferred. Benchmarks show the cap check is free, bounds memory ~8×,
+  and costs only when giants recur. 17 tests + 5 benchmarks, 87.3% cov, race-clean (×3).
 - ⏳ Phase 4 — Debug pool (§6) — full double-redeem/leak/ABA tracking + plain `Pool[T]` coverage
 - ⏳ Phase 5 — Shared pools (§7)
 
@@ -139,14 +141,30 @@ nothing wastes memory and still allocates during warm-up.
 - Only for callers who measured and want it; not the default (keeps the common path
   branch-free).
 
-**Measurement first:** write benchmarks that model the real pattern (borrow → grow a
-few times → redeem, repeated) and compare: current, cap-on-redeem, size-classed.
-Decide defaults from numbers, not intuition. 🔬
+**✅ Implemented:** `WithMaxCapacity(n)` — on redeem, if `cap > n`, discard the oversized backing
+and replace it with a fresh `minCap`-sized one (keeping the cheap wrapper), so only slices `≤ n` are
+recycled. One branch per redeem; default `n = 0` means no cap.
 
-Open questions:
-- Does cap-on-redeem + min-capacity seeding eliminate most warm-up allocs in practice?
-- Right-size-on-drop: when we drop an oversized slice, do we hand the pool a fresh
-  `minCap` slice to keep it warm, or just let `New` handle it?
+**Measured (mixed workload: 99% small ~8–72, 1% large ~8k–24k):**
+
+| | ns/op | B/op | retained-cap (memory proxy) |
+|---|---|---|---|
+| Uncapped | 26.6 | 0 | 33,728 (~270 KB) |
+| Capped loose (cap ≫ spike) | 35.4 | 0 | — |
+| Capped snug (cap just above common) | 169.9 | 1392 | 4,160 (~33 KB) |
+
+- The cap **check is free** (loose ≈ uncapped).
+- The cap **bounds memory ~8×**.
+- The cost is **only the dropped giants** (snug = 6× slower because it re-grows the 1% large each
+  recurrence). ⇒ Set `n` above the common high-water mark, as a guard against *rare* giants.
+
+**D4 resolved: ship the cap, defer buckets.** Buckets only beat the cap when large requests are
+*frequent and unavoidable* — no evidence for that yet, and they'd add per-op size-class routing to
+every caller. Revisit only if a real go-openapi workload shows sustained large-slice churn.
+
+Resolved open questions:
+- Right-size-on-drop: we **replace with a fresh `minCap` slice** (keeps the pool warm and the wrapper
+  alive; only the oversized backing array is GC'd).
 
 ---
 
@@ -195,6 +213,7 @@ else builds on.
 - ~~**D3 (§3 C4):** any cheap non-debug double-redeem guard worth its cost?~~ **Resolved: yes —**
   always-on atomic-state panic guard on the redeemable wrapper (re-armed on borrow). Residual ABA +
   plain `Pool[T]` deferred to the Phase 4 debug build.
-- **D4 (§5):** defaults from benchmarks — cap-on-redeem alone, or ship buckets too?
+- ~~**D4 (§5):** defaults from benchmarks — cap-on-redeem alone, or ship buckets too?~~ **Resolved:
+  cap only (`WithMaxCapacity`); buckets deferred** (benchmarks: cap is free + bounds memory ~8×).
 - **D5 (§3 C3):** zero element tail always, or fast-path value types that don't need it
   (via a `Resettable`-style marker / `reflect`-free detection)?

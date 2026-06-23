@@ -239,21 +239,76 @@ func TestSliceConcatReusesCapacity(t *testing.T) {
 	}
 }
 
-func TestSliceGrowthSurvivesRedeem(t *testing.T) {
-	p := NewPoolSlice[int]()
+// Reset is what preserves grown capacity through a redeem (it does not clip). We test that directly:
+// asserting capacity survives a *pool* round-trip would be unsound, since sync.Pool is free to drop
+// an idle object and hand back a fresh one (it routinely does under -race).
+func TestSliceResetPreservesCapacity(t *testing.T) {
+	var s Slice[int]
+	s.Grow(1024)
+	grown := s.Cap()
+	if grown < 1024 {
+		t.Fatalf("expected cap >= 1024 after grow, got %d", grown)
+	}
+	s.Append(1, 2, 3)
+	s.Reset()
+
+	if s.Len() != 0 {
+		t.Fatalf("expected len 0 after reset, got %d", s.Len())
+	}
+	if s.Cap() != grown {
+		t.Fatalf("Reset must preserve grown capacity: before=%d after=%d", grown, s.Cap())
+	}
+}
+
+// resetWithCapacity is the drop path a capped pool uses to discard an oversized backing array.
+func TestSliceResetWithCapacityDropsBacking(t *testing.T) {
+	var s Slice[int]
+	s.Grow(4096)
+	s.resetWithCapacity(64)
+
+	if s.Len() != 0 {
+		t.Fatalf("expected len 0, got %d", s.Len())
+	}
+	if s.Cap() != 64 {
+		t.Fatalf("expected capacity dropped to 64, got %d", s.Cap())
+	}
+}
+
+func TestWithMaxCapacityShrinksOversized(t *testing.T) {
+	p := NewPoolSlice[int](WithMinimumCapacity(8), WithMaxCapacity(64))
 
 	s, redeem := p.BorrowWithRedeem()
 	s.Grow(1024)
-	grownCap := s.Cap()
-	if grownCap < 1024 {
-		t.Fatalf("expected cap >= 1024 after grow, got %d", grownCap)
+	if s.Cap() < 1024 {
+		t.Fatalf("expected cap >= 1024 after grow, got %d", s.Cap())
 	}
-	redeem()
+	redeem() // cap > 64 → backing should be discarded and replaced
 
-	// the grown backing array should be recycled, not thrown away.
 	s2, redeem2 := p.BorrowWithRedeem()
-	if s2.Cap() < 1024 {
-		t.Fatalf("expected grown capacity to survive redeem, got cap %d", s2.Cap())
+	if s2.Cap() > 64 {
+		t.Fatalf("expected oversized backing to be dropped on redeem, got cap %d", s2.Cap())
+	}
+	if s2.Cap() < 8 {
+		t.Fatalf("expected replacement to honor minimum capacity 8, got %d", s2.Cap())
+	}
+	redeem2()
+}
+
+func TestWithMaxCapacityHonorsLength(t *testing.T) {
+	p := NewPoolSlice[int](WithLength(4), WithMaxCapacity(64))
+
+	s, redeem := p.BorrowWithRedeem()
+	s.Grow(1024)
+	redeem() // dropped: replacement must still be a clean length-4 slice
+
+	s2, redeem2 := p.BorrowWithRedeem()
+	if s2.Len() != 4 {
+		t.Fatalf("expected replacement length 4, got %d", s2.Len())
+	}
+	for i, v := range s2.Slice() {
+		if v != 0 {
+			t.Fatalf("expected zeroed replacement element at %d, got %d", i, v)
+		}
 	}
 	redeem2()
 }
