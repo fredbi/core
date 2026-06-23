@@ -24,6 +24,10 @@ var (
 )
 
 // BorrowStore borrows a new or recycled [Store] from the pool.
+//
+// Pass opts to (re)configure the borrowed Store. This is required to get non-default compression
+// settings on a recycled Store, since [Store.Reset] alone restores the defaults but does not rebuild
+// the cached compression writer (see [Store.Reset]).
 func BorrowStore(opts ...Option) *Store {
 	s := poolOfStores.Borrow()
 	if len(opts) > 0 {
@@ -34,6 +38,11 @@ func BorrowStore(opts ...Option) *Store {
 }
 
 // RedeemStore redeems a previously borrowed [Store] to the pool.
+//
+// The caller must ensure the Store is no longer needed: any [values.Value] previously returned by
+// [Store.Get] may alias the Store's arena and becomes invalid once the Store is recycled (see the
+// "Lifecycle and value aliasing" note on [Store]). Only redeem a Store between whole, independent
+// documents whose values are no longer referenced.
 func RedeemStore(s *Store) {
 	poolOfStores.Redeem(s)
 }

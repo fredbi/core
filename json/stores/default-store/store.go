@@ -34,6 +34,21 @@ const (
 // several go routines storing content concurrently.
 //
 // [store.WriteTo] should not be used concurrently.
+//
+// # Lifecycle and value aliasing
+//
+// For compactness, large (uncompressed) string values returned by [Store.Get] alias the Store's
+// internal arena rather than being copied (numbers and all other values are decoded into freshly
+// allocated buffers). Consequently:
+//
+//   - The Store must outlive every [values.Value] obtained from it: a consumer that keeps a value
+//     keeps a reference into the arena.
+//   - A Store must not be reset or recycled (see [Store.Reset], [RedeemStore]) while any value
+//     borrowed from it is still in use, nor mid-way through constructing a document. Doing so lets
+//     subsequent writes overwrite the arena bytes that a live value still points at.
+//
+// Recycling a Store from the pool is therefore only safe between whole, independent documents whose
+// values are no longer referenced (e.g. a short-lived untyped JSON exchange).
 type Store struct {
 	options
 	arena []byte
@@ -60,6 +75,11 @@ func (s *Store) Len() int {
 }
 
 // Get a [values.Value] from a [stores.Handle].
+//
+// A large (uncompressed) string value aliases the Store's internal arena and stays valid only while
+// the Store is alive and not reset/recycled (see the "Lifecycle and value aliasing" note on [Store]).
+// Other values (numbers, inlined and compressed strings) are decoded into fresh buffers and are
+// independent of the Store.
 func (s *Store) Get(h stores.Handle) values.Value {
 	header := uint8(h & headerMask) //nolint:gosec
 
@@ -221,6 +241,15 @@ func (s *Store) PutBool(b bool) stores.Handle {
 // Reset the [Store] to its initial state.
 //
 // This is useful to recycle [Store] s from a memory pool.
+//
+// The caller must ensure no [values.Value] previously returned by [Store.Get] is still in use, and
+// that no document is mid-construction: large string values alias the arena that Reset rewinds (see
+// the "Lifecycle and value aliasing" note on [Store]).
+//
+// Reset restores the default compression settings. A Store that was configured with non-default
+// compression options ([WithCompressionOptions], [WithCompressionLevel]) should be re-borrowed with
+// those options (see [BorrowStore]) rather than relying on Reset, since the cached compression
+// writer reflects the options it was created with.
 //
 // Implements [pools.Resettable].
 func (s *Store) Reset() {

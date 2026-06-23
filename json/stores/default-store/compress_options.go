@@ -68,6 +68,16 @@ func applyCompressionOptionsWithDefaults(opts []CompressionOption) compressionOp
 	return o
 }
 
+// Reset restores the default compression settings, for recycling a [Store] between documents.
+//
+// It deliberately does NOT rebuild the cached compression writer cw: cw still encodes the level and
+// dictionary it was created with. This is consistent as long as the Store is recycled with the
+// default compression configuration (the only configuration reachable today, since dict is always
+// empty and no option sets it). If a Store was configured with non-default compression options, it
+// must be re-borrowed with those options ([BorrowStore]) so a fresh cw is built — Reset alone would
+// leave cw and these fields out of sync.
+//
+// This assumes a Store is never recycled mid-document; see the lifecycle note on [Store].
 func (co *compressionOptions) Reset() {
 	co.dict = co.dict[:0]
 	co.compressionLevel = defaultCompressionLevel

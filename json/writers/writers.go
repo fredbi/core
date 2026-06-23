@@ -20,6 +20,10 @@ type BaseWriter interface {
 	// write native go types
 	Null()
 	String(string)
+
+	// StringBytes, Raw and NumberBytes must consume their argument synchronously and must NOT retain
+	// the slice past the call: callers may pass a pooled or arena-backed buffer that is reused or
+	// recycled immediately afterwards. An implementation that needs to keep the bytes must copy them.
 	StringBytes([]byte)
 	StringRunes([]rune)
 	StringCopy(io.Reader)
