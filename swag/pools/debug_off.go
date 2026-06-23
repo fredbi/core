@@ -5,7 +5,9 @@ package pools
 // This is the release implementation of the pool instrumentation: it does nothing.
 //
 // tracker is an empty struct, so it adds no field to the pool types and its methods inline away to
-// nothing. Build with -tags poolsdebug to get the instrumented variant (see debug_on.go).
+// nothing.
+//
+// Build with -tags poolsdebug to get the instrumented variant (see debug_on.go).
 
 // debugBuild reports whether the pool instrumentation is compiled in (the poolsdebug tag).
 const debugBuild = false
@@ -22,9 +24,12 @@ func (tracker[T]) borrowRedeemer(_ *T, cached func()) func() { return cached }
 
 // AssertNoLeaks reports whether every borrowed object has been redeemed across all pools.
 //
-// It is only meaningful in the instrumented build (-tags poolsdebug); in a release build it is a
-// no-op that always reports true, so the same test can run in both modes.
+// It is only meaningful in the instrumented build (-tags poolsdebug).
+//
+// In a release build it is a no-op that always reports true, so the same test can run in both modes.
 func AssertNoLeaks(TB) bool { return true }
 
-// ResetTracking clears all recorded borrow/redeem tracking. It is a no-op in a release build.
+// ResetTracking clears all recorded borrow/redeem tracking.
+//
+// This is a no-op in a release build.
 func ResetTracking() {}

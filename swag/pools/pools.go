@@ -9,7 +9,7 @@ import (
 
 // Resettable is an interface for types that want to recycle a clean instance from a [Pool].
 //
-// When T (or rather *T) implements Resettable, the pool calls Reset on an instance both when it is
+// When T (or rather *T) implements [Resettable], the pool calls Reset on an instance both when it is
 // redeemed and when it is borrowed:
 //
 //   - on redeem, so that no references held by the instance are retained while it sits idle in the
@@ -45,7 +45,8 @@ type redeemable[T any] struct {
 }
 
 // redeemPanic is the message raised when a slot is redeemed while already idle.
-const redeemPanic = "pools: double redeem detected (object already returned to the pool); " +
+const redeemPanic = "pools: " +
+	"double redeem detected (object already returned to the pool); " +
 	"a borrowed object must be redeemed exactly once"
 
 // Pool wraps a [sync.Pool] to make it available for any type.
@@ -66,8 +67,7 @@ type PoolRedeemable[T any] struct {
 	tracker tracker[redeemable[T]] // empty (zero-cost) unless built with the poolsdebug tag
 }
 
-// New builds a new [Pool] to recycle allocations of type T explicitly using [Pool.Redeem]
-// and the allocated pointer.
+// New builds a new [Pool] to recycle allocations of type T explicitly using [Pool.Redeem] and the allocated pointer.
 //
 // Freshly allocated instances of type T are set to their zero value; like recycled instances they
 // are reset (if [Resettable]) when borrowed, so [Pool.Borrow] always yields a clean object.
@@ -108,8 +108,8 @@ func NewRedeemable[T any]() *PoolRedeemable[T] {
 
 // Borrow an instance from the pool.
 //
-// If the type implements [Resettable], the returned instance is reset before being handed out, so
-// it is always clean.
+// If the type implements [Resettable], the returned instance is reset before being handed out,
+// so it is always clean.
 func (p *Pool[T]) Borrow() *T {
 	target := p.pool.Get().(*T)
 	resetIfResettable(target)
@@ -128,8 +128,9 @@ func (p *Pool[T]) Borrow() *T {
 // use-after-redeem bug.
 //
 // Unlike [PoolRedeemable], this plain pool holds no per-object state, so it cannot detect a
-// double-redeem of the same pointer (which corrupts the pool). Use [PoolRedeemable] when you want
-// that guard, or the debug build for full tracking.
+// double-redeem of the same pointer (which corrupts the pool).
+//
+// Prefer [PoolRedeemable] when you want that guard, or the debug build for full tracking.
 func (p *Pool[T]) Redeem(ptr *T) {
 	if ptr == nil {
 		return
@@ -139,8 +140,7 @@ func (p *Pool[T]) Redeem(ptr *T) {
 	p.pool.Put(ptr)
 }
 
-// BorrowWithRedeem borrows an instance from the pool and provides the
-// corresponding redeem function.
+// BorrowWithRedeem borrows an instance from the pool and provides the corresponding redeem function.
 //
 // This is useful for instance to use with defer.
 //
@@ -166,9 +166,12 @@ func (p *PoolRedeemable[T]) BorrowWithRedeem() (*T, func()) {
 // This is useful to borrow and redeem slices from a pool, without having to constantly manipulate
 // pointers to the slice.
 //
-// The wrapper holds the authoritative slice header. Its mutating methods ([Slice.Append],
-// [Slice.Concat], [Slice.Grow]) return the current backing slice for convenience, so it reads as an
-// idiomatic []T. But the returned slice is only a snapshot of the wrapper's state at that moment:
+// The wrapper holds the authoritative slice header.
+//
+// Its mutating methods ([Slice.Append], [Slice.Concat], [Slice.Grow])
+// return the current backing slice for convenience, so it reads as an idiomatic []T.
+//
+// But the returned slice is only a snapshot of the wrapper's state at that moment:
 // if you keep it and grow it yourself with the builtin append and it reallocates, the new backing
 // array lives only in your local copy and is NOT tracked by the wrapper — it will not be recycled
 // when the wrapper is redeemed (and a later borrower would get the old, smaller array).
