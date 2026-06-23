@@ -53,7 +53,8 @@ const redeemPanic = "pools: double redeem detected (object already returned to t
 // T must be the value type of the pooled object (e.g. Pool[bytes.Buffer]): [Pool.Borrow] returns a *T.
 // Using a pointer type as T (e.g. Pool[*bytes.Buffer]) would yield a **T and is almost certainly a mistake.
 type Pool[T any] struct {
-	pool sync.Pool
+	pool    sync.Pool
+	tracker tracker[T] // empty (zero-cost) unless built with the poolsdebug tag
 }
 
 // PoolRedeemable wraps a [sync.Pool] to make it available for any type.
@@ -61,7 +62,8 @@ type Pool[T any] struct {
 // It differs from [Pool] in the way objects are redeemed to the pool: borrowing also yields a
 // cached redeem closure, so no closure is allocated at redeem time.
 type PoolRedeemable[T any] struct {
-	pool sync.Pool
+	pool    sync.Pool
+	tracker tracker[redeemable[T]] // empty (zero-cost) unless built with the poolsdebug tag
 }
 
 // New builds a new [Pool] to recycle allocations of type T explicitly using [Pool.Redeem]
@@ -76,6 +78,7 @@ func New[T any]() *Pool[T] {
 			return new(T)
 		},
 	}
+	p.tracker.register()
 
 	return p
 }
@@ -98,6 +101,7 @@ func NewRedeemable[T any]() *PoolRedeemable[T] {
 			return r
 		},
 	}
+	p.tracker.register()
 
 	return p
 }
@@ -109,6 +113,7 @@ func NewRedeemable[T any]() *PoolRedeemable[T] {
 func (p *Pool[T]) Borrow() *T {
 	target := p.pool.Get().(*T)
 	resetIfResettable(target)
+	p.tracker.onBorrow(target)
 
 	return target
 }
@@ -129,6 +134,7 @@ func (p *Pool[T]) Redeem(ptr *T) {
 	if ptr == nil {
 		return
 	}
+	p.tracker.onRedeem(ptr)
 	resetIfResettable(ptr)
 	p.pool.Put(ptr)
 }
@@ -149,7 +155,10 @@ func (p *PoolRedeemable[T]) BorrowWithRedeem() (*T, func()) {
 	container.state.Store(stateBorrowed)
 	resetIfResettable(container.inner)
 
-	return container.inner, container.redeemer
+	// In release builds borrowRedeemer returns container.redeemer unchanged (zero cost). Under the
+	// poolsdebug tag it returns a generation-stamped wrapper that tracks the borrow and detects
+	// double-redeem (incl. ABA), foreign-redeem and leaks.
+	return container.inner, p.tracker.borrowRedeemer(container, container.redeemer)
 }
 
 // Slice is a struct that wraps a slice []T.
@@ -340,6 +349,7 @@ func NewPoolSlice[T any](opts ...PoolSliceOption) *PoolSlice[T] {
 			return s
 		},
 	}
+	rp.tracker.register()
 
 	return &PoolSlice[T]{redeemable: rp}
 }

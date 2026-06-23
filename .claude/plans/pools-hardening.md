@@ -13,7 +13,10 @@
 - ✅ **Phase 3 — Slice bloat** (§5). D4 resolved: `WithMaxCapacity` (drop-and-replace oversized
   backing on redeem); buckets deferred. Benchmarks show the cap check is free, bounds memory ~8×,
   and costs only when giants recur. 17 tests + 5 benchmarks, 87.3% cov, race-clean (×3).
-- ⏳ Phase 4 — Debug pool (§6) — full double-redeem/leak/ABA tracking + plain `Pool[T]` coverage
+- ✅ **Phase 4 — Debug pool** (§6). Build-tag `poolsdebug` zero-cost injection; global
+  `AssertNoLeaks(TB)` + `ResetTracking()` over a registry. Catches double-redeem (incl. ABA on the
+  redeemable pools), foreign-redeem, borrow-of-still-borrowed, leaks — with call sites. C4 fully
+  closed. Both modes test+race clean; release zero-alloc preserved. 88.5% cov (release).
 - ⏳ Phase 5 — Shared pools (§7)
 
 ## Legend
@@ -74,7 +77,7 @@ A small, **exactly-correct** generic pooling toolkit:
 | C1 | ✅ | high | `Redeem(nil)` / typed-nil `*T` is stored (interface non-nil), later handed back → nil-receiver `Reset()` panic / nil borrow. | Guard `if ptr == nil { return }` before `Put`. |
 | C2 | ✅ | high | `Reset()` runs **on borrow**, so idle pooled objects pin their whole reference graph across a GC cycle. | **D2 resolved: reset on BOTH borrow and redeem.** Redeem clears refs promptly (no idle pinning); borrow guarantees a clean object regardless of history. `Reset` must be idempotent (runs ≥2×/cycle). |
 | C3 | ✅ | high | `Slice.Reset()` reslices `[:length]`, never zeroing `[len:cap]` (and `[0:length]` for `WithLength`) → leaks element pointers, exposes stale data. | `clear()` whole used region before reslice; `WithLength` region zeroed. Append-monotonic-len invariant makes this complete. |
-| C4 | 🚧 | high | Double-redeem / use-after-redeem is silent; cached redeemer makes `defer`+manual easy → `sync.Pool` corruption (one object to two borrowers). | **D3 resolved (partial, Phase 2):** always-on `atomic.Uint32` state on the redeemable wrapper panics loudly on a redeem of an already-idle slot; re-armed on borrow. Catches the common double-redeem. **Residual:** ABA (redeem racing a re-borrow of the same slot) and plain `Pool[T]` (no wrapper) → debug build, Phase 4. |
+| C4 | ✅ | high | Double-redeem / use-after-redeem is silent; cached redeemer makes `defer`+manual easy → `sync.Pool` corruption (one object to two borrowers). | **Phase 2:** always-on `atomic.Uint32` guard panics on the common double-redeem (re-armed on borrow). **Phase 4 (debug build):** generation-tracking closes the residuals — double-redeem incl. **ABA** on the redeemable pools, foreign-redeem, borrow-of-still-borrowed, leaks (`AssertNoLeaks`), with call sites. Plain `Pool[T]` gets everything except ABA (no per-borrow token). Use-after-redeem field reads remain undetectable (its consequences are caught). |
 | C5 | ⏳ | med | Embedding `sync.Pool` exposes `.Get()/.Put()` returning the wrong type (`*redeemable[T]`, `any`). | **Done early:** `sync.Pool` is now an unexported `pool` field (no longer embedded). Public surface = `Borrow`/`Redeem`/`BorrowWithRedeem`. |
 | C6 | ✅ | med | `Slice.Slice()` returns raw `[]T`, inviting builtin `append` whose regrown array is lost on redeem (defeats the whole point). | **D1 resolved:** keep idiomatic `[]T` returns but document the snapshot/growth caveat hard ("use the wrapper if you plan to grow"). Also de-embedded `PoolSlice`'s `*PoolRedeemable` → unexported field. |
 | C7 | ✅ | low | `Pool[*X]` yields `**X`; `Concat` always allocates (defeats reuse). | Value-type contract documented; `Concat` now append-based. |

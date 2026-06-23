@@ -1,9 +1,21 @@
 package pools
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 )
+
+// fakeTB captures TB calls so leak assertions can be inspected without failing the host test.
+type fakeTB struct {
+	helpers int
+	errors  []string
+	logs    []string
+}
+
+func (f *fakeTB) Helper()                              { f.helpers++ }
+func (f *fakeTB) Errorf(format string, args ...any)    { f.errors = append(f.errors, fmt.Sprintf(format, args...)) }
+func (f *fakeTB) Logf(format string, args ...any)      { f.logs = append(f.logs, fmt.Sprintf(format, args...)) }
 
 // resettable is a Resettable type that records how many times Reset was called and carries a
 // reference we can observe to verify the pool does not pin it while idle.
@@ -131,6 +143,9 @@ func TestPoolSliceDoubleRedeemPanics(t *testing.T) {
 }
 
 func TestRedeemableZeroAllocRedeem(t *testing.T) {
+	if debugBuild {
+		t.Skip("the poolsdebug build allocates a per-borrow redeemer to track redemptions")
+	}
 	p := NewRedeemable[resettable]()
 
 	// warm the pool
@@ -311,6 +326,27 @@ func TestWithMaxCapacityHonorsLength(t *testing.T) {
 		}
 	}
 	redeem2()
+}
+
+// TestNoLeaksOnCleanRun runs in both modes: in release AssertNoLeaks is a no-op returning true; under
+// -tags poolsdebug it genuinely verifies the clean borrow/redeem left nothing outstanding.
+func TestNoLeaksOnCleanRun(t *testing.T) {
+	ResetTracking()
+
+	p := NewRedeemable[resettable]()
+	for i := 0; i < 10; i++ {
+		_, redeem := p.BorrowWithRedeem()
+		redeem()
+	}
+
+	ps := NewPoolSlice[int]()
+	s, redeem := ps.BorrowWithRedeem()
+	s.Append(1, 2, 3)
+	redeem()
+
+	if !AssertNoLeaks(t) {
+		t.Fatal("clean run should report no leaks")
+	}
 }
 
 func TestConcurrentBorrowRedeem(t *testing.T) {

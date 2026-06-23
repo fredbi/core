@@ -1,6 +1,14 @@
 // Package pools provide utilities to recycle allocated objects.
 //
-// This package provides a generic [Pool] type that wraps [sync.Pool].
+// This package provides a generic [Pool] type that wraps [sync.Pool], a [PoolRedeemable] variant
+// that hands out a cached redeem closure, and a [PoolSlice] for recycling slices without juggling
+// pointers to them.
 //
-// For testing and debugging pooled allocation, a debug pool is also provided.
+// # Debug build
+//
+// Building with the "poolsdebug" tag (go test -tags poolsdebug ./...) turns on instrumentation that
+// tracks every borrow and redeem and panics on misuse — double redeem (including the ABA case for
+// the redeemable pools), redeem of a foreign object, or borrow of an object still checked out —
+// reporting the offending call sites. [AssertNoLeaks] then reports any object borrowed but never
+// redeemed. The instrumentation is a no-op with zero overhead when the tag is absent.
 package pools
