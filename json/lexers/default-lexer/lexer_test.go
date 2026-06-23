@@ -641,6 +641,54 @@ func getLexerWithBytes(fixture string) *L {
 	return NewWithBytes([]byte(fixture), WithElideSeparator(false))
 }
 
+func TestResetWithBytesReuse(t *testing.T) {
+	// drain a lexer into a comparable list of tokens (kind + value + position)
+	type tok struct {
+		kind      token.Kind
+		value     string
+		line, col int
+	}
+	drainAll := func(l *L) ([]tok, error) {
+		var out []tok
+		for {
+			tk := l.NextToken()
+			if !l.Ok() {
+				return out, l.Err()
+			}
+			if tk.IsEOF() {
+				return out, nil
+			}
+			out = append(out, tok{tk.Kind(), string(tk.Value()), l.Line(), l.Column()})
+		}
+	}
+
+	docA := []byte(`{"a":[1,-2,3.5e2],"b":true}`)
+	docB := []byte("[null,\n\"x\",0.5]")
+
+	// reference token streams from fresh lexers
+	wantA, errA := drainAll(NewWithBytes(docA, WithElideSeparator(false)))
+	require.NoError(t, errA)
+	wantB, errB := drainAll(NewWithBytes(docB, WithElideSeparator(false)))
+	require.NoError(t, errB)
+
+	// a single reused lexer must reproduce both streams exactly, in any order,
+	// proving ResetWithBytes clears all carried-over scanning state
+	l := NewWithBytes(docA, WithElideSeparator(false))
+	gotA1, err := drainAll(l)
+	require.NoError(t, err)
+	require.Equal(t, wantA, gotA1)
+
+	l.ResetWithBytes(docB)
+	gotB, err := drainAll(l)
+	require.NoError(t, err)
+	require.Equal(t, wantB, gotB)
+
+	l.ResetWithBytes(docA)
+	gotA2, err := drainAll(l)
+	require.NoError(t, err)
+	require.Equal(t, wantA, gotA2)
+}
+
 func currentDir() string {
 	_, filename, _, _ := runtime.Caller(1)
 

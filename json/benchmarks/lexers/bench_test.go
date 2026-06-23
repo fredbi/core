@@ -146,6 +146,21 @@ func BenchmarkLexers(b *testing.B) {
 				})
 			}
 
+			// default-lexer reused across iterations via ResetWithBytes: the
+			// lexer is allocated once outside the loop, so steady-state scanning
+			// should report 0 allocs/op (the construction bias is amortized away).
+			b.Run("default-lexer/reset", func(b *testing.B) {
+				lex := deflex.NewWithBytes(nil)
+				b.SetBytes(int64(len(w.Data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					lex.ResetWithBytes(w.Data)
+					_, _ = drain(lex)
+				}
+			})
+
 			b.Run("default-lexer/verbatim", func(b *testing.B) {
 				b.SetBytes(int64(len(w.Data)))
 				b.ReportAllocs()

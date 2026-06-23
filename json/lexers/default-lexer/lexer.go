@@ -627,6 +627,41 @@ func (l *L) Reset() {
 	}
 }
 
+// ResetWithBytes rebinds the lexer to a new input buffer and resets all scanning
+// state, so a single lexer can be reused across inputs with no allocation (the
+// no-pool equivalent of [BorrowLexerWithBytes]). Configured options are kept.
+//
+// The lexer operates in whole-buffer mode over data: emitted token values may
+// alias data, which must therefore stay stable until the lexer is done with it.
+func (l *L) ResetWithBytes(data []byte) {
+	l.r = noopReader
+	l.buffer = data
+	l.bufferized = len(data)
+	l.previousBuffer = nil
+	l.keepPreviousBuffer = 0 // disabled option
+	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.reset()
+}
+
+// ResetWithReader rebinds the lexer to a new reader and resets all scanning
+// state, so a single lexer can be reused across inputs (the no-pool equivalent
+// of [BorrowLexerWithReader]). Configured options are kept and the internal
+// buffer is reused.
+func (l *L) ResetWithReader(r io.Reader) {
+	l.r = r
+	l.bufferized = 0
+	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
+	l.reset()
+
+	if cap(l.buffer) < l.bufferSize {
+		l.buffer = slices.Grow(l.buffer, l.bufferSize-cap(l.buffer))[:l.bufferSize]
+	}
+
+	if l.keepPreviousBuffer > 0 && cap(l.previousBuffer) < l.keepPreviousBuffer {
+		l.previousBuffer = slices.Grow(l.previousBuffer, l.keepPreviousBuffer-cap(l.previousBuffer))
+	}
+}
+
 func (l *L) reset() {
 	l.err = nil
 	l.current = token.None
