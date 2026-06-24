@@ -333,6 +333,26 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
   NextToken, streaming NextToken@64B, whole-buffer `Tokens()`, VL) — the instant
   regression signal as lab diverges. Benchmarks expose `lab/bytes` + `lab/tokens`
   next to `default-lexer/*` for direct A/B. Starts == reference within noise.
+- 🔬 **2.1b Generics spike — done, measured (`49e62e4`).** Policy-parameterized
+  push core `scanPushG[T, P]` in lab, `semanticPolicy` (identity emit) backing
+  L's `Tokens()`; streams identical (equivalence green). Findings:
+  - **Stenciling is NOT the cost** (answers the struct-stenciling worry): the
+    token struct gets its own GC-shape stencil, the per-byte loop is concrete and
+    byte-identical; with a plain-func driver the generic core is **0 allocs, at
+    parity** (216 vs 218 ns).
+  - **range-over-func + generics across packages = +2 allocs/call** (the iter.Seq
+    yield closure heap-allocates when its body holds a generic call). **Fixed**
+    by funnelling the generic call through a `//go:noinline` concrete shim so the
+    Seq body keeps the reference's cross-package "yield does not escape" summary →
+    back to 0 allocs.
+  - **Residual ~5% per-token cost**: a method call on a type-param value
+    (`p.emit`) routes through the **generics dictionary (indirect call)** even
+    for a concrete zero-size policy — Go does not devirtualize it. Controlled
+    reuse A/B: citm/whitespace +5%, twitter +4%. Within the ~3–7% ceiling band.
+  - **Verdict:** generics viable (correct, 0-alloc) at ~5% L cost from per-token
+    dict dispatch. **Decision pending** (Fred): accept ~5% on L for VL's 3–8×
+    win + killing ~750 lines of dup; try to devirtualize the emit; or go road (b)
+    generator for zero per-token cost.
 - 🔬 **2.1 Unify L/VL (+ the two main loops) from one source — PRIORITY, IN PROGRESS.**
   Reframed by the R&D pass: this is no longer only a maintainability play. The
   L-vs-VL baseline shows **VL is 3–8× slower than L purely from missing fast
