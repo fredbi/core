@@ -119,11 +119,19 @@ supersede or reframe items below. Recorded here so the phase list stays honest.
    stay in the back pocket for **higher layers** (typed decoder, schema-validator
    OP-program) or a **separate optional whole-buffer `simd-lexer`** — never woven
    into default-lexer. See codegen/asm/jit ramble.
-5. **`Reset()` fixed for pooling (`55f112c`).** It now drops the aliased caller
-   buffer + reader (no pinning/leak of user specs) and no longer allocates on
-   bytes-borrows. `VL` gained `ResetWithBytes`/`ResetWithReader` (`ec43cdb`) — VL
-   is now poolable with 0 steady-state allocs. **Pools are used systematically by
-   our callers**, so this is load-bearing.
+5. **Pool hardening (`55f112c`, `ec43cdb`, `1de7d74`).** Three steps, since
+   **pools are used systematically by our callers** (load-bearing):
+   - `Reset()` fixed: drops the aliased caller buffer + reader (no pinning/leak of
+     user specs) and no longer allocates on bytes-borrows.
+   - `VL` gained `ResetWithBytes`/`ResetWithReader` — VL is now reuse-safe with 0
+     steady-state allocs.
+   - L pool moved to the **redeemable, leak-checkable** type
+     (`pools.NewRedeemable[L]`). **Breaking API:** `BorrowLexerWith{Bytes,Reader}`
+     now return `(*L, func())` (cached redeemer, no per-borrow closure alloc);
+     `RedeemLexer` removed. Under `-tags poolsdebug` the pool detects
+     double-/foreign-redeem and leaks; tests assert `pools.AssertNoLeaks` via
+     `t.Cleanup` and run green in both build modes. Exported `pools.DebugBuild`
+     for both-mode tests. **VL pooling deferred to the L/VL unification.**
 6. **L/VL unification is now the priority lever — and it's a perf play too.**
    First recorded L-vs-VL baseline (06-24): **VL is 3–8× slower than L**, because
    VL never received any of L's fast paths (still the old byte-by-byte loop +
