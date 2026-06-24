@@ -160,9 +160,57 @@ trailing on pure long strings (82%) — while also doing zero-copy aliasing,
 single-digit (0 reused) allocs, and no numeric conversion / no precision loss.
 For a pure-Go validating lexer that's a strong place to pause the speed race.
 
+## VL (verbatim lexer) baseline vs L — recorded 2026-06-24
+
+First time we've measured VL. Steady-state, both reused (L `reset` /
+VL `verbatim-reset`, allocated once + `ResetWithBytes` in the loop, both
+**0 allocs/op**), bytes mode, MB/s. This is the only meaningful comparison — VL
+has no competitor in its arena (full-fidelity tokenizing for TUIs/LSPs).
+
+| workload | L MB/s | VL MB/s | L/VL (VL slowdown) |
+|---|---|---|---|
+| ints | 568 | 67 | **8.5×** |
+| object_keys | 658 | 86 | 7.7× |
+| floats | 529 | 74 | 7.1× |
+| canada_geometry | 574 | 87 | 6.6× |
+| whitespace_heavy | 555 | 91 | 6.1× |
+| golang_source | 489 | 80 | 6.1× |
+| strings_plain | 1005 | 199 | 5.1× |
+| mixed | 306 | 64 | 4.8× |
+| bools_nulls | 237 | 49 | 4.8× |
+| strings_unicode | 922 | 201 | 4.6× |
+| twitter_status | 708 | 159 | 4.5× |
+| nested_objects | 177 | 40 | 4.4× |
+| citm_catalog | 672 | 186 | 3.6× |
+| nested_arrays | 111 | 38 | 2.9× |
+| strings_escaped | 624 | 250 | 2.5× |
+
+**Reading it.** VL is **3–8× slower than L**, NOT because verbatim fidelity is
+inherently that costly, but because **VL never received any of L's
+optimizations**. VL's `NextToken` is the *old* byte-by-byte main loop with a
+mandatory per-token **look-ahead** (`l.next`), plus blank accumulation, and **no
+fast paths at all**: no inline-int, no digit-run number scanner, no SWAR strings,
+no whole-buffer zero-copy. The gap is therefore largest exactly where L's fast
+paths pay most — numbers + tiny tokens (ints 8.5×, object_keys 7.7×, canada
+6.6×) — and smallest on escape-heavy strings (2.5×), where L itself falls back
+to the slow unescape path so the two converge.
+
+**Implication for unification.** This is the strongest argument yet for
+generating/parameterizing L and VL from **one optimized source**: VL would
+inherit every fast path, and the *residual* gap would shrink to the genuine cost
+of fidelity (blanks + always-on positions + look-ahead) — plausibly ~1.2–1.5×,
+not 3–8×. The current 3–8× is an **optimization-debt gap, not a fidelity gap.**
+Don't hand-port the fast paths into VL's bespoke loop (that doubles the
+maintenance we're trying to kill); fix it at the unification step instead.
+
+Side win from this measurement: added `VL.ResetWithBytes` / `VL.ResetWithReader`
+(parallel to L), so VL is now poolable/reusable with 0 steady-state allocs.
+
 ## Open levers still worth trying (pure Go)
 
-- Pure long strings (strings_plain 82% of jsontext) is the last gap — would need
-  a faster unescape slow path and/or SWAR-ing the slow-path clean runs.
-- Force-inline measurement to size the **codegen prize** (see codegen ramble).
-- L/VL unification (generation may moot it).
+- **L/VL unification** is now the priority lever: it's both the maintainability
+  fix AND a 3–8× VL speedup (VL inherits L's fast paths). See codegen ramble.
+- Pure long strings (strings_plain 82% of jsontext) is the last L gap — would
+  need a faster unescape slow path and/or SWAR-ing the slow-path clean runs.
+- Force-inline measurement already sized the codegen *speed* prize for L at
+  ~3–7% (see codegen ramble); for VL the prize is far bigger (the table above).

@@ -175,6 +175,10 @@ func BenchmarkLexers(b *testing.B) {
 				}
 			})
 
+			// verbatim lexer (VL), constructed per iteration — apples-to-apples
+			// with default-lexer/bytes (L, also constructed per iteration). The
+			// delta is the cost of full fidelity: blanks + always-on positions +
+			// the verbatim look-ahead.
 			b.Run("default-lexer/verbatim", func(b *testing.B) {
 				b.SetBytes(int64(len(w.Data)))
 				b.ReportAllocs()
@@ -182,6 +186,27 @@ func BenchmarkLexers(b *testing.B) {
 
 				for range b.N {
 					vl := deflex.NewVerbatimWithBytes(w.Data)
+					for {
+						tok := vl.NextToken()
+						if !vl.Ok() || tok.IsEOF() {
+							break
+						}
+					}
+				}
+			})
+
+			// verbatim lexer reused via ResetWithBytes (allocated once outside the
+			// loop): the steady-state VL scanning cost, comparable to
+			// default-lexer/reset (L reused the same way). This is the cleanest
+			// L-vs-VL lexing-speed comparison, free of per-iteration construction.
+			b.Run("default-lexer/verbatim-reset", func(b *testing.B) {
+				vl := deflex.NewVerbatimWithBytes(nil)
+				b.SetBytes(int64(len(w.Data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					vl.ResetWithBytes(w.Data)
 					for {
 						tok := vl.NextToken()
 						if !vl.Ok() || tok.IsEOF() {

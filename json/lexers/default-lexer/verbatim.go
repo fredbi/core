@@ -1016,6 +1016,22 @@ func (l *VL) Reset() {
 	l.reset()
 }
 
+// ResetWithBytes rebinds the verbatim lexer to a new input buffer and resets all
+// scanning state, so a single lexer can be reused across inputs with no
+// allocation. See [L.ResetWithBytes].
+func (l *VL) ResetWithBytes(data []byte) {
+	l.L.ResetWithBytes(data)
+	l.reset()
+}
+
+// ResetWithReader rebinds the verbatim lexer to a new reader and resets all
+// scanning state, so a single lexer can be reused across inputs. See
+// [L.ResetWithReader].
+func (l *VL) ResetWithReader(r io.Reader) {
+	l.L.ResetWithReader(r)
+	l.reset()
+}
+
 func (l *VL) reset() {
 	l.next = token.VNone
 	l.current = token.VNone
