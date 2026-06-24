@@ -52,10 +52,12 @@ const (
 //
 // # Compression configuration
 //
-// The compression level, threshold and preset dictionary (see [WithCompressionDict]) are frozen for
-// the Store's whole lifetime: they are configuration, not data, and every payload compressed into the
-// arena stays decodable against the same dictionary. Recycling a Store preserves them ([Store.Reset]
-// is a no-op on them); changing them requires re-borrowing the Store with new options ([BorrowStore]).
+// The compression level, threshold and preset dictionary (see [Options.WithCompressionDict]) are
+// frozen for as long as the Store holds compressed payloads: every payload in the arena stays
+// decodable against the dictionary it was compressed with. [Store.Reset] rewinds the arena and the
+// configuration together (back to the defaults), so a recycled Store never carries a dictionary that
+// would mismatch leftover payloads. Configure a (recycled) Store at construction or borrow time via
+// [Options] ([New], [BorrowStore]).
 type Store struct {
 	options
 	arena []byte
@@ -66,10 +68,10 @@ var _ stores.Store = &Store{} // [Store] implements [stores.Store]
 
 // New [Store].
 //
-// See [Option] to alter default settings.
-func New(opts ...Option) *Store {
+// Call New() for the defaults, or pass an [Options] built from [DefaultOptions] to alter settings.
+func New(opts ...Options) *Store {
 	s := &Store{
-		options: applyOptionsWithDefaults(opts),
+		options: resolveOptions(opts),
 	}
 
 	s.arena = make([]byte, 0, s.minArenaSize)
@@ -342,16 +344,18 @@ func (s *Store) PutBool(b bool) stores.Handle {
 // that no document is mid-construction: large string values alias the arena that Reset rewinds (see
 // the "Lifecycle and value aliasing" note on [Store]).
 //
-// Reset rewinds the arena (the per-document data) but preserves the compression configuration
-// (level, threshold and preset dictionary, with its derived writer), which is frozen for the Store's
-// whole lifetime so that recycling a Store keeps its dictionary and stays self-consistent (see
-// [WithCompressionDict] and [compressionOptions.Reset]). To change the compression configuration,
-// re-borrow the Store with new options ([BorrowStore]), which rebuilds the cached writer.
+// Reset rewinds the arena (the per-document data) and restores the default configuration, so a
+// recycled Store starts from a clean slate: any injected dictionary reference is released and the
+// lazily-built compression writer is dropped (it rebuilds on demand). This is cheap — the defaults
+// are two ints and a nil dict (see [DefaultOptions]).
+//
+// Reconfigure a recycled Store at borrow time via [BorrowStore]; the dictionary, being caller-owned,
+// is simply re-injected (aliased, not copied) for the next generation.
 //
 // Implements [pools.Resettable].
 func (s *Store) Reset() {
 	s.arena = s.arena[:0]
-	s.options.Reset()
+	s.options = DefaultOptions().resolved
 }
 
 func (s *Store) getInlinedNumber(h stores.Handle) values.Value {

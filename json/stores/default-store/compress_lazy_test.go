@@ -40,7 +40,7 @@ func TestLazyCompressWriter(t *testing.T) {
 func TestDisabledCompressionNeverBuildsWriter(t *testing.T) {
 	long := strings.Repeat("the quick brown fox ", 30)
 
-	s := New(WithEnableCompression(false))
+	s := New(DefaultOptions().WithEnableCompression(false))
 	h := s.PutValue(values.MakeStringValue(long))
 
 	assert.Nil(t, s.cw, "compression disabled: cw must never be built")

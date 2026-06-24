@@ -5,69 +5,77 @@ const (
 	defaultEnableCompression = true
 )
 
-// Option alters the default settings of a store ([Store], [ConcurrentStore] or [VerbatimStore]).
-type Option = func(*options)
+// Options configures a store ([Store], [ConcurrentStore] or [VerbatimStore]).
+//
+// It is an immutable value built by chaining With* methods from [DefaultOptions]. Each method copies
+// the receiver, sets one field and returns the copy, so a builder chain stays on the stack and
+// allocates nothing:
+//
+//	o := store.DefaultOptions().
+//		WithCompressionLevel(9).
+//		WithCompressionDict(trainedDict).
+//		WithArenaSize(8192)
+//	s := store.New(o)
+//
+// Pass the result to [New], [NewConcurrent], [NewVerbatim] or [BorrowStore]. Those constructors are
+// variadic for convenience — calling them with no Options yields the defaults — but only the last
+// Options is used; compose configuration through the builder chain, not by passing several Options.
+type Options struct {
+	resolved options
+}
 
+// options is the resolved configuration embedded in a store.
 type options struct {
 	compressionOptions
 	enableCompression bool
 	minArenaSize      int
 }
 
-func applyOptionsWithDefaults(opts []Option) options {
-	o := options{
-		enableCompression: defaultEnableCompression,
-		minArenaSize:      defaultMinArenaSize,
-		// Compression defaults are always applied: with a lazy writer and a nil default dictionary
-		// this costs nothing (two ints), and whether compression actually happens is gated by
-		// enableCompression on the write path (see Store.putString). A Store that never compresses
-		// thus never allocates a flate writer.
-		compressionOptions: applyCompressionOptionsWithDefaults(nil),
+// DefaultOptions returns the default [Options], the seed for a builder chain.
+func DefaultOptions() Options {
+	return Options{
+		resolved: options{
+			enableCompression: defaultEnableCompression,
+			minArenaSize:      defaultMinArenaSize,
+			compressionOptions: compressionOptions{
+				compressionThreshold: defaultCompressionThreshold,
+				compressionLevel:     defaultCompressionLevel,
+				// dict is nil; cw is built lazily on first compression.
+			},
+		},
 	}
+}
 
-	for _, apply := range opts {
-		apply(&o)
-	}
+// WithArenaSize sets the initial capacity of the inner arena that stores large values.
+func (o Options) WithArenaSize(size int) Options {
+	o.resolved.minArenaSize = size
 
 	return o
 }
 
-// WithArenaSize sets the initial capacity of the inner arena that stores large values.
-func WithArenaSize(size int) Option {
-	return func(o *options) {
-		o.minArenaSize = size
-	}
+// WithEnableCompression enables or disables compression of long strings in the store.
+//
+// Compression is enabled by default and uses the DEFLATE method from the standard library package
+// [compress/flate]. By default it kicks in for strings longer than 128 bytes, at level
+// [flate.DefaultCompression] (level 6). Tune it with [Options.WithCompressionLevel],
+// [Options.WithCompressionThreshold] and [Options.WithCompressionDict].
+//
+// A store with compression disabled never allocates a DEFLATE writer (see
+// [compressionOptions.compressWriter]) and stores long strings verbatim in the arena.
+func (o Options) WithEnableCompression(enabled bool) Options {
+	o.resolved.enableCompression = enabled
+
+	return o
 }
 
-// WithEnableCompression enables compression of long strings in the [Store].
-//
-// Compression is enabled by default and uses the DEFLATE compression method implemented
-// by the standard library package [compress/flate].
-//
-// By default, compression kicks in for strings longer than 128 bytes.
-//
-// The default compression level is [flate.DefaultCompression), which corresponds to a compression level of 6.
-//
-// Compression may be disabled or altered using [WithCompressionOptions] with some [CompressionOption] s.
-func WithEnableCompression(enabled bool) Option {
-	return func(o *options) {
-		o.enableCompression = enabled
+// resolveOptions picks the effective configuration from a variadic builder list: the last Options
+// wins, and an empty list yields the defaults.
+func resolveOptions(opts []Options) options {
+	if len(opts) == 0 {
+		return DefaultOptions().resolved
 	}
-}
 
-func WithCompressionOptions(opts ...CompressionOption) Option {
-	return func(o *options) {
-		o.enableCompression = true
-		o.compressionOptions = applyCompressionOptionsWithDefaults(opts)
-	}
-}
-
-// TODO: SetWriter method to clone existing store with a writer?
-
-func (o *options) Reset() {
-	if o.enableCompression {
-		o.compressionOptions.Reset()
-	}
+	return opts[len(opts)-1].resolved
 }
 
 // getBuffer allocates a fresh buffer for a value decoded by [Store.Get].

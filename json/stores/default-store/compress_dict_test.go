@@ -30,10 +30,9 @@ func dictTestDict() []byte {
 // newDictStore builds a Store whose compression always kicks in (low threshold) and is seeded with a
 // caller-provided preset dictionary.
 func newDictStore(dict []byte) *Store {
-	return New(WithCompressionOptions(
-		WithCompressionDict(dict),
-		WithCompressionThreshold(16),
-	))
+	return New(DefaultOptions().
+		WithCompressionDict(dict).
+		WithCompressionThreshold(16))
 }
 
 // putAndCheck stores each payload, asserts it round-trips through Get and through the allocation-free
@@ -104,23 +103,30 @@ func TestCompressionDictSurvivesGob(t *testing.T) {
 	assert.Equal(t, fresh, loaded.Get(h).String(), "reloaded Store must be able to compress and decode new payloads")
 }
 
-// TestCompressionDictSurvivesRecycle proves Store.Reset is a no-op on the compression configuration:
-// a recycled Store keeps its injected dictionary and stays able to compress/decode against it. Under
-// the previous Reset (which truncated dict to [:0] but kept the dict-encoding writer), the writer and
-// the reader would have disagreed and the second round-trip would corrupt.
-func TestCompressionDictSurvivesRecycle(t *testing.T) {
+// TestCompressionDictReleasedOnReset proves the recycle contract: Store.Reset restores the defaults,
+// releasing the injected dictionary and dropping the (lazily-built) compression writer. The recycled
+// Store is a clean slate that still round-trips correctly — crucially, with no leftover dict-encoding
+// writer to desync against (the bug class the old preserving-Reset risked). The caller re-injects a
+// dictionary at borrow time for the next generation.
+func TestCompressionDictReleasedOnReset(t *testing.T) {
 	dict := dictTestDict()
 	s := newDictStore(dict)
 	payloads := dictTestPayloads()
 
 	putAndCheck(t, s, payloads)
+	require.NotNil(t, s.dict, "the dictionary is in force while the Store is in use")
+	require.NotNil(t, s.cw, "compressing built the writer")
 
 	s.Reset()
-	require.Empty(t, s.arena, "Reset clears the arena (data) ...")
-	require.NotNil(t, s.dict, "... but preserves the compression configuration (frozen dictionary)")
+	require.Empty(t, s.arena, "Reset rewinds the arena (data)")
+	require.Nil(t, s.dict, "Reset releases the injected dictionary reference")
+	require.Nil(t, s.cw, "Reset drops the lazily-built writer")
 
-	// the dictionary is still in force after recycling: a fresh round-trip must still succeed.
-	putAndCheck(t, s, payloads)
+	// the recycled Store works at defaults: a long string compresses against the (now empty) dict and
+	// round-trips, proving no desync survived the reset.
+	fresh := strings.Repeat("recycled payload ", 20)
+	h := s.PutValue(values.MakeStringValue(fresh))
+	require.Equal(t, fresh, s.Get(h).String())
 }
 
 // TestCompressionDictAliasesCaller documents that the Store aliases (does not copy) the injected

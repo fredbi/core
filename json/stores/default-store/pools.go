@@ -25,13 +25,13 @@ var (
 
 // BorrowStore borrows a new or recycled [Store] from the pool.
 //
-// Pass opts to (re)configure the borrowed Store. This is required to get non-default compression
-// settings on a recycled Store, since [Store.Reset] alone restores the defaults but does not rebuild
-// the cached compression writer (see [Store.Reset]).
-func BorrowStore(opts ...Option) *Store {
+// The borrowed Store starts from the defaults ([Store.Reset] is applied on borrow). Pass an
+// [Options] to configure it; the compression writer rebuilds lazily from the (level, dict) on the
+// first compression, so re-injecting a caller-owned dictionary each generation is allocation-free.
+func BorrowStore(opts ...Options) *Store {
 	s := poolOfStores.Borrow()
 	if len(opts) > 0 {
-		s.options = applyOptionsWithDefaults(opts)
+		s.options = resolveOptions(opts)
 	}
 
 	return s

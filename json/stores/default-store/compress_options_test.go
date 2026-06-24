@@ -9,15 +9,15 @@ import (
 func TestOptions(t *testing.T) {
 	t.Run("should panic on invalid compression level setting", func(t *testing.T) {
 		assert.Panics(t, func() {
-			_ = New(
-				WithCompressionOptions(WithCompressionLevel(12)),
-			)
+			_ = DefaultOptions().WithCompressionLevel(12)
 		})
 	})
 
 	t.Run("should apply options", func(t *testing.T) {
-		opts := []CompressionOption{WithCompressionLevel(4), WithCompressionThreshold(45)}
-		o := applyCompressionOptionsWithDefaults(opts)
+		o := DefaultOptions().
+			WithCompressionLevel(4).
+			WithCompressionThreshold(45).
+			resolved
 
 		assert.Equal(t, 4, o.compressionLevel)
 		assert.Equal(t, 45, o.compressionThreshold)
@@ -29,15 +29,13 @@ func TestOptions(t *testing.T) {
 			assert.NotNil(t, w)
 			assert.Same(t, w, o.compressWriter(), "cw is cached after first build")
 		})
+	})
 
-		t.Run("should preserve the compression configuration on reset", func(t *testing.T) {
-			// Reset is a no-op on the compression configuration: level, threshold and dict are
-			// frozen for the Store's lifetime so a recycled Store keeps its dictionary and stays
-			// self-consistent (see compressionOptions.Reset).
-			o.Reset()
+	t.Run("builder is immutable: each With* returns a fresh copy", func(t *testing.T) {
+		base := DefaultOptions()
+		derived := base.WithCompressionLevel(9)
 
-			assert.Equal(t, 4, o.compressionLevel)
-			assert.Equal(t, 45, o.compressionThreshold)
-		})
+		assert.Equal(t, defaultCompressionLevel, base.resolved.compressionLevel, "the base must be unchanged")
+		assert.Equal(t, 9, derived.resolved.compressionLevel)
 	})
 }

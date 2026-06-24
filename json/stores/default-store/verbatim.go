@@ -43,7 +43,7 @@ type VerbatimStore struct {
 	_          struct{}
 }
 
-func NewVerbatim(opts ...Option) *VerbatimStore {
+func NewVerbatim(opts ...Options) *VerbatimStore {
 	s := &VerbatimStore{
 		Store: New(opts...),
 	}

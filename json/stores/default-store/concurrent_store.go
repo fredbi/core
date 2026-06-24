@@ -25,7 +25,7 @@ type ConcurrentStore struct {
 
 var _ stores.Store = &ConcurrentStore{} // ConcurrentStore implements [stores.Store]
 
-func NewConcurrent(opts ...Option) *ConcurrentStore {
+func NewConcurrent(opts ...Options) *ConcurrentStore {
 	return &ConcurrentStore{
 		Store: New(opts...),
 	}
