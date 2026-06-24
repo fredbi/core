@@ -350,10 +350,27 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
     for a concrete zero-size policy — Go does not devirtualize it. Controlled
     reuse A/B: citm/whitespace +5%, twitter +4%. Within the ~3–7% ceiling band.
   - **Verdict:** generics viable (correct, 0-alloc) at ~5% L cost from per-token
-    dict dispatch. **Decision pending** (Fred): accept ~5% on L for VL's 3–8×
-    win + killing ~750 lines of dup; try to devirtualize the emit; or go road (b)
-    generator for zero per-token cost.
-- 🔬 **2.1 Unify L/VL (+ the two main loops) from one source — PRIORITY, IN PROGRESS.**
+    dict dispatch. **DECIDED 2026-06-24 (Fred): accept the ~5%, land it with
+    generics** (road a). Generator (road b) stays the escape hatch. Execution is
+    tracked in [unified-lexer-plan.md](unified-lexer-plan.md).
+- 🚧 **2.1 Unify L/VL from one generic source — road (a) chosen; STAGES 1–2 DONE.**
+  Detailed stage tracker: [unified-lexer-plan.md](unified-lexer-plan.md). Worked
+  in the `lab` sandbox; promoted to production only at stage 5.
+  - ✅ **Stage 1 (`3f533ad`)**: generic push core `scanPushG[T,P]` serves L and VL;
+    `VL.Tokens()` gets a native push path → **VL push ≈ 2.0–2.4× VL pull**
+    (citm 177→361, twitter 155→333, ints 66→156 MB/s), 0 allocs. Unified VL also
+    **fixes a reference-VL `\u`-decode bug** and validates surrogates like L
+    (both behavior changes signed off).
+  - ✅ **Stage 2 (`5ec002d`)**: generic pull core `scanTokenG[T,P]` (+`errCheckG`)
+    backs `L.NextToken` and `VL.NextToken`; VL look-ahead retired (legacy kept
+    dead). **The 4 hand loops → 2 generic cores.** L still == reference (bytes +
+    streaming), 0 allocs, ~5–7% slower (accepted). VL pull == VL push on all 318
+    fixtures.
+  - ⏳ **Stages 3–5 remaining**: 3 = confirm single-source value scanners; 4 =
+    delete the dead legacy loops (where the ~750-line dedup materializes); 5 =
+    promote `lab` → replace `default-lexer` (irreversible; separate review).
+  - Historical context (the head-to-head framing that led to choosing road a):
+- 🔬 **2.1-orig Unify L/VL — the two roads weighed (road a chosen).**
   Reframed by the R&D pass: this is no longer only a maintainability play. The
   L-vs-VL baseline shows **VL is 3–8× slower than L purely from missing fast
   paths** (3b.6), so unification *also* makes VL fast and gives streaming push for
