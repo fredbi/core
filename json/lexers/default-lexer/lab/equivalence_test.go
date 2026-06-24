@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -173,4 +174,66 @@ func TestLabVerbatimEquivalence(t *testing.T) {
 		require.Equalf(t, wantErr, gotErr, "VL error mismatch on %s", name)
 		require.Equalf(t, want, got, "VL token stream mismatch on %s", name)
 	}
+}
+
+// TestLabVerbatimPushEquivalence gates stage 1: lab's native verbatim push path
+// (VL.Tokens via the generic core) must reproduce the reference VL token stream
+// — values, blanks AND positions — on every must-accept (y_) fixture.
+//
+// Scope is the y_ set deliberately. On invalid (n_) input the push core uses L's
+// folded/deferred-error semantics, which may differ from VL's look-ahead. On
+// implementation-defined (i_) input L and VL legitimately diverge — notably L
+// validates \u surrogate escapes while the reference VL did not; the unified push
+// core uses L's scanner, so unified VL now adopts L's stricter (correct)
+// surrogate validation. That is an intended stage-1 behavior change, so i_ cases
+// are out of scope for strict parity.
+func TestLabVerbatimPushEquivalence(t *testing.T) {
+	fixtures := conformanceFixtures(t)
+
+	checked := 0
+	for name, data := range fixtures {
+		if !strings.HasPrefix(name, "y_") {
+			continue // only must-accept fixtures have a single legitimate stream
+		}
+
+		// Oracle for the unified VL contract = reference L (non-eliding) for the
+		// kind+value sequence (L's decoded values are the correct ones — the
+		// reference VL has a \u-decoding bug) zipped with reference VL for the
+		// blanks+position of each token.
+		valOracle, vErr := drainSemantic(lexer.NewWithBytes(data, lexer.WithElideSeparator(false)))
+		posOracle, pErr := drainVerbatim(lexer.NewVerbatimWithBytes(data))
+		if vErr != "" || pErr != "" {
+			continue
+		}
+		require.Equalf(t, len(valOracle), len(posOracle), "oracle length mismatch on %s", name)
+
+		// build the expected unified stream: L's kind+value, VL's blanks+pos
+		want := make([]vtok, len(valOracle))
+		for i := range valOracle {
+			want[i] = vtok{
+				kind:   valOracle[i].kind,
+				value:  valOracle[i].value,
+				blanks: posOracle[i].blanks,
+				line:   posOracle[i].line,
+				col:    posOracle[i].col,
+			}
+		}
+
+		// drive lab's VL through the native push iterator
+		var got []vtok
+		labVL := lab.NewVerbatimWithBytes(data)
+		for tk := range labVL.Tokens() {
+			got = append(got, vtok{
+				kind:   tk.Kind(),
+				value:  string(tk.Value()),
+				blanks: string(tk.Blanks()),
+				line:   tk.Line(),
+				col:    tk.Col(),
+			})
+		}
+		require.Emptyf(t, errStr(labVL.Err()), "lab VL push errored on valid %s", name)
+		require.Equalf(t, want, got, "VL push stream mismatch on valid %s", name)
+		checked++
+	}
+	t.Logf("verbatim push: matched the unified-contract oracle on %d valid fixtures", checked)
 }

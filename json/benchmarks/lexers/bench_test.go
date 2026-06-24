@@ -187,6 +187,21 @@ func BenchmarkLexers(b *testing.B) {
 				}
 			})
 
+			// lab verbatim native push Tokens() — VL inheriting L's fast paths via
+			// the unified core; compare to default-lexer/verbatim (reference VL pull)
+			b.Run("lab/verbatim-tokens", func(b *testing.B) {
+				b.SetBytes(int64(len(w.Data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					vl := lab.NewVerbatimWithBytes(w.Data)
+					for tok := range vl.Tokens() {
+						sink += int(tok.Kind())
+					}
+				}
+			})
+
 			// default-lexer reused across iterations via ResetWithBytes: the
 			// lexer is allocated once outside the loop, so steady-state scanning
 			// should report 0 allocs/op (the construction bias is amortized away).

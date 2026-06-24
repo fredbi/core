@@ -26,16 +26,28 @@ import (
 
 // emitPolicy converts the grammar/value token the core just built (a token.T)
 // into the emitted token type T, attaching any policy-specific extra
-// information (e.g. the verbatim lexer's preceding blanks and position).
+// information: the preceding blanks (the whitespace run since the previous
+// token, sliced zero-copy from the input) and the token's 1-based line/column.
+// The semantic lexer ignores both; the verbatim lexer bakes them into token.VT.
 type emitPolicy[T any] interface {
-	emit(t token.T) T
+	emit(t token.T, blanks []byte, line, col int) T
 }
 
 // semanticPolicy is the policy for the semantic lexer L: the emitted token IS
-// the grammar-state token.T, so emission is the identity.
+// the grammar-state token.T, so emission is the identity (blanks/position are
+// dropped — the core computes them anyway, but the slice is just a header).
 type semanticPolicy struct{}
 
-func (semanticPolicy) emit(t token.T) token.T { return t }
+func (semanticPolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
+
+// verbatimPolicy is the policy for the verbatim lexer VL: it wraps the
+// grammar/value token.T into a token.VT, attaching the preceding blanks and the
+// position (zero-cost wrap — VT embeds T).
+type verbatimPolicy struct{}
+
+func (verbatimPolicy) emit(t token.T, blanks []byte, line, col int) token.VT {
+	return t.AsVerbatim(blanks).WithPosition(line, col)
+}
 
 // scanPushG is the generic, policy-parameterized counterpart of scanPush. It is
 // a near-verbatim copy: every `yield(l.current)` becomes `yield(p.emit(...))`,
@@ -57,6 +69,16 @@ func (l *L) scanPushSemantic(yield func(token.T) bool) {
 	scanPushG[token.T, semanticPolicy](l, semanticPolicy{}, yield)
 }
 
+// scanPushVerbatim is the verbatim counterpart of scanPushSemantic: same
+// non-inlined-shim discipline, but instantiates the core with verbatimPolicy so
+// the emitted tokens are token.VT (blanks + position baked in). This gives VL a
+// native push path with all of L's fast paths.
+//
+//go:noinline
+func (l *L) scanPushVerbatim(yield func(token.VT) bool) {
+	scanPushG[token.VT, verbatimPolicy](l, verbatimPolicy{}, yield)
+}
+
 //nolint:gocognit,gocyclo
 func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 	if l.err != nil {
@@ -65,6 +87,11 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 	data := l.buffer[:l.bufferized]
 	i := l.consumed
+	// blankStart is the index right after the previous token: the whitespace run
+	// [blankStart:tokenStart] is the preceding blanks the verbatim policy bakes
+	// into the token (zero-copy slice of the input). The semantic policy ignores
+	// it. It is reset to i after each emitted token.
+	blankStart := i
 
 	writeback := func(pos int) {
 		l.consumed = pos
@@ -89,6 +116,9 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 		l.tokLine = l.line
 		l.tokCol = int(uint64(i+1) - l.lineStart)
+		// the whitespace run since the previous token (zero-copy); i is the index
+		// of the first significant byte (the token start).
+		blanks := data[blankStart:i:i]
 
 		if l.afterKey {
 			l.afterKey = false
@@ -101,10 +131,11 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			i++
 			l.current = token.MakeDelimiter(token.Colon)
+			blankStart = i
 			if l.elideSeparator {
 				continue
 			}
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				writeback(i)
 
 				return
@@ -142,7 +173,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			l.expectKey = false
 			l.popContainer()
 			l.current = token.MakeDelimiter(token.ClosingBracket)
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				writeback(i)
 
 				return
@@ -165,7 +196,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			i++
 			l.popContainer()
 			l.current = token.MakeDelimiter(token.ClosingSquareBracket)
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				writeback(i)
 
 				return
@@ -206,7 +237,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			if l.elideSeparator {
 				continue
 			}
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				writeback(i)
 
 				return
@@ -257,7 +288,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				return
 			}
 			l.current = token.MakeDelimiter(token.OpeningBracket)
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				writeback(i)
 
 				return
@@ -293,7 +324,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				return
 			}
 			l.current = token.MakeDelimiter(token.OpeningSquareBracket)
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				writeback(i)
 
 				return
@@ -314,7 +345,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				return
 			}
 			i = l.consumed
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
@@ -339,7 +370,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				return
 			}
 			i = l.consumed
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
@@ -393,7 +424,8 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 					l.current = token.MakeWithValue(token.Number, data[numStart:n:n])
 					i = n
 					writeback(n)
-					if !yield(p.emit(l.current)) {
+					blankStart = i // this path continues, bypassing the loop-bottom update
+					if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 						return
 					}
 
@@ -407,7 +439,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				return
 			}
 			i = l.consumed
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
@@ -432,7 +464,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				return
 			}
 			i = l.consumed
-			if !yield(p.emit(l.current)) {
+			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
@@ -442,6 +474,10 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			return
 		}
+
+		// the token just processed ends at i: the next blanks run starts here.
+		// (the afterKey colon path updates blankStart itself before its continue.)
+		blankStart = i
 	}
 
 	writeback(i)

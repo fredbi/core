@@ -1038,4 +1038,7 @@ func (l *VL) reset() {
 	l.current = token.VNone
 	l.blanks = l.blanks[:0]
 	l.nextBlanks = l.nextBlanks[:0]
+	// the verbatim lexer never elides separators; the native push core
+	// (scanPushVerbatim) reads l.elideSeparator, so force it off for VL.
+	l.elideSeparator = false
 }

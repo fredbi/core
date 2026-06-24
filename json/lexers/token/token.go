@@ -305,6 +305,16 @@ func MakeVerbatimEOF(blanks []byte) VT {
 	}
 }
 
+// AsVerbatim wraps a semantic token [T] into a verbatim token [VT], attaching
+// the given leading blanks. Since VT embeds T this is a zero-cost wrap (no field
+// extraction). Stamp the position separately with [VT.WithPosition].
+func (t T) AsVerbatim(blanks []byte) VT {
+	return VT{
+		T:      t,
+		blanks: blanks,
+	}
+}
+
 // Value for String, Key and Number tokens.
 func (t T) Value() []byte {
 	return t.value

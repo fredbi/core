@@ -51,10 +51,18 @@ func (l *L) Tokens() iter.Seq[token.T] {
 	}
 }
 
-// Tokens returns an iterator over the verbatim JSON tokens, as a convenience
-// over the [VL.NextToken] loop. See [L.Tokens] for the semantics.
+// Tokens returns an iterator over the verbatim JSON tokens. In whole-buffer mode
+// it takes the native push path (the generic core with the verbatim policy),
+// which gives VL all of L's fast paths; streaming/value-capped modes keep the
+// proven NextToken loop. See [L.Tokens] for the semantics.
 func (l *VL) Tokens() iter.Seq[token.VT] {
 	return func(yield func(token.VT) bool) {
+		if l.wholeBuffer && l.maxValueBytes == 0 {
+			l.scanPushVerbatim(yield)
+
+			return
+		}
+
 		for {
 			tok := l.NextToken()
 			if l.err != nil {
