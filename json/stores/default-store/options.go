@@ -18,14 +18,15 @@ func applyOptionsWithDefaults(opts []Option) options {
 	o := options{
 		enableCompression: defaultEnableCompression,
 		minArenaSize:      defaultMinArenaSize,
+		// Compression defaults are always applied: with a lazy writer and a nil default dictionary
+		// this costs nothing (two ints), and whether compression actually happens is gated by
+		// enableCompression on the write path (see Store.putString). A Store that never compresses
+		// thus never allocates a flate writer.
+		compressionOptions: applyCompressionOptionsWithDefaults(nil),
 	}
 
 	for _, apply := range opts {
 		apply(&o)
-	}
-
-	if o.enableCompression && !o.isCompressionInitialized() {
-		o.compressionOptions = applyCompressionOptionsWithDefaults(nil)
 	}
 
 	return o

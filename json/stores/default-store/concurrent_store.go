@@ -172,7 +172,7 @@ func (s *ConcurrentStore) putString(value []byte) stores.Handle {
 		return s.putInlinedString(value)
 	case l == maxInlineBytes+1 && isOnlyASCII(value):
 		return s.putInlinedASCIIString(value)
-	case s.compressionThreshold > 0 && l > s.compressionThreshold:
+	case s.enableCompression && s.compressionThreshold > 0 && l > s.compressionThreshold:
 		s.rwx.Lock()
 		defer s.rwx.Unlock()
 		return s.putCompressedString(value)

@@ -49,6 +49,13 @@ const (
 //
 // Recycling a Store from the pool is therefore only safe between whole, independent documents whose
 // values are no longer referenced (e.g. a short-lived untyped JSON exchange).
+//
+// # Compression configuration
+//
+// The compression level, threshold and preset dictionary (see [WithCompressionDict]) are frozen for
+// the Store's whole lifetime: they are configuration, not data, and every payload compressed into the
+// arena stays decodable against the same dictionary. Recycling a Store preserves them ([Store.Reset]
+// is a no-op on them); changing them requires re-borrowing the Store with new options ([BorrowStore]).
 type Store struct {
 	options
 	arena []byte
@@ -335,10 +342,11 @@ func (s *Store) PutBool(b bool) stores.Handle {
 // that no document is mid-construction: large string values alias the arena that Reset rewinds (see
 // the "Lifecycle and value aliasing" note on [Store]).
 //
-// Reset restores the default compression settings. A Store that was configured with non-default
-// compression options ([WithCompressionOptions], [WithCompressionLevel]) should be re-borrowed with
-// those options (see [BorrowStore]) rather than relying on Reset, since the cached compression
-// writer reflects the options it was created with.
+// Reset rewinds the arena (the per-document data) but preserves the compression configuration
+// (level, threshold and preset dictionary, with its derived writer), which is frozen for the Store's
+// whole lifetime so that recycling a Store keeps its dictionary and stays self-consistent (see
+// [WithCompressionDict] and [compressionOptions.Reset]). To change the compression configuration,
+// re-borrow the Store with new options ([BorrowStore]), which rebuilds the cached writer.
 //
 // Implements [pools.Resettable].
 func (s *Store) Reset() {
@@ -432,7 +440,7 @@ func (s *Store) putString(value []byte) stores.Handle {
 		return s.putInlinedString(value)
 	case l == maxInlineBytes+1 && isOnlyASCII(value):
 		return s.putInlinedASCIIString(value)
-	case s.compressionThreshold > 0 && l > s.compressionThreshold:
+	case s.enableCompression && s.compressionThreshold > 0 && l > s.compressionThreshold:
 		return s.putCompressedString(value)
 	default:
 		return s.putLargeString(value)

@@ -50,8 +50,8 @@ func (s *Store) compressString(value []byte, buffer ...[]byte) []byte {
 	wrt, redeemWriter := borrowBufferWithRedeem(s.compressRatioHeuristic(len(value)))
 	defer redeemWriter()
 
-	deflater := s.cw
-	s.cw.Reset(wrt)
+	deflater := s.compressWriter()
+	deflater.Reset(wrt)
 
 	_, err := deflater.Write(value)
 	assertCompressDeflateError(err)

@@ -61,6 +61,10 @@ func (o *options) UnmarshalBinary(data []byte) error {
 	o.enableCompression = target.EnableCompression
 	o.minArenaSize = target.MinArenaSize
 
+	// The cached compression writer cw is not serialized (it is a derived artifact, and flate writers
+	// are not gob-encodable): it rebuilds lazily from the restored (level, dict) on the next
+	// compression (see [compressionOptions.compressWriter]).
+
 	return nil
 }
 

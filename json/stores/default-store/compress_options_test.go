@@ -21,16 +21,23 @@ func TestOptions(t *testing.T) {
 
 		assert.Equal(t, 4, o.compressionLevel)
 		assert.Equal(t, 45, o.compressionThreshold)
-		assert.NotEmpty(t, o.cw)
-		assert.NotNil(t, o.dict)
+		assert.Nil(t, o.cw, "the compression writer is built lazily, not at option time")
+		assert.Nil(t, o.dict, "no preset dictionary by default")
 
-		t.Run("should reset to defaults", func(t *testing.T) {
+		t.Run("should build the writer lazily and cache it", func(t *testing.T) {
+			w := o.compressWriter()
+			assert.NotNil(t, w)
+			assert.Same(t, w, o.compressWriter(), "cw is cached after first build")
+		})
+
+		t.Run("should preserve the compression configuration on reset", func(t *testing.T) {
+			// Reset is a no-op on the compression configuration: level, threshold and dict are
+			// frozen for the Store's lifetime so a recycled Store keeps its dictionary and stays
+			// self-consistent (see compressionOptions.Reset).
 			o.Reset()
 
-			assert.Equal(t, defaultCompressionLevel, o.compressionLevel)
-			assert.Equal(t, defaultCompressionThreshold, o.compressionThreshold)
-			assert.NotEmpty(t, o.cw)
-			assert.NotNil(t, o.dict)
+			assert.Equal(t, 4, o.compressionLevel)
+			assert.Equal(t, 45, o.compressionThreshold)
 		})
 	})
 }
