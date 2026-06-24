@@ -29,7 +29,17 @@ stays the escape hatch if the 5% ever bites on the real workload.
 
 ## Stages (each gated by TestLabEquivalence + benchmark A/B)
 
-- **Stage 1 — VL native push via the generic core.** 🚧
+- **Stage 1 — VL native push via the generic core.** ✅ (`3f533ad`)
+  Done. The generic core serves L and VL; VL.Tokens() is a native push path.
+  **Result (reuse, 0 allocs): VL push ≈ 2.0–2.4× VL pull** (citm 177→361, twitter
+  155→333, ints 66→156 MB/s) — roughly halves the L-vs-VL gap; residual is
+  inherent (VL emits separators L elides + larger VT + dict emit). Gate
+  `TestLabVerbatimPushEquivalence` green on all 95 must-accept fixtures against
+  the unified-contract oracle (L's decoded values + VL's blanks/positions).
+  **Behavior changes (need sign-off):** unified VL now (1) decodes `\u` escapes
+  correctly — fixes a reference-VL `\u` bug — and (2) validates `\u` surrogates
+  like L. Both are improvements; both change VL output on those inputs.
+  ORIGINAL plan ↓
   Extend `emit` to `emit(t token.T, blanks []byte, line, col int) T`; add
   `token.T.AsVerbatim(blanks) VT` (zero-cost wrap, VT embeds T); add
   `verbatimPolicy`; track `blankStart` in `scanPushG` so the preceding
