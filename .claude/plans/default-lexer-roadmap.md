@@ -325,7 +325,15 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
   to `NextToken` over all 318 fixtures. **But it is a second hand-written main
   loop** — the iterator speedup was bought ahead of the dedup. The dedup (2.1/2.2)
   is still open, and now also owes a *streaming* push path (see 3b.8).
-- 🔬 **2.1 Unify L/VL (+ the two main loops) from one source — PRIORITY, PAUSED.**
+- ✅ **2.1a Sandbox stood up (`23a1649`).** Package
+  `json/lexers/default-lexer/lab` is a verbatim copy of the lexer (package
+  `lexer` → `lab`; `lab.L` is "L2"), kept side by side with the reference so the
+  unification can be spiked without risk. `lab/equivalence_test.go` asserts
+  behavioral parity vs the reference over all 318 fixtures in four modes (bytes
+  NextToken, streaming NextToken@64B, whole-buffer `Tokens()`, VL) — the instant
+  regression signal as lab diverges. Benchmarks expose `lab/bytes` + `lab/tokens`
+  next to `default-lexer/*` for direct A/B. Starts == reference within noise.
+- 🔬 **2.1 Unify L/VL (+ the two main loops) from one source — PRIORITY, IN PROGRESS.**
   Reframed by the R&D pass: this is no longer only a maintainability play. The
   L-vs-VL baseline shows **VL is 3–8× slower than L purely from missing fast
   paths** (3b.6), so unification *also* makes VL fast and gives streaming push for
