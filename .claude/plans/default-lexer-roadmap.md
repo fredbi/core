@@ -1,8 +1,16 @@
 # default-lexer roadmap
 
-> Status: **DRAFT for review** — iterate before committing to execution.
+> Status: **active** — Phases 0 & 1 complete; first R&D pass complete; L/VL
+> unification is the next major stream (paused by request 2026-06-24).
 > Scope: `json/lexers/default-lexer` (+ shared `json/lexers`, `json/lexers/token`, `json/lexers/error-codes`).
-> Last updated: 2026-06-21
+> Last updated: 2026-06-24
+>
+> **Companion research** (the "why" behind the decisions below) lives in
+> `.claude/plans/ramblings/`. Start with `2026-06-conclusions-fast-go-lexing.md`
+> (distilled, transferable). Detail: `2026-06-perf-and-paradigm.md` (pull-vs-push,
+> SWAR, standings, L-vs-VL baseline), `2026-06-codegen-asm-jit.md` (the four
+> roads to speed; asm/JIT/SIMD rejected for the lexer), `2026-06-go-openapi-v2-context.md`
+> (why this block is shaped as it is). See also memory `go-openapi-v2-programme`.
 
 ## Legend
 
@@ -11,6 +19,7 @@
 - ⏳ planned / not started
 - 🔬 needs design decision (see "Open design decisions")
 - 💭 stretch / far-out
+- ❌ dropped / out of scope
 
 ---
 
@@ -35,9 +44,20 @@ A low-level JSON building block that **lexes without evaluating**. Concretely:
 The current alteration applied to input is UTF-8 normalization of `\u` escapes
 (canonicalization of runes). Goal: make this **optional**.
 
+**Yardstick (settled 2026-06-24):** we race against **jsontext** (`encoding/json/v2`'s
+tokenizer) — the only pure-Go, fully-validating, non-converting peer. Not
+easyjson (brackets us: unvalidated `Raw` vs lossy `Float64`), not the decoders
+(goccy/sonic unmarshal into Go types — no extractable token stream), not SIMD
+(different category). If jsontext leaves experimental, **wrapping it** for the
+non-verbatim path is an acceptable end-state.
+
 ---
 
 ## 2. Current state (baseline, 2026-06-21)
+
+> Historical snapshot. The ⚠️/🐛 items below are **all since resolved** (Phase 0
+> conformance work, the benchmark module, pool tests, the nit fixes); kept for the
+> record. Current status is the phase list + §3b.
 
 - ✅ Builds clean, `go vet` clean, `go test` green. Coverage **65.5%**.
 - ✅ Core grammar enforcement (delimiters, key/object/array context, RFC 8259
@@ -70,6 +90,62 @@ The current alteration applied to input is UTF-8 normalization of `\u` escapes
 - **Conformance suite (0.1):** ✅ **vendor a copy** into
   `testdata/JSONTestSuite/` (rev `1ef36fa`, MIT license + SOURCE.md included).
 - **First execution step:** ✅ **conformance harness (0.1)** — done; see baseline below.
+
+## 3b. Decisions & re-orientations (2026-06-22 → 06-24)
+
+The R&D pass since the roadmap was first drafted landed several decisions that
+supersede or reframe items below. Recorded here so the phase list stays honest.
+
+1. **Push `Tokens()` shipped as a duplicated main loop, not yet the unified core.**
+   The 2.0 spike (push prototype `P`) graduated into a native `scanPush` backing
+   `Tokens()` in whole-buffer mode — proven token+error identical to `NextToken`
+   over all 318 fixtures. But it is a **second** hand-written main loop, not the
+   "thin adapters over one shared core" of 2.1. So Phase 2's *dedup* goal is still
+   open; we bought the iterator speedup first. (push `Tokens()` is parity-or-better
+   with jsontext on 4/5 workloads.)
+2. **Number + string fast paths landed in `L`.** Inlinable simple-number fast
+   path (ints ~+175%), digit-run number scanner with `uint()`-BCE (floats/canada
+   ~+100%), SWAR multi-needle string scan (zero-copy alias, win on real-world
+   docs). Lesson: **short tokens are bottlenecked by per-token overhead, not
+   per-byte work.** Details in the perf ramble.
+3. **The "race of inlining" is over — measured ~3–7% ceiling.** Force-inline
+   (via PGO; there is no `//go:inline`) buys only +2–3% typical / +7% on the most
+   token-dense workload. Our modular code is already within 3–7% of fully-inlined.
+   So codegen-for-speed is **not** justified.
+4. **Scalar asm and JIT rejected for the lexer (on evidence); SIMD deferred.**
+   The compiler already register-allocates the leaf scanners; an asm/JIT kernel
+   breaks the per-token ABI boundary or has no type to specialize. SIMD collides
+   with streaming/low-memory goals and changes our competitive category. All three
+   stay in the back pocket for **higher layers** (typed decoder, schema-validator
+   OP-program) or a **separate optional whole-buffer `simd-lexer`** — never woven
+   into default-lexer. See codegen/asm/jit ramble.
+5. **`Reset()` fixed for pooling (`55f112c`).** It now drops the aliased caller
+   buffer + reader (no pinning/leak of user specs) and no longer allocates on
+   bytes-borrows. `VL` gained `ResetWithBytes`/`ResetWithReader` (`ec43cdb`) — VL
+   is now poolable with 0 steady-state allocs. **Pools are used systematically by
+   our callers**, so this is load-bearing.
+6. **L/VL unification is now the priority lever — and it's a perf play too.**
+   First recorded L-vs-VL baseline (06-24): **VL is 3–8× slower than L**, because
+   VL never received any of L's fast paths (still the old byte-by-byte loop +
+   per-token look-ahead). Generating/parameterizing both from one optimized source
+   would collapse that gap to the genuine cost of fidelity (~1.2–1.5× est.) *and*
+   kill the ~750-line duplication. Two candidate roads: **generics with a concrete
+   policy type** vs a **vendored `refactor/inline` generator** — to be spiked
+   head-to-head (Phase 2.1). *(Stream paused by request 2026-06-24.)*
+7. **Canonicalization is OUT of the lexer's scope (dropped 2026-06-24).** RFC 8785
+   JSON canonicalization is about producing a stable byte form for **signing**:
+   it mandates `float64` numbers (violates our no-resolution-loss invariant) and
+   **sorted keys** (we deliberately preserve original key order). That is a
+   different job from lexing. If we ever need it, it is a **separate component
+   built on top of** the lexer, not in it. (Fred's original narrower idea — number
+   "canonicalization" as the shortest correct decimal form — is also dropped from
+   the lexer for the same reason: the lexer does not evaluate numbers.) Phase 3.2
+   is therefore removed.
+8. **Streaming on all fast paths is still owed.** Native push `Tokens()` is
+   whole-buffer only today; streams fall back to the `NextToken` loop. Functionally
+   complete, but the fast push path doesn't yet cover streams (incl. the
+   sliding-window-reload cost question). Folded into the unification work so we
+   don't hand-write a third main loop.
 
 ## 4. Phased roadmap
 
@@ -187,7 +263,7 @@ Additive, low-risk; done before the refactor so the core targets the final shape
   regression for no gain → deferred to Phase 4 with a fast happy-path scanner
   (IndexByte/SIMD). Streaming zero-copy + a rotating-buffer knob also Phase 4+.
 
-### Phase 2 — Consolidation: de-duplicate L / VL  ⏳
+### Phase 2 — Consolidation: de-duplicate L / VL  🚧
 
 Risky remodel, executed with Phase 0 net in place and Phase 1 shape known.
 
@@ -214,29 +290,67 @@ Risky remodel, executed with Phase 0 net in place and Phase 1 shape known.
 Added `mailru/easyjson/jlexer` (the pull []byte lexer that inspired this one) as a
 benchmark point (`lexers/easyjson/`), numbers taken raw (no conversion). **easyjson
 is faster on every workload: ~2.5–2.7× on number-heavy input (ints/canada), ~1.3×
-on real docs (citm/twitter).** Cleanest cell = numbers (raw, ~0 alloc both sides):
-our number scanning is ~2.5× slower than achievable → the per-byte main-loop cost
-is the tax. BUT easyjson allocates a string per value (`String()`, ~10⁴ allocs on
-citm) where we reuse a buffer (single digits). **Phase 2 target: close the per-byte
-scan gap with the push-core while keeping zero-alloc strings + zero-copy numbers →
-win on both speed and allocations.**
+on real docs (citm/twitter).** ⚠️ **Caveat (resolved later):** easyjson's `Raw()` does NOT validate numbers — it
+only validates on conversion (`Float64`). So the "2.5× on numbers" compared our
+always-validating lexer to easyjson's *unvalidated* scan. Rebalanced with
+`Float64` (`easyjson-f64`, which validates but is lossy), the push prototype is
+**~1.8–2× faster than easyjson on numbers AND lossless** (see 2.0 spike). The real
+lesson stands: the per-byte main-loop cost was the tax on the *pull* design.
+**Phase 2 target: push-core with zero-alloc strings + zero-copy numbers → beat
+easyjson on both speed and allocations** (the spike confirms this on every workload).
 
-- ⏳ **2.1 Design the shared core — now a *push* core.** Decision (from 1.1): the
-  shared lowest-level scanner drives its own loop and emits tokens via a yield
-  callback; `L`/`VL` become thin adapters. `NextToken` is the pull adapter (a
-  push→pull bridge or a thin re-entry), `Tokens()` the native push adapter. This
-  delivers the dedup *and* the iterator speedup in one rewrite. Must stay
-  conformance- and benchmark-neutral (Phase 0 suite is the gate).
-- ⏳ **2.2 Migrate** `L` then `VL` onto the shared core; keep all tests green
-  (Phase 0 suite is the gate). Re-run benchmarks; no perf regression allowed.
+- ✅ **2.0 Push-core spike (prototype `P`, `push.go`).** Validated the design:
+  self-driving scan loop yielding via range-over-func, cursor+state in **locals**
+  (no per-byte struct writes), terminator folded in (no look-ahead pass), full
+  number validation, zero-copy numbers **and** unescaped strings. Token stream
+  proven identical to `L`. **Results (MB/s): push ~1.8–2.9× the current pull `L`
+  everywhere, and beats easyjson on real/string docs** (citm 963 vs 576, twitter
+  920 vs 419, strings 1110 vs 403) thanks to zero-copy strings + 0 allocs; trails
+  easyjson only on pure-number input (~350 vs ~530 — our strict number validation
+  vs easyjson's deferred). Confirms: build the unified core push-first, and
+  zero-copy strings belong in it (they couldn't pay off in the pull design).
+  Caveats to close when productionizing: bytes+streaming, full structural error
+  detection/conformance, line/col, VL blanks, surrogate pairs, pooling.
+- 🚧 **2.0b Native push `Tokens()` landed (`0858b3f`+).** The spike graduated:
+  `scanPush` backs `Tokens()` (whole-buffer fast path), carrying the inline-int
+  fast path and reusing the value scanners. Token+error stream proven identical
+  to `NextToken` over all 318 fixtures. **But it is a second hand-written main
+  loop** — the iterator speedup was bought ahead of the dedup. The dedup (2.1/2.2)
+  is still open, and now also owes a *streaming* push path (see 3b.8).
+- 🔬 **2.1 Unify L/VL (+ the two main loops) from one source — PRIORITY, PAUSED.**
+  Reframed by the R&D pass: this is no longer only a maintainability play. The
+  L-vs-VL baseline shows **VL is 3–8× slower than L purely from missing fast
+  paths** (3b.6), so unification *also* makes VL fast and gives streaming push for
+  free (3b.8). The force-inline ceiling (~3–7%, 3b.3) means the choice is decided
+  on **maintainability + VL speed**, not L speed. Two roads to spike head-to-head:
+  - **(a) Generics with a concrete policy type param** (not interface →
+    monomorphizes + devirtualizes): one generic core, two instantiations (L emits
+    `token.T` / drops blanks; VL emits `token.VT` / tracks blanks + positions). No
+    vendored toolchain. May not beat the inline budget but likely unifies "well
+    enough."
+  - **(b) Vendored `golang.org/x/tools/internal/refactor/inline` generator**:
+    write one readable, local-cursor "golden source"; mechanically flatten/inline
+    into the artifact. Single source of truth; can ignore the 80-cost inline
+    budget. Heavier machinery; the golden source must be written in
+    local-cursor/threaded-state style or flattening yields flat-but-slow code.
+  Spike one value scanner (e.g. the number path) under each, compare real code +
+  numbers, then commit. Gate: conformance- and benchmark-neutral for L; VL must
+  improve and stay conformant.
+- ⏳ **2.2 Migrate** `L` then `VL` onto the chosen shared core; native push for
+  **both bytes and streams**; keep all tests green (Phase 0 suite is the gate).
+  Re-run benchmarks; no L regression, VL must close most of the 3–8× gap.
 
 ### Phase 3 — Semantic features  ⏳
 
 - ⏳ **3.1 Optional input normalization.** Make UTF-8 / escape processing
   toggleable (sanitizer hooks for strings and numbers, per old TODO).
-- ⏳ **3.2 JSON canonicalization (RFC 8785).** Opt-in transform for strings and
-  numbers. ⚠️ Number canonicalization (ECMAScript double) conflicts with the
-  no-resolution-loss invariant — must be explicit opt-in, likely a higher layer. 🔬
+- ❌ **3.2 JSON canonicalization (RFC 8785) — DROPPED (2026-06-24).** Out of the
+  lexer's scope. RFC 8785 exists to produce a stable byte form for **signing**:
+  it mandates `float64` numbers (breaks our no-resolution-loss invariant) and
+  **sorted keys** (we deliberately preserve original order). Different job from
+  lexing. If ever needed, build it as a **separate component on top of** the lexer.
+  (Even the narrower "shortest-decimal number form" idea is out: the lexer does
+  not evaluate numbers.) See 3b.7.
 - ⏳ **3.3 NDJSON.** Line-delimited JSON, especially for streaming `io.Reader`;
   top-level value sequence separated by `\n`.
 
@@ -244,45 +358,58 @@ win on both speed and allocations.**
 
 - ⏳ **4.1 Reduce memcopy.** Hunt avoidable copies (`currentValue` appends,
   `consumeN`, buffer-overturn copies); apply zero-copy from 1.4 where owned.
-- ⏳ **4.2 Inlining pass.** Inspect inlining (`-gcflags=-m`); evaluate `go:fix
-  inline`. May assume go1.26 features where they help.
-- ⏳ **4.3 Full comparative benchmarks.** vs stdlib `jsontext`, `encoding/json/v2`,
-  `mailru/easyjson`, and (if extractable) the go-ccy lexer.
-- 💭 **4.4 SIMD variant.** Separate type/impl behind the same interface, inspired
-  by `~/src/github.com/fredbi/zimdjson`. Likely its own module for build
-  constraints. Far-out; depends on go1.26 `simd` direction. 🔬
+  Remaining known L gap: **pure long strings (strings_plain ~82% of jsontext)** —
+  needs a faster unescape slow path and/or SWAR-ing the slow-path clean runs.
+- ✅ **4.2 Inlining pass — measured, ceiling found.** Force-inline buys only
+  ~3–7% (3b.3); modular code is already within that of fully-inlined. No further
+  inlining race. (Full PGO methodology in the codegen ramble.)
+- ✅ **4.3 Full comparative benchmarks.** `jsontext` (encoding/json/v2 — the
+  yardstick) and `mailru/easyjson` (raw + Float64) wired in; goccy/sonic evaluated
+  and excluded (decoders, no extractable lexer); stdlib v1 baseline kept. Standings
+  recorded in the perf ramble. Remaining: not chasing more competitors.
+- 💭 **4.4 SIMD variant — deferred, runtime-usage only.** A **separate optional
+  whole-buffer `simd-lexer`** behind the `lexers.Lexer` interface (NOT woven into
+  default-lexer); realistic only via `GOEXPERIMENT=simd`. Per the v2 programme it
+  matters only for the untyped-Document runtime, not the spec-gobbling core. The
+  free 80/20 (`bytes.IndexByte`, already SIMD asm) is in scope where it fits. 🔬
 
 ---
 
-## 5. Open design decisions (for debate)
+## 5. Open design decisions
 
-1. **Conformance suite integration (0.1):** vendor a copy, git submodule, or
-   reference by env/path? Affects CI portability.
-2. **Streaming security defaults (0.3):** do `io.Reader` lexers get non-zero
-   default `maxContainerStack` / `maxValueBytes`? What magnitudes? Behavior change.
-3. **Iterator signature (1.1):** `iter.Seq[token.T]` (+ post-loop `Err()`) vs
-   `iter.Seq2[token.T, <pos|err>]`?
-4. **ElideSeparator default (1.2):** default-on for semantic breaks current
-   comma-asserting tests — acceptable? Option name/placement (lexer option vs
-   iterator wrapper)?
-5. **Line/col scope (1.3):** verbatim-only, or also semantic (cost of counting
-   newlines in skipped blank runs)? Where stored — on `token.VT`, or returned by
-   the iterator?
-6. **Zero-copy model (1.4):** new token variant exposing offsets, or `T.Value()`
-   aliasing the source buffer when safe? How to signal "value borrowed, don't
-   mutate"? Only legal in `NewWithBytes` mode.
-7. **L/VL refactor strategy (2.1):** shared byte-scanner + policy layers, vs
-   generics over token type, vs VL-as-superset. Tradeoff: readability vs perf.
-8. **RFC 8785 numbers (3.2):** canonicalization loses precision by design —
-   keep it strictly opt-in and out of the core, or refuse number canon entirely
-   and only canonicalize strings/structure?
-9. **SIMD packaging (4.4):** separate module + GOARCH build tags; pure-Go
-   fallback; relationship to go1.26 `simd`.
+Resolved (kept for the record):
+
+1. ✅ **Conformance suite (0.1):** vendored a copy (`testdata/JSONTestSuite/`).
+2. ✅ **Streaming security defaults (0.3):** guards off by default; total input
+   bounded by the caller via `io.LimitReader`; two orthogonal breakers (depth,
+   per-value memory) with a documented hardening recipe. No magic-number bundle.
+3. ✅ **Iterator signature (1.1):** `iter.Seq[token.T]` + post-loop `Err()`.
+4. ✅ **ElideSeparator default (1.2):** default-on for `L` (elides `,` and `:`);
+   `VL` always preserves. (Downstream migration debt tracked in 1.2.)
+5. ✅ **Line/col scope (1.3):** always-on for both; on `token.VT` + `Line()`/
+   `Column()` methods; kept off the `Lexer` interface.
+6. ✅ **Zero-copy model (1.4):** `T.Value()` aliases the source (`buf[s:e:e]`)
+   only in whole-buffer mode; constraint is buffer stability, not ownership.
+7. ✅ **Numbers/canonicalization (3.2):** dropped — out of lexer scope (3b.7).
+
+Still open:
+
+8. 🔬 **L/VL unification road (2.1):** generics-with-concrete-policy-type vs
+   vendored `refactor/inline` generator. Decide by head-to-head spike — on
+   maintainability + VL speed, not L speed (which is at its ~3–7% ceiling).
+9. 🔬 **SIMD packaging (4.4):** separate module + build tags; pure-Go fallback;
+   relationship to `GOEXPERIMENT=simd`. Runtime-usage only; far-out.
 
 ---
 
-## 6. Suggested first step
+## 6. Next step (when the unification stream resumes)
 
-Phase 0.1 + 0.3: stand up the conformance harness (immediate, objective signal
-on where we are) and confirm/fix streaming security defaults. Everything else
-rests on that net.
+**Phase 2.1 spike:** prototype one value scanner (the number path) under both
+unification roads — (a) generics with a concrete policy type, (b) vendored
+`refactor/inline` generator — and compare real code + benchmarks before
+committing. Deliver as a reviewable plan doc first (Fred's preferred rhythm),
+then validate with the spike. Success = same/better L throughput, a much faster
+VL (close most of the 3–8× gap), and the ~750-line L/VL duplication gone, with
+native push covering **both** bytes and streams.
+
+*(Stream paused 2026-06-24 by request; pick up here.)*
