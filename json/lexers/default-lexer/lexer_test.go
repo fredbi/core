@@ -689,6 +689,90 @@ func TestResetWithBytesReuse(t *testing.T) {
 	require.Equal(t, wantA, gotA2)
 }
 
+func TestPoolReuse(t *testing.T) {
+	// drain a lexer into a comparable list of tokens (kind + value)
+	type tok struct {
+		kind  token.Kind
+		value string
+	}
+	drainAll := func(l *L) ([]tok, error) {
+		var out []tok
+		for {
+			tk := l.NextToken()
+			if !l.Ok() {
+				return out, l.Err()
+			}
+			if tk.IsEOF() {
+				return out, nil
+			}
+			out = append(out, tok{tk.Kind(), string(tk.Value())})
+		}
+	}
+
+	docA := []byte(`{"a":[1,-2,3.5e2],"b":true}`) // < bufferSize: exercises the grow-on-reset alloc bug
+	docB := []byte(`[null,"x",0.5]`)
+
+	wantA, errA := drainAll(NewWithBytes(docA))
+	require.NoError(t, errA)
+	wantB, errB := drainAll(NewWithBytes(docB))
+	require.NoError(t, errB)
+
+	t.Run("borrow/redeem reproduces streams", func(t *testing.T) {
+		for range 3 {
+			l := BorrowLexerWithBytes(docA)
+			got, err := drainAll(l)
+			require.NoError(t, err)
+			require.Equal(t, wantA, got)
+			RedeemLexer(l)
+
+			l = BorrowLexerWithBytes(docB)
+			got, err = drainAll(l)
+			require.NoError(t, err)
+			require.Equal(t, wantB, got)
+			RedeemLexer(l)
+		}
+	})
+
+	t.Run("Reset drops the caller's buffer (no pinning)", func(t *testing.T) {
+		l := NewWithBytes(docA)
+		_, err := drainAll(l)
+		require.NoError(t, err)
+		require.NotNil(t, l.buffer) // still aliasing docA while in use
+
+		l.Reset()
+		require.Nil(t, l.buffer, "Reset must drop the aliased caller buffer so the pool does not pin user memory")
+		require.False(t, l.wholeBuffer)
+		require.Equal(t, noopReader, l.r, "Reset must drop the caller's reader")
+	})
+
+	t.Run("Reset keeps the streaming-owned buffer", func(t *testing.T) {
+		l := New(bytes.NewReader(docA))
+		_, err := drainAll(l)
+		require.NoError(t, err)
+
+		l.Reset()
+		require.NotNil(t, l.buffer, "streaming buffer is lexer-owned and must be kept for reuse")
+		require.GreaterOrEqual(t, cap(l.buffer), l.bufferSize)
+	})
+
+	t.Run("borrow/redeem cycle is allocation-free", func(t *testing.T) {
+		// warm the pool so the first Borrow does not allocate the lexer itself
+		RedeemLexer(BorrowLexerWithBytes(docA))
+
+		allocs := testing.AllocsPerRun(100, func() {
+			l := BorrowLexerWithBytes(docA)
+			for {
+				tk := l.NextToken()
+				if tk.IsEOF() || !l.Ok() {
+					break
+				}
+			}
+			RedeemLexer(l)
+		})
+		require.Zerof(t, allocs, "borrow→lex→redeem of a small doc must not allocate, got %v", allocs)
+	})
+}
+
 func currentDir() string {
 	_, filename, _, _ := runtime.Caller(1)
 

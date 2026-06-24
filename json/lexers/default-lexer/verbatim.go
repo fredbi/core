@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"slices"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/token"
@@ -1009,19 +1008,12 @@ func (l *VL) lookAhead(current token.VT, start byte) (token.VT, token.VT) {
 	}
 }
 
+// Reset returns the verbatim lexer to a clean, source-less state for reuse,
+// scrubbing the embedded L (which drops references to caller-supplied memory)
+// and the verbatim-specific look-ahead/blanks state. See [L.Reset].
 func (l *VL) Reset() {
-	l.bufferized = 0
-	l.L.reset()
+	l.L.Reset()
 	l.reset()
-
-	if cap(l.buffer) < l.bufferSize {
-		// reallocates an internal buffer only if options have changed
-		l.buffer = slices.Grow(l.buffer, l.bufferSize-cap(l.buffer))[:l.bufferSize]
-	}
-
-	if l.keepPreviousBuffer > 0 && cap(l.previousBuffer) < l.keepPreviousBuffer {
-		l.previousBuffer = slices.Grow(l.previousBuffer, l.keepPreviousBuffer-cap(l.previousBuffer))
-	}
 }
 
 func (l *VL) reset() {

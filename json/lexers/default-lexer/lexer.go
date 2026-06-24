@@ -613,18 +613,28 @@ func (l *L) consumeNull(_ byte) token.T {
 	return token.NullToken
 }
 
+// Reset returns the lexer to a clean, source-less state so it can be recycled.
+//
+// It is the method the pool invokes on both Borrow and Redeem, so it must be
+// idempotent and must drop every reference to caller-supplied memory: in
+// whole-buffer mode l.buffer aliases the caller's data, and l.r may hold the
+// caller's reader. Leaving them in place would pin (and expose) user memory for
+// as long as the recycled lexer sits in the pool.
+//
+// Reset does NOT rebind an input: call [L.ResetWithBytes] / [L.ResetWithReader]
+// (or a Borrow*/New* constructor) to lex a new source. Configured options are
+// preserved, and the streaming-owned buffer keeps its capacity for reuse.
 func (l *L) Reset() {
+	if l.wholeBuffer {
+		// l.buffer aliases the caller's data — drop it. In streaming mode the
+		// buffer is ours, so keep its capacity (it is refilled, not aliased).
+		l.buffer = nil
+	}
+	l.r = noopReader
+	l.wholeBuffer = false
 	l.bufferized = 0
+	l.previousBuffer = l.previousBuffer[:0]
 	l.reset()
-
-	if cap(l.buffer) < l.bufferSize {
-		// reallocates an internal buffer only if options have changed
-		l.buffer = slices.Grow(l.buffer, l.bufferSize-cap(l.buffer))[:l.bufferSize]
-	}
-
-	if l.keepPreviousBuffer > 0 && cap(l.previousBuffer) < l.keepPreviousBuffer {
-		l.previousBuffer = slices.Grow(l.previousBuffer, l.keepPreviousBuffer-cap(l.previousBuffer))
-	}
 }
 
 // ResetWithBytes rebinds the lexer to a new input buffer and resets all scanning
