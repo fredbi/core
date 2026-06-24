@@ -22,10 +22,6 @@ use (
 	./go-swagger/examples
 	./json
 	./json/benchmarks
-	./json/jsonpath/tmp/asaiyusuke-jsonpath
-	./json/jsonpath/tmp/asaiyusuke-jsonpath/docs/cburgmer-json-path-comparison/implementations/Golang_github.com-AsaiYusuke-jsonpath
-	./json/jsonpath/tmp/gval
-	./json/jsonpath/tmp/paessler-jsonpath
 	./json/lexers/contrib
 	./json/lexers/default-lexer/benchmarks/comparative
 	./json/lexers/default-lexer/benchmarks/extras
