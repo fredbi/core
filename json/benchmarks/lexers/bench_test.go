@@ -11,6 +11,7 @@ import (
 	"github.com/fredbi/core/json/benchmarks/lexers/workloads"
 	jlex "github.com/fredbi/core/json/lexers"
 	deflex "github.com/fredbi/core/json/lexers/default-lexer"
+	lab "github.com/fredbi/core/json/lexers/default-lexer/lab"
 	"github.com/fredbi/core/swag/pools"
 )
 
@@ -45,6 +46,13 @@ func factories() []factory {
 				l, redeem := deflex.BorrowLexerWithBytes(d)
 
 				return l, redeem
+			},
+		},
+		{
+			// lab: the unification sandbox, kept side by side with the reference.
+			name: "lab/bytes",
+			make: func(d []byte) (jlex.Lexer, func()) {
+				return lab.NewWithBytes(d), noRelease
 			},
 		},
 		{
@@ -159,6 +167,20 @@ func BenchmarkLexers(b *testing.B) {
 
 				for range b.N {
 					lex := deflex.NewWithBytes(w.Data)
+					for tok := range lex.Tokens() {
+						sink += int(tok.Kind())
+					}
+				}
+			})
+
+			// lab native push Tokens() — side-by-side with default-lexer/tokens
+			b.Run("lab/tokens", func(b *testing.B) {
+				b.SetBytes(int64(len(w.Data)))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for range b.N {
+					lex := lab.NewWithBytes(w.Data)
 					for tok := range lex.Tokens() {
 						sink += int(tok.Kind())
 					}
