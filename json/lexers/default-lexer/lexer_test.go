@@ -15,6 +15,7 @@ import (
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/token"
+	"github.com/fredbi/core/swag/pools"
 )
 
 func TestNextToken(t *testing.T) {
@@ -719,17 +720,17 @@ func TestPoolReuse(t *testing.T) {
 
 	t.Run("borrow/redeem reproduces streams", func(t *testing.T) {
 		for range 3 {
-			l := BorrowLexerWithBytes(docA)
+			l, redeem := BorrowLexerWithBytes(docA)
 			got, err := drainAll(l)
 			require.NoError(t, err)
 			require.Equal(t, wantA, got)
-			RedeemLexer(l)
+			redeem()
 
-			l = BorrowLexerWithBytes(docB)
+			l, redeem = BorrowLexerWithBytes(docB)
 			got, err = drainAll(l)
 			require.NoError(t, err)
 			require.Equal(t, wantB, got)
-			RedeemLexer(l)
+			redeem()
 		}
 	})
 
@@ -756,21 +757,29 @@ func TestPoolReuse(t *testing.T) {
 	})
 
 	t.Run("borrow/redeem cycle is allocation-free", func(t *testing.T) {
+		if pools.DebugBuild {
+			t.Skip("the poolsdebug build allocates a per-borrow redeemer to track redemptions")
+		}
 		// warm the pool so the first Borrow does not allocate the lexer itself
-		RedeemLexer(BorrowLexerWithBytes(docA))
+		_, redeem := BorrowLexerWithBytes(docA)
+		redeem()
 
 		allocs := testing.AllocsPerRun(100, func() {
-			l := BorrowLexerWithBytes(docA)
+			l, redeem := BorrowLexerWithBytes(docA)
 			for {
 				tk := l.NextToken()
 				if tk.IsEOF() || !l.Ok() {
 					break
 				}
 			}
-			RedeemLexer(l)
+			redeem()
 		})
 		require.Zerof(t, allocs, "borrow→lex→redeem of a small doc must not allocate, got %v", allocs)
 	})
+
+	// In the poolsdebug build, assert the pool tracker recorded no leaked
+	// borrows from this test (a no-op in release builds).
+	t.Cleanup(func() { pools.AssertNoLeaks(t) })
 }
 
 func currentDir() string {

@@ -19,17 +19,15 @@ type options struct {
 }
 
 func defaultLexerFactory(data []byte) (lexers.Lexer, func()) {
-	// using default lexer from pool
-	l := lexer.BorrowLexerWithBytes(data)
-
-	return l, func() { lexer.RedeemLexer(l) } // TODO: use redeemable lexer to avoid the alloc of the closure
+	// using default lexer from the redeemable pool: the redeem closure is cached
+	// (no per-borrow allocation)
+	return lexer.BorrowLexerWithBytes(data)
 }
 
 func defaultLexerFromReaderFactory(r io.Reader) (lexers.Lexer, func()) {
-	// using default lexer from pool
-	jl := lexer.BorrowLexerWithReader(r)
-
-	return jl, func() { lexer.RedeemLexer(jl) } // TODO: use redeemable lexer to avoid the alloc of the closure
+	// using default lexer from the redeemable pool: the redeem closure is cached
+	// (no per-borrow allocation)
+	return lexer.BorrowLexerWithReader(r)
 }
 
 func defaultWriterToWriterFactory(w io.Writer) (writers.JSONWriter, func()) {

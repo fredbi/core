@@ -22,7 +22,8 @@ import (
 // expected sequence of delimiter/values etc.
 //
 // If you plan to allocate many lexers with a short life span, consider using the global pool
-// with the [BorrowLexer] and [RedeemLexer] functions.
+// with the [BorrowLexerWithBytes] / [BorrowLexerWithReader] functions and the
+// returned redeem closure.
 type L struct {
 	r          io.Reader
 	err        error
@@ -64,7 +65,8 @@ type L struct {
 // Use option [WithBufferSize] to alter the size of this buffer (the default is 4KB).
 //
 // If you plan to allocate many lexers with a short life span, consider using the global pool
-// with the [BorrowLexer] and [RedeemLexer] functions.
+// with the [BorrowLexerWithBytes] / [BorrowLexerWithReader] functions and the
+// returned redeem closure.
 func New(r io.Reader, opts ...Option) *L {
 	l := new(L)
 	l.applyWithDefaults(opts)
@@ -83,7 +85,7 @@ func New(r io.Reader, opts ...Option) *L {
 // Since the full buffer is provided by the caller, there is no additional internal buffering.
 //
 // If you plan to allocate many lexers with a short life span, consider using the global pool
-// with the [BorrowLexerWithBytes] and [RedeemLexer] functions.
+// with the [BorrowLexerWithBytes] function and the returned redeem closure.
 func NewWithBytes(data []byte, opts ...Option) *L {
 	l := new(L)
 	l.applyWithDefaults(opts)

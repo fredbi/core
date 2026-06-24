@@ -12,6 +12,12 @@ package pools
 // debugBuild reports whether the pool instrumentation is compiled in (the poolsdebug tag).
 const debugBuild = false
 
+// DebugBuild reports whether the pool instrumentation is compiled in (the
+// poolsdebug build tag). It lets a test that must run in both modes skip the
+// parts that are invalid under instrumentation — e.g. an allocation-count
+// assertion, since the instrumented build allocates a per-borrow tracker.
+const DebugBuild = debugBuild
+
 type tracker[T any] struct{}
 
 func (tracker[T]) register() {}

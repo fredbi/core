@@ -8,16 +8,18 @@ import (
 )
 
 type poolOfLexers struct {
-	*pools.Pool[L]
+	*pools.PoolRedeemable[L]
 }
 
+// lexersPool is a redeemable pool: borrowing yields a cached redeem closure (no
+// per-borrow allocation), and under the poolsdebug build tag it detects
+// double-redeem, foreign-redeem and leaks.
 var lexersPool = poolOfLexers{
-	Pool: pools.New[L](),
+	PoolRedeemable: pools.NewRedeemable[L](),
 }
 
-// BorrowWithBytes
-func (p *poolOfLexers) BorrowWithBytes(data []byte, opts ...Option) *L {
-	l := p.Borrow()
+func (p *poolOfLexers) borrowWithBytes(data []byte, opts ...Option) (*L, func()) {
+	l, redeem := p.BorrowWithRedeem()
 	l.applyWithDefaults(opts)
 	l.r = noopReader
 	l.buffer = data
@@ -27,13 +29,12 @@ func (p *poolOfLexers) BorrowWithBytes(data []byte, opts ...Option) *L {
 	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
 	l.reset()
 
-	return l
+	return l, redeem
 }
 
-func (p *poolOfLexers) BorrowLexerWithReader(r io.Reader, opts ...Option) *L {
-	l := p.Borrow()
+func (p *poolOfLexers) borrowWithReader(r io.Reader, opts ...Option) (*L, func()) {
+	l, redeem := p.BorrowWithRedeem()
 	l.applyWithDefaults(opts)
-	// TODO: in reset
 	l.r = r
 	l.bufferized = 0
 	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
@@ -48,31 +49,33 @@ func (p *poolOfLexers) BorrowLexerWithReader(r io.Reader, opts ...Option) *L {
 		l.previousBuffer = slices.Grow(l.previousBuffer, l.keepPreviousBuffer-cap(l.previousBuffer))
 	}
 
-	return l
+	return l, redeem
 }
 
-// BorrowLexerWithReader borrows a L(exer) from a global pool.
+// BorrowLexerWithReader borrows a L(exer) from a global pool, together with the
+// closure that redeems it back to the pool.
 //
-// This is equivalent to calling New(), but may recycle a previously allocated lexer if available from the pool.
+// This is equivalent to calling [New], but may recycle a previously allocated
+// lexer if available from the pool. The internal buffer of the lexer is also
+// reused, provided the [WithBufferSize] option has not changed the pooled size.
 //
-// The internal buffer of the lexer is also reused, provided the WithBufferSize() option has not changed the size of
-// / pooled buffers.
-//
-// To maximize the amortizing effect of the pool, make sure that all borrowed lexers are eventually redeemed to the pool.
-func BorrowLexerWithReader(r io.Reader, opts ...Option) *L {
-	return lexersPool.BorrowLexerWithReader(r, opts...)
+// The redeem closure must be called exactly once when the lexer is no longer
+// needed (typically via defer); after calling it, drop the reference to the
+// lexer. Calling it more than once panics. To maximize the amortizing effect of
+// the pool, make sure every borrowed lexer is eventually redeemed.
+func BorrowLexerWithReader(r io.Reader, opts ...Option) (*L, func()) {
+	return lexersPool.borrowWithReader(r, opts...)
 }
 
-// BorrowLexerWithBytes borrows a L(exer) from a global pool.
+// BorrowLexerWithBytes borrows a L(exer) from a global pool, together with the
+// closure that redeems it back to the pool.
 //
-// This is equivalent to calling NewWithBytes(), but may recycle a previously allocated lexer if available from the pool.
+// This is equivalent to calling [NewWithBytes], but may recycle a previously
+// allocated lexer if available from the pool.
 //
-// To maximimize the amortizing effect of the pool, make sure that all borrowed lexers are eventually redeemed to the pool.
-func BorrowLexerWithBytes(data []byte, opts ...Option) *L {
-	return lexersPool.BorrowWithBytes(data, opts...)
+// The redeem closure must be called exactly once when the lexer is no longer
+// needed (typically via defer); after calling it, drop the reference to the
+// lexer. Calling it more than once panics.
+func BorrowLexerWithBytes(data []byte, opts ...Option) (*L, func()) {
+	return lexersPool.borrowWithBytes(data, opts...)
 }
-
-// RedeemLexer redeems a L(exer) to the global pool, so it may be reused.
-//
-// Make sure that you don't redeem a lexer twice.
-func RedeemLexer(l *L) { lexersPool.Redeem(l) }

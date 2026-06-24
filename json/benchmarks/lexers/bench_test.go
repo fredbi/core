@@ -11,6 +11,7 @@ import (
 	"github.com/fredbi/core/json/benchmarks/lexers/workloads"
 	jlex "github.com/fredbi/core/json/lexers"
 	deflex "github.com/fredbi/core/json/lexers/default-lexer"
+	"github.com/fredbi/core/swag/pools"
 )
 
 // deeplyNested workloads (tens of thousands of levels) are excluded from the
@@ -41,9 +42,9 @@ func factories() []factory {
 		{
 			name: "default-lexer/pooled",
 			make: func(d []byte) (jlex.Lexer, func()) {
-				l := deflex.BorrowLexerWithBytes(d)
+				l, redeem := deflex.BorrowLexerWithBytes(d)
 
-				return l, func() { deflex.RedeemLexer(l) }
+				return l, redeem
 			},
 		},
 		{
@@ -78,6 +79,10 @@ func TestWorkloadsLex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading workloads: %v", err)
 	}
+
+	// every borrowed lexer is released below; under -tags poolsdebug this asserts
+	// no borrow leaked (a no-op in release builds).
+	t.Cleanup(func() { pools.AssertNoLeaks(t) })
 
 	for _, w := range suite {
 		for _, f := range factories() {

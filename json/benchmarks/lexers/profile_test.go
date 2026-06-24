@@ -68,9 +68,9 @@ func BenchmarkProfile(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				lex := deflex.BorrowLexerWithBytes(data)
+				lex, redeem := deflex.BorrowLexerWithBytes(data)
 				sink = drainL(lex)
-				deflex.RedeemLexer(lex)
+				redeem()
 			}
 		})
 	})
@@ -93,9 +93,9 @@ func BenchmarkProfile(b *testing.B) {
 			b.ResetTimer()
 			for range b.N {
 				rdr.Reset(data)
-				lex := deflex.BorrowLexerWithReader(rdr)
+				lex, redeem := deflex.BorrowLexerWithReader(rdr)
 				sink = drainL(lex)
-				deflex.RedeemLexer(lex)
+				redeem()
 			}
 		})
 	})

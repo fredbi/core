@@ -32,7 +32,8 @@ type VL struct {
 // Use option WithBufferSize to alter the size of this buffer (defaults to 4KB).
 //
 // If you plan to allocate many lexers with a short life span, consider using the global pool
-// with the BorrowLexer() and RedeemLexer() functions.
+// with the BorrowLexerWithBytes() / BorrowLexerWithReader() functions and the
+// returned redeem closure.
 func NewVerbatim(r io.Reader, opts ...Option) *VL {
 	l := new(VL)
 	l.L = New(r, opts...)
@@ -46,7 +47,7 @@ func NewVerbatim(r io.Reader, opts ...Option) *VL {
 // Since the full buffer is provided by the caller, there is no additional internal buffering.
 //
 // If you plan to allocate many lexers with a short life span, consider using the global pool
-// with the BorrowLexerWithBytes() and RedeemLexer() functions.
+// with the BorrowLexerWithBytes() function and the returned redeem closure.
 func NewVerbatimWithBytes(data []byte, opts ...Option) *VL {
 	l := new(VL)
 	l.L = NewWithBytes(data, opts...)

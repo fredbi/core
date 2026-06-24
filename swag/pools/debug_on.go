@@ -25,6 +25,10 @@ import (
 // debugBuild reports whether the pool instrumentation is compiled in (the poolsdebug tag).
 const debugBuild = true
 
+// DebugBuild reports whether the pool instrumentation is compiled in (the
+// poolsdebug build tag). See the release-build doc for usage.
+const DebugBuild = debugBuild
+
 type trackStatus uint8
 
 const (
