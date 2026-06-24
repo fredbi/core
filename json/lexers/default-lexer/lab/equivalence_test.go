@@ -164,15 +164,34 @@ func drainVerbatim(l verbatimLexer) ([]vtok, string) {
 	}
 }
 
-func TestLabVerbatimEquivalence(t *testing.T) {
+// TestLabVerbatimPullMatchesPush gates stage 2: VL.NextToken (the unified generic
+// pull core) must produce exactly the same stream and error state as VL.Tokens
+// (the unified push core) on every fixture, valid or not. Since the push path is
+// independently validated against the unified contract
+// (TestLabVerbatimPushEquivalence), pull==push transitively validates the pull
+// core. This replaces the old pull-vs-reference-VL check, which would now flag
+// the intended unified-semantics changes (\u decoding fix + surrogate validation).
+func TestLabVerbatimPullMatchesPush(t *testing.T) {
 	fixtures := conformanceFixtures(t)
 
 	for name, data := range fixtures {
-		want, wantErr := drainVerbatim(lexer.NewVerbatimWithBytes(data))
-		got, gotErr := drainVerbatim(lab.NewVerbatimWithBytes(data))
+		pull, pullErr := drainVerbatim(lab.NewVerbatimWithBytes(data))
 
-		require.Equalf(t, wantErr, gotErr, "VL error mismatch on %s", name)
-		require.Equalf(t, want, got, "VL token stream mismatch on %s", name)
+		var push []vtok
+		lp := lab.NewVerbatimWithBytes(data)
+		for tk := range lp.Tokens() {
+			push = append(push, vtok{
+				kind:   tk.Kind(),
+				value:  string(tk.Value()),
+				blanks: string(tk.Blanks()),
+				line:   tk.Line(),
+				col:    tk.Col(),
+			})
+		}
+		pushErr := errStr(lp.Err())
+
+		require.Equalf(t, pushErr, pullErr, "VL pull/push error mismatch on %s", name)
+		require.Equalf(t, push, pull, "VL pull/push stream mismatch on %s", name)
 	}
 }
 

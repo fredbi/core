@@ -33,6 +33,7 @@ type L struct {
 	currentValue   []byte   // capped if maxValueBytes > 0
 	previousBuffer []byte   // used when keepPreviousBuffer=true
 	nestingLevel   []uint64 // the stack of nested containers. Every bit represent an extra nesting. Capped if maxContainerStack > 0
+	blanks         []byte   // preceding whitespace run, accumulated by the unified core when trackBlanks is set (verbatim lexer)
 
 	current token.T
 
@@ -54,6 +55,7 @@ type L struct {
 	afterKey    bool // the previous token was an object key: a ':' must follow
 	isAtEOF     bool
 	wholeBuffer bool // the buffer holds the entire input (no refills): values may alias it
+	trackBlanks bool // accumulate preceding blanks into l.blanks (verbatim lexer)
 
 	options
 }
@@ -161,7 +163,9 @@ func (l *L) Column() int {
 // If you want to keep tokens for later reuse, you may clone a token
 // using its [T.Clone] method.
 func (l *L) NextToken() token.T {
-	return l.scanToken()
+	// unified pull core (semantic policy); see generic.go. The legacy scanToken
+	// is retained until the stage-4 cleanup.
+	return scanTokenG[token.T, semanticPolicy](l, semanticPolicy{})
 }
 
 // scanToken scans and returns the next token. When elideSeparator is set, the

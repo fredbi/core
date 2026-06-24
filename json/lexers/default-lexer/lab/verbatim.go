@@ -19,7 +19,6 @@ import (
 // The lexer performs JSON grammar check such as opening/closing brackets, expected sequence of delimiter/values etc.
 type VL struct {
 	*L
-	blanks     []byte
 	nextBlanks []byte
 	current    token.VT
 	next       token.VT // the next token consumed whenever we need to look-ahead
@@ -68,7 +67,17 @@ func NewVerbatimWithBytes(data []byte, opts ...Option) *VL {
 //
 // If you want to keep tokens for later reuse, you may clone a token
 // using its Clone() method.
-func (l *VL) NextToken() token.VT { //nolint: gocognit
+// NextToken returns the next verbatim token, driven by the unified generic pull
+// core (verbatim policy) — the same core that backs L.NextToken. This replaces
+// VL's bespoke look-ahead loop (retained as nextTokenLegacy until the stage-4
+// cleanup). Values are decoded by L's scanners (fixing the legacy \u bug) and
+// blanks/positions are attached by the policy.
+func (l *VL) NextToken() token.VT {
+	return scanTokenG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
+}
+
+//nolint:gocognit,unused
+func (l *VL) nextTokenLegacy() token.VT {
 	if l.err != nil {
 		return token.VNone
 	}
@@ -1038,7 +1047,8 @@ func (l *VL) reset() {
 	l.current = token.VNone
 	l.blanks = l.blanks[:0]
 	l.nextBlanks = l.nextBlanks[:0]
-	// the verbatim lexer never elides separators; the native push core
-	// (scanPushVerbatim) reads l.elideSeparator, so force it off for VL.
+	// the verbatim lexer never elides separators, and the unified core
+	// accumulates the preceding blanks for it; both are read off the embedded L.
 	l.elideSeparator = false
+	l.trackBlanks = true
 }

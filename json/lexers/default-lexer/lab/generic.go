@@ -18,6 +18,7 @@ package lab
 // the core records; the semantic policy ignores it.
 
 import (
+	"errors"
 	"io"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
@@ -31,6 +32,12 @@ import (
 // The semantic lexer ignores both; the verbatim lexer bakes them into token.VT.
 type emitPolicy[T any] interface {
 	emit(t token.T, blanks []byte, line, col int) T
+	// none is the zero/error token (token.None / token.VNone), returned when the
+	// lexer enters an error state.
+	none() T
+	// eof is the end-of-input token; the verbatim policy attaches the trailing
+	// blanks, the semantic policy ignores them.
+	eof(blanks []byte) T
 }
 
 // semanticPolicy is the policy for the semantic lexer L: the emitted token IS
@@ -39,6 +46,8 @@ type emitPolicy[T any] interface {
 type semanticPolicy struct{}
 
 func (semanticPolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
+func (semanticPolicy) none() token.T                              { return token.None }
+func (semanticPolicy) eof(_ []byte) token.T                       { return token.EOFToken }
 
 // verbatimPolicy is the policy for the verbatim lexer VL: it wraps the
 // grammar/value token.T into a token.VT, attaching the preceding blanks and the
@@ -48,6 +57,8 @@ type verbatimPolicy struct{}
 func (verbatimPolicy) emit(t token.T, blanks []byte, line, col int) token.VT {
 	return t.AsVerbatim(blanks).WithPosition(line, col)
 }
+func (verbatimPolicy) none() token.VT            { return token.VNone }
+func (verbatimPolicy) eof(blanks []byte) token.VT { return token.MakeVerbatimEOF(blanks) }
 
 // scanPushG is the generic, policy-parameterized counterpart of scanPush. It is
 // a near-verbatim copy: every `yield(l.current)` becomes `yield(p.emit(...))`,
@@ -482,4 +493,380 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 	writeback(i)
 	l.errCheck(io.EOF)
+}
+
+// errCheckG is the generic counterpart of (*L).errCheck: shared EOF/error
+// classification, returning the policy's eof token (with trailing blanks for the
+// verbatim policy) on clean EOF, or the none token otherwise.
+func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
+	hadToken := l.current.IsKnown()
+	l.current = token.None
+
+	if errors.Is(err, io.EOF) {
+		switch {
+		case l.isInContainer():
+			if l.isInObject() {
+				l.err = codes.ErrNotInObject
+			} else {
+				l.err = codes.ErrNotInArray
+			}
+		case l.isAtEOF:
+			l.err = io.EOF
+		case !hadToken:
+			l.err = codes.ErrNoData
+		}
+
+		l.isAtEOF = true
+
+		return p.eof(l.blanks)
+	}
+
+	l.err = err
+
+	return p.none()
+}
+
+// scanTokenG is the generic, policy-parameterized pull core: it scans and
+// returns exactly one token, shared by L.NextToken and VL.NextToken. It mirrors
+// (*L).scanToken exactly (cursor in the struct, per-byte advance, readMore for
+// streaming, deferred-error semantics) and emits via the policy. When
+// l.trackBlanks is set (verbatim) it accumulates the preceding whitespace run
+// into l.blanks (byte-by-byte, so it survives streaming refills); the semantic
+// policy ignores blanks.
+//
+//nolint:gocognit,gocyclo
+func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
+	if l.err != nil {
+		return p.none()
+	}
+
+	if l.trackBlanks {
+		l.blanks = l.blanks[:0]
+	}
+
+	for {
+		if err := l.readMore(); err != nil {
+			return errCheckG(l, p, err)
+		}
+
+		for l.consumed < l.bufferized {
+			b := l.buffer[l.consumed]
+			l.offset++
+			l.consumed++
+
+			switch b {
+			case lineFeed:
+				l.line++
+				l.lineStart = l.offset
+				if l.trackBlanks {
+					l.blanks = append(l.blanks, b)
+				}
+
+				continue
+
+			case blank, tab, carriageReturn:
+				if l.trackBlanks {
+					l.blanks = append(l.blanks, b)
+				}
+
+				continue
+			}
+
+			// a significant byte starts a token: snapshot its position
+			l.tokLine = l.line
+			l.tokCol = int(l.offset - l.lineStart)
+
+			if l.afterKey {
+				l.afterKey = false
+				if b != colon {
+					l.err = codes.ErrKeyColon
+
+					return p.none()
+				}
+
+				l.current = token.MakeDelimiter(token.Colon)
+				if l.elideSeparator {
+					continue
+				}
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+			}
+
+			switch b {
+			case colon:
+				if l.current.Kind() == token.String {
+					l.err = codes.ErrMissingObject
+				} else {
+					l.err = codes.ErrMissingKey
+				}
+
+				return p.none()
+
+			case closingBracket:
+				if l.current.IsComma() {
+					l.err = codes.ErrTrailingComma
+
+					return p.none()
+				}
+				if !l.isInObject() {
+					l.err = codes.ErrNotInObject
+
+					return p.none()
+				}
+
+				l.expectKey = false
+				l.popContainer()
+				l.current = token.MakeDelimiter(token.ClosingBracket)
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case closingSquareBracket:
+				if l.current.IsComma() {
+					l.err = codes.ErrTrailingComma
+
+					return p.none()
+				}
+				if !l.isInArray() {
+					l.err = codes.ErrNotInArray
+
+					return p.none()
+				}
+
+				l.popContainer()
+				l.current = token.MakeDelimiter(token.ClosingSquareBracket)
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case comma:
+				if l.current.IsComma() {
+					l.err = codes.ErrRepeatedComma
+
+					return p.none()
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return p.none()
+				}
+				if !l.isInContainer() {
+					l.err = codes.ErrCommaInContainer
+
+					return p.none()
+				}
+				if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
+					l.err = codes.ErrMissingValue
+
+					return p.none()
+				}
+
+				if l.isInObject() {
+					l.expectKey = true
+				}
+
+				l.current = token.MakeDelimiter(token.Comma)
+				if l.elideSeparator {
+					continue
+				}
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case openingBracket:
+				if l.current.IsKnown() {
+					if l.current.Kind() != token.Delimiter {
+						l.err = codes.ErrInvalidToken
+
+						return p.none()
+					}
+					if l.current.Delimiter().IsClosing() {
+						l.err = codes.ErrMissingComma
+
+						return p.none()
+					}
+					if l.isInArray() {
+						if l.current.Delimiter() != token.OpeningSquareBracket &&
+							l.current.Delimiter() != token.Comma {
+							l.err = codes.ErrMissingComma
+
+							return p.none()
+						}
+					} else if !l.current.IsColon() {
+						l.err = codes.ErrMissingKey
+
+						return p.none()
+					}
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return p.none()
+				}
+
+				l.expectKey = true
+				l.pushObject()
+				if l.err != nil {
+					return p.none()
+				}
+				l.current = token.MakeDelimiter(token.OpeningBracket)
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case openingSquareBracket:
+				if l.current.IsKnown() {
+					if l.current.Kind() != token.Delimiter {
+						l.err = codes.ErrInvalidToken
+
+						return p.none()
+					}
+					if l.current.Delimiter().IsClosing() {
+						l.err = codes.ErrMissingComma
+
+						return p.none()
+					}
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return p.none()
+				}
+
+				l.pushArray()
+				if l.err != nil {
+					return p.none()
+				}
+				l.current = token.MakeDelimiter(token.OpeningSquareBracket)
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case doubleQuote:
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return p.none()
+				}
+
+				l.current = l.consumeString()
+				if l.err != nil {
+					return p.none()
+				}
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case startOfTrue, startOfFalse:
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return p.none()
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return p.none()
+				}
+
+				l.current = l.consumeBoolean(b)
+				if l.err != nil {
+					return p.none()
+				}
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case minusSign, decimalPoint, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return p.none()
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return p.none()
+				}
+
+				if l.wholeBuffer && l.maxValueBytes == 0 {
+					buf := l.buffer[:l.bufferized]
+					numStart := l.consumed - 1
+					runFrom := l.consumed
+					var firstDigit byte
+					ok := true
+
+					switch {
+					case b >= '0' && b <= '9':
+						firstDigit = b
+					case b == minusSign:
+						if uint(l.consumed) < uint(len(buf)) && buf[l.consumed] >= '0' && buf[l.consumed] <= '9' {
+							firstDigit = buf[l.consumed]
+							runFrom = l.consumed + 1
+						} else {
+							ok = false
+						}
+					default:
+						ok = false
+					}
+
+					if ok {
+						n := runFrom
+						for uint(n) < uint(len(buf)) && '0' <= buf[n] && buf[n] <= '9' {
+							n++
+						}
+
+						leadingZero := firstDigit == '0' && n > runFrom
+						var term byte
+						if uint(n) < uint(len(buf)) {
+							term = buf[n]
+						}
+
+						if !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
+							l.offset += uint64(n - l.consumed)
+							l.consumed = n
+							l.current = token.MakeWithValue(token.Number, l.buffer[numStart:n:n])
+
+							return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+						}
+					}
+
+					l.current = l.consumeNumberWhole(b)
+					if l.err != nil {
+						return p.none()
+					}
+
+					return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+				}
+
+				l.current = l.consumeNumberStreaming(b)
+				if l.err != nil {
+					return p.none()
+				}
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			case startOfNull:
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return p.none()
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return p.none()
+				}
+
+				l.current = l.consumeNull(b)
+				if l.err != nil {
+					return p.none()
+				}
+
+				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
+
+			default:
+				l.err = codes.ErrInvalidToken
+
+				return p.none()
+			}
+		}
+	}
 }

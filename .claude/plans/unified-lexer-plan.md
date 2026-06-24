@@ -54,10 +54,17 @@ stays the escape hatch if the 5% ever bites on the real workload.
     (arguably better/consistent), but it is a behavior change for VL errors.
     Stage-1 equivalence is asserted on valid-input streams; confirm the unified
     error semantics is acceptable before promoting.
-- **Stage 2 — Generic pull core for `NextToken`.** Share one source between
-  `L.NextToken` and `VL.NextToken`, removing the two big hand-written loops.
-  Handle VL's look-ahead (or retire it in favor of the unified semantics from
-  stage 1). Highest-line-count dedup.
+- **Stage 2 — Generic pull core for `NextToken`.** ✅
+  `scanTokenG[T, P]` + `errCheckG[T, P]` now back both `L.NextToken` and
+  `VL.NextToken` (policy adds `none()`/`eof()`). VL's look-ahead is retired (the
+  legacy loop is kept as `nextTokenLegacy`, dead, for stage-4 deletion). Shared
+  blanks state moved onto `L` (`blanks`/`trackBlanks`); the pull core accumulates
+  blanks byte-by-byte so they survive streaming refills (verified at buffer
+  size 8). Gates: L NextToken (bytes + streaming@64B) still == reference L, 0
+  allocs, ~5–7% slower (accepted dict-emit cost); `TestLabVerbatimPullMatchesPush`
+  asserts VL pull == VL push on all fixtures (push already validated against the
+  unified contract). Net: 4 hand-written loops → 2 generic cores (pull + push),
+  each serving L and VL.
 - **Stage 3 — Single-source value scanners.** number / string / bool / null
   shared by both cores (already mostly shared; confirm and de-dup).
 - **Stage 4 — Delete the dead duplicated loops.** lab is now the unified lexer.
