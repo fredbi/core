@@ -28,7 +28,10 @@ func (l *L) Tokens() iter.Seq[token.T] {
 		// in a local across the whole scan (no per-byte struct writes). Streaming
 		// and value-capped modes keep the proven NextToken loop.
 		if l.wholeBuffer && l.maxValueBytes == 0 {
-			l.scanPush(yield)
+			// generics spike: route the whole-buffer push path through the
+			// policy-parameterized core via a non-generic wrapper (keeps Tokens
+			// inlinable; see scanPushSemantic).
+			l.scanPushSemantic(yield)
 
 			return
 		}
