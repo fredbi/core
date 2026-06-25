@@ -22,6 +22,13 @@ import (
 //
 // The iterator is single-pass: it consumes from the same input as NextToken and
 // does not rewind.
+//
+// Tokens and [L.NextToken] share the lexer's state, so the two may be
+// interleaved: you can range over Tokens, break, and then continue with
+// NextToken (or the reverse) — NextToken resumes exactly where the range
+// stopped. Note the standard range-over-func semantics: the token delivered in
+// the iteration where you break has already been consumed, so the next
+// NextToken returns the following token, not a repeat.
 func (l *L) Tokens() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
 		// whole-buffer fast path: a native push scan loop that keeps the cursor
