@@ -45,7 +45,7 @@ var bcdDecoding = map[byte]byte{
 	0xe: '+',
 }
 
-// DigitsPerBytes is the number of digit nibbles we pack in a single byte.
+// DigitsPerByte is the number of digit nibbles we pack in a single byte.
 const DigitsPerByte = 2
 
 // EncodeNumberAsBCD encodes an input numeric string into BCD.

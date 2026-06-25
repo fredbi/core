@@ -9,6 +9,7 @@ import (
 	"github.com/fredbi/core/swag/conv"
 )
 
+//nolint:gochecknoglobals // global immutable values
 var (
 	// UndefinedValue represents the absence of a value: it is what a [Store] returns for the zero
 	// [stores.Handle] ("no value").
@@ -172,10 +173,13 @@ func MakeFloatValue[T conv.Float](value T) Value {
 
 // MakeBigIntValue builds an integer value from a [big.Int].
 func MakeBigIntValue(value *big.Int) Value {
+	const base = 10
+	digits := len(value.Bits()) + 1 // reserve an extra slot for negative
+
 	return Value{
 		kind: token.Number,
 		n: types.Number{
-			Value: value.Append(make([]byte, 0, 10), 10), // TODO: better capacity finding
+			Value: value.Append(make([]byte, 0, digits), base),
 		},
 	}
 }
@@ -191,10 +195,11 @@ func MakeBigRatValue(value *big.Rat) Value {
 
 // MakeBigFloatValue builds a decimal value from a [big.Float], without loss of precision.
 func MakeBigFloatValue(value *big.Float) Value {
+	const defaultDigits = 10 // sensible defaults for pre-allocation
 	return Value{
 		kind: token.Number,
 		n: types.Number{
-			Value: value.Append(make([]byte, 0, 10), 'g', -1),
+			Value: value.Append(make([]byte, 0, defaultDigits), 'g', -1),
 		},
 	}
 }

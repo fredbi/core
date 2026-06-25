@@ -4,6 +4,7 @@ package values
 // that occurred before the value token.
 type VerbatimValue struct {
 	Value
+
 	blanks []byte
 }
 
