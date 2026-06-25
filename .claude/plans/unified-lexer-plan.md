@@ -65,11 +65,30 @@ stays the escape hatch if the 5% ever bites on the real workload.
   asserts VL pull == VL push on all fixtures (push already validated against the
   unified contract). Net: 4 hand-written loops → 2 generic cores (pull + push),
   each serving L and VL.
-- **Stage 3 — Single-source value scanners.** number / string / bool / null
-  shared by both cores (already mostly shared; confirm and de-dup).
-- **Stage 4 — Delete the dead duplicated loops.** lab is now the unified lexer.
-- **Stage 5 — Promote lab → replace default-lexer.** The only irreversible step;
-  separate review. Keep the package/API identical so downstream is untouched.
+- **Stage 3 — Single-source value scanners.** ✅ (`47b2aa7`, worktree
+  `.worktrees/lexer/exploration`, branch `exploration`)
+  Confirmed: number / string / bool / null were already single-source — both
+  cores call L's `consumeString` / `consumeNumberWhole` / `consumeNumberStreaming`
+  / `consumeBoolean` / `consumeNull`. VL's copies existed only to feed its
+  look-ahead. No de-dup work needed beyond deleting those copies in stage 4.
+- **Stage 4 — Delete the dead duplicated loops.** ✅ (`47b2aa7`)
+  Removed L.scanToken, L.errCheck, push_tokens.go (L.scanPush), VL.nextTokenLegacy
+  + VL's 7 look-ahead value scanners, and `indexStringSpecial` (only scanPush
+  called it). Also removed the now-vestigial look-ahead state: VL.{next,
+  nextBlanks,current} and L.{nextLine,nextCol,lastStack}. With no look-ahead,
+  IndentLevel collapses to depth() for both lexers and VL is a thin policy adapter
+  over an embedded *L. **Net -1885/+110; four hand loops → two generic cores.**
+  New gate `TestIndentLevelEquivalence` proves lab L IndentLevel == reference L
+  and lab VL == lab L (non-eliding) on every fixture (the stream tests didn't
+  cover IndentLevel). go vet clean; TestWorkloadsLex green under -tags poolsdebug.
+  Inherited lint (dogsled, gochecknoglobals, gocyclo, the `NeVerbatimWithBytes`
+  godoc typo, embedded-field order) is pre-existing from the verbatim copy →
+  deferred to the stage-5 lint pass.
+- **Stage 5 — Promote lab → replace default-lexer.** ⏳ RESUME HERE. The only
+  irreversible step; separate review. Keep the package/API identical so
+  downstream is untouched. Fold in the inherited lint cleanup. Note the standalone
+  `P`/`NewPush` push prototype (push.go) is kept as-is — it mirrors production
+  `deflex.NewPush` (used by the benchmark suite), not part of the L/VL dedup.
 
 ## Gates
 
