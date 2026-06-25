@@ -84,11 +84,24 @@ stays the escape hatch if the 5% ever bites on the real workload.
   Inherited lint (dogsled, gochecknoglobals, gocyclo, the `NeVerbatimWithBytes`
   godoc typo, embedded-field order) is pre-existing from the verbatim copy →
   deferred to the stage-5 lint pass.
-- **Stage 5 — Promote lab → replace default-lexer.** ⏳ RESUME HERE. The only
-  irreversible step; separate review. Keep the package/API identical so
-  downstream is untouched. Fold in the inherited lint cleanup. Note the standalone
-  `P`/`NewPush` push prototype (push.go) is kept as-is — it mirrors production
-  `deflex.NewPush` (used by the benchmark suite), not part of the L/VL dedup.
+- **Stage 5 — Promote lab → replace default-lexer.** ✅ (`8a61c31`)
+  The unified implementation is now the production `lexer` package: generic.go
+  added; lexer/verbatim/stack/string/iterator brought over; push_tokens.go
+  deleted. Public API byte-for-byte unchanged (only unexported internals moved) —
+  json/options.go + json/dynamic/options.go still build. doc.go kept as
+  production's; iterator.go "spike" comment scrubbed. Full production suite green
+  (conformance, elide, iterator, lexer, position, security, stack, verbatim,
+  zerocopy + push/pull equivalence). **lab/ kept in place for future experiments**
+  (per Fred), re-synced with the one production fix below. The standalone
+  `P`/`NewPush` push prototype stays untouched.
+  - **Regression caught by the production suite (not covered by lab equivalence):**
+    VL must trip the maxValueBytes circuit breaker on a whitespace flood
+    (accumulated blanks). Restored the bound in scanTokenG's blanks accumulation;
+    mirrored into lab/generic.go.
+  - **Deferred:** the inherited lint (dogsled, gochecknoglobals, gocyclo on
+    consumeNumberStreaming, `NeVerbatimWithBytes` godoc typo, embedded-field order)
+    is pre-existing in both the reference and lab; not blocking — clean up in a
+    follow-up lint pass.
 
 ## Gates
 

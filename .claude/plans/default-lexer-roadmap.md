@@ -353,10 +353,13 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
     dict dispatch. **DECIDED 2026-06-24 (Fred): accept the ~5%, land it with
     generics** (road a). Generator (road b) stays the escape hatch. Execution is
     tracked in [unified-lexer-plan.md](unified-lexer-plan.md).
-- 🚧 **2.1 Unify L/VL from one generic source — road (a) chosen; STAGES 1–4 DONE.**
-  Detailed stage tracker: [unified-lexer-plan.md](unified-lexer-plan.md). Worked
-  in the `lab` sandbox; from 2026-06-25 in worktree `.worktrees/lexer/exploration`
-  (branch `exploration`); promoted to production only at stage 5.
+- ✅ **2.1 Unify L/VL from one generic source — road (a); ALL 5 STAGES DONE
+  (`8a61c31`).** Detailed stage tracker: [unified-lexer-plan.md](unified-lexer-plan.md).
+  Worked in the `lab` sandbox; from 2026-06-25 in worktree
+  `.worktrees/lexer/exploration` (branch `exploration`). Stage 5 promoted the
+  unified implementation into the production `lexer` package — L and VL now run on
+  two generic cores (scanPushG/scanTokenG), four hand loops gone, public API
+  unchanged, full production suite green. `lab/` kept for future experiments.
   - ✅ **Stage 1 (`3f533ad`)**: generic push core `scanPushG[T,P]` serves L and VL;
     `VL.Tokens()` gets a native push path → **VL push ≈ 2.0–2.4× VL pull**
     (citm 177→361, twitter 155→333, ints 66→156 MB/s), 0 allocs. Unified VL also
@@ -375,11 +378,15 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
     value-scanner overlap. VL is now a thin policy adapter over `*L`; IndentLevel
     is `depth()` for both. New `TestIndentLevelEquivalence` gate (lab L == ref L,
     lab VL == lab L non-eliding, all fixtures).
-  - ⏳ **Stage 5 remaining — RESUME HERE**: promote `lab` → replace
-    `default-lexer` (irreversible; separate review). Fold in the inherited lint
-    cleanup (dogsled / gochecknoglobals / gocyclo / `NeVerbatimWithBytes` godoc
-    typo / embedded-field order — all pre-existing from the verbatim copy). Keep
-    the `P`/`NewPush` push prototype (mirrors production `deflex.NewPush`).
+  - ✅ **Stage 5 (`8a61c31`)**: promoted `lab` → production `lexer` package.
+    generic.go added; lexer/verbatim/stack/string/iterator unified; push_tokens.go
+    deleted. Public API unchanged (downstream builds). Production suite green;
+    restored the VL maxValueBytes-on-blanks circuit breaker (a production-only
+    behavior lab equivalence didn't cover) in scanTokenG, mirrored to lab. `lab/`
+    kept for future experiments; `P`/`NewPush` prototype untouched.
+  - ⏳ **Follow-up (non-blocking)**: inherited lint cleanup (dogsled,
+    gochecknoglobals, gocyclo on consumeNumberStreaming, `NeVerbatimWithBytes`
+    godoc typo, embedded-field order) — pre-existing in both reference and lab.
   - Historical context (the head-to-head framing that led to choosing road a):
 - 🔬 **2.1-orig Unify L/VL — the two roads weighed (road a chosen).**
   Reframed by the R&D pass: this is no longer only a maintainability play. The
