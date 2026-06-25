@@ -47,6 +47,6 @@ func TestDisabledCompressionNeverBuildsWriter(t *testing.T) {
 	assert.Equal(t, long, s.Get(h).String(), "the long string round-trips, stored uncompressed")
 
 	// header must be a plain large string, not a compressed one
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 	assert.Equal(t, headerString, header, "value must be stored verbatim, not compressed")
 }

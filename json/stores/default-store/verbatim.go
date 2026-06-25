@@ -39,6 +39,7 @@ const (
 // and should result in invalid tokens when parsing your JSON.
 type VerbatimStore struct {
 	*Store
+
 	blankArena []byte // a memory arena dedicated to storing non-significant blanks
 	_          struct{}
 }
@@ -60,7 +61,7 @@ func (s *VerbatimStore) Reset() {
 
 // Get a [values.Value] from a [stores.Handle].
 func (s *VerbatimStore) Get(h stores.Handle) values.Value {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	if header != headerInlinedBlank && header != headerCompressedBlank { // not a blank string
 		return s.Store.Get(h)
@@ -73,7 +74,7 @@ func (s *VerbatimStore) Get(h stores.Handle) values.Value {
 // [Store.AppendValueBytes] for semantics. Blank-space handles decode into dst as a string value, as
 // they do with [VerbatimStore.Get].
 func (s *VerbatimStore) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []byte) {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	switch header {
 	case headerInlinedBlank:
@@ -105,7 +106,7 @@ func (s *VerbatimStore) GetVerbatim(h stores.VerbatimHandle) values.VerbatimValu
 }
 
 func (s *VerbatimStore) WriteTo(writer writers.StoreWriter, h stores.Handle) {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	switch header {
 	case headerInlinedBlank:

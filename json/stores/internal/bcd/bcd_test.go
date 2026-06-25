@@ -1,9 +1,9 @@
-package store
+package bcd
 
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/go-openapi/testify/v2/assert"
 )
 
 func TestBCD(t *testing.T) {
@@ -49,10 +49,14 @@ func checkBCD(expected string) func(*testing.T) {
 		input := []byte(expected)
 		expectedNibbles := len(input)/2 + len(input)%2
 		output := make([]byte, 0, expectedNibbles)
-		nibbles := encodeNumberAsBCD(input, output)
+		nibbles := EncodeNumberAsBCD(input, output)
 		assert.Len(t, nibbles, expectedNibbles)
 
-		outcome := decodeBCDAsNumber(nibbles)
-		assert.Equal(t, expected, string(outcome))
+		outcome := DecodeBCDAsNumber(nibbles)
+		assert.EqualT(t, expected, string(outcome))
+
+		outcome = outcome[:0]
+		outcome = AppendBCDAsNumber(outcome, nibbles)
+		assert.EqualT(t, expected, string(outcome))
 	}
 }

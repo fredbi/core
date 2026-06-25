@@ -1,8 +1,6 @@
-package store
+package bcd
 
 import "slices"
-
-// modified standard 8-4-2-1 BCD to account for decimal point and scientific notation in JSON numbers.
 
 const (
 	bcdFiller  = 0xf
@@ -47,10 +45,11 @@ var bcdDecoding = map[byte]byte{
 	0xe: '+',
 }
 
-const digitsPerByte = 2
+// DigitsPerBytes is the number of digit nibbles we pack in a single byte.
+const DigitsPerByte = 2
 
-// encodeNumberAsBCD encodes an input numeric string into BCD
-func encodeNumberAsBCD(in, out []byte) []byte {
+// EncodeNumberAsBCD encodes an input numeric string into BCD.
+func EncodeNumberAsBCD(in, out []byte) []byte {
 	l := nibbleSize(in)
 	assertBCDOutCapacity(out, l)
 	out = out[:l]
@@ -81,14 +80,16 @@ func encodeNumberAsBCD(in, out []byte) []byte {
 	return out[:j]
 }
 
-// decodeBCDAsNumber transforms BCD nibbles into decimal digits.
+// DecodeBCDAsNumber transforms BCD nibbles into decimal digits.
+//
+// The returned string is an ASCII decimal representation of the number.
 //
 // Unless an extra buffer is explicitly provided, this allocates the result slice of bytes to return to the end user.
-func decodeBCDAsNumber(in []byte, buffer ...[]byte) []byte {
+func DecodeBCDAsNumber(in []byte, buffer ...[]byte) []byte {
 	const nibbleMask = 0xf
 
-	var out []byte //nolint:prealloc
-	size := digitsPerByte * len(in)
+	var out []byte
+	size := DigitsPerByte * len(in)
 	if len(buffer) == 0 || buffer[0] == nil {
 		out = make([]byte, 0, size) // this allocation is returned to the caller. Can't recycle it.
 	} else {
@@ -118,14 +119,11 @@ func decodeBCDAsNumber(in []byte, buffer ...[]byte) []byte {
 	return out
 }
 
-func nibbleSize(value []byte) int {
-	return len(value)/2 + len(value)%2
-}
-
-// appendBCDAsNumber decodes BCD nibbles and appends the resulting decimal digits to dst, returning
-// the extended slice. It is the append-style counterpart of [decodeBCDAsNumber], used by
-// [Store.AppendValueBytes] to decode into a caller-owned buffer without allocating.
-func appendBCDAsNumber(dst, in []byte) []byte {
+// AppendBCDAsNumber decodes BCD nibbles and appends the resulting decimal digits to dst,
+// returning the extended slice.
+//
+// It is the append-style counterpart of [DecodeBCDAsNumber] to decode into a caller-owned buffer without allocating.
+func AppendBCDAsNumber(dst, in []byte) []byte {
 	const nibbleMask = 0xf
 
 	for _, nibbles := range in {
@@ -133,6 +131,7 @@ func appendBCDAsNumber(dst, in []byte) []byte {
 		if nibble1 == bcdFiller {
 			break
 		}
+
 		digit1, ok := bcdDecoding[nibble1]
 		assertBCDNibble(ok, nibble1)
 		dst = append(dst, digit1)
@@ -141,10 +140,20 @@ func appendBCDAsNumber(dst, in []byte) []byte {
 		if nibble2 == bcdFiller {
 			break
 		}
+
 		digit2, ok := bcdDecoding[nibble2]
 		assertBCDNibble(ok, nibble2)
 		dst = append(dst, digit2)
 	}
 
 	return dst
+}
+
+// NibbleSize returns the size of the
+func NibbleSize(value []byte) int {
+	return nibbleSize(value)
+}
+
+func nibbleSize(value []byte) int {
+	return len(value)/2 + len(value)%2
 }

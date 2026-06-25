@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/internal/bcd"
 	"github.com/fredbi/core/json/stores/values"
 	"github.com/fredbi/core/json/writers"
 )
@@ -41,25 +42,28 @@ const (
 // internal arena rather than being copied (numbers and all other values are decoded into freshly
 // allocated buffers). Consequently:
 //
-//   - The Store must outlive every [values.Value] obtained from it: a consumer that keeps a value
+//   - The [Store] must outlive every [values.Value] obtained from it: a consumer that keeps a value
 //     keeps a reference into the arena.
-//   - A Store must not be reset or recycled (see [Store.Reset], [RedeemStore]) while any value
+//   - A [Store] must not be reset or recycled (see [Store.Reset], [RedeemStore]) while any value
 //     borrowed from it is still in use, nor mid-way through constructing a document. Doing so lets
 //     subsequent writes overwrite the arena bytes that a live value still points at.
 //
-// Recycling a Store from the pool is therefore only safe between whole, independent documents whose
-// values are no longer referenced (e.g. a short-lived untyped JSON exchange).
+// Recycling a Store from the pool is therefore only safe between whole, independent sets of documents
+// which values are no longer referenced (e.g. a short-lived untyped JSON exchange).
 //
 // # Compression configuration
 //
-// The compression level, threshold and preset dictionary (see [Options.WithCompressionDict]) are
-// frozen for as long as the Store holds compressed payloads: every payload in the arena stays
-// decodable against the dictionary it was compressed with. [Store.Reset] rewinds the arena and the
-// configuration together (back to the defaults), so a recycled Store never carries a dictionary that
-// would mismatch leftover payloads. Configure a (recycled) Store at construction or borrow time via
-// [Options] ([New], [BorrowStore]).
+// The compression level, threshold and preset dictionary (see [Options.WithCompressionDict]) are frozen
+// for as long as the Store holds compressed payloads: every payload in the arena stays decodable against
+// the dictionary it was compressed with.
+//
+// [Store.Reset] rewinds the arena and the configuration together (back to the defaults),
+// so a recycled Store never carries a dictionary that would mismatch leftover payloads.
+//
+// Configure a (recycled) Store at construction or borrow time via [Options] ([New], [BorrowStore]).
 type Store struct {
 	options
+
 	arena []byte
 	_     struct{}
 }
@@ -87,10 +91,11 @@ func (s *Store) Len() int {
 //
 // A large (uncompressed) string value aliases the Store's internal arena and stays valid only while
 // the Store is alive and not reset/recycled (see the "Lifecycle and value aliasing" note on [Store]).
+//
 // Other values (numbers, inlined and compressed strings) are decoded into fresh buffers and are
 // independent of the Store.
 func (s *Store) Get(h stores.Handle) values.Value {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	switch header {
 	case headerNone:
@@ -142,7 +147,7 @@ func (s *Store) Get(h stores.Handle) values.Value {
 //		consume(v)
 //	}
 func (s *Store) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []byte) {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	switch header {
 	case headerNone:
@@ -175,7 +180,7 @@ func (s *Store) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []b
 		size, offset := withOffset(h)
 		assertOffsetInArena(offset, len(s.arena))
 		start := len(dst)
-		dst = appendBCDAsNumber(dst, s.arena[offset:offset+size])
+		dst = bcd.AppendBCDAsNumber(dst, s.arena[offset:offset+size])
 		return values.MakeRawValue(token.MakeWithValue(token.Number, dst[start:])), dst
 	case headerString:
 		size, offset := withOffset(h)
@@ -207,7 +212,7 @@ func (s *Store) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []b
 //
 // This avoids unnessary buffering when transferring the value down to the writer.
 func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	switch header {
 	case headerNone:
@@ -222,7 +227,7 @@ func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 	case headerInlinedNumber: // small number inlined
 		size, payload := inlined(h)
 		buffer, redeem := borrowBytesWithRedeem(
-			size * digitsPerByte,
+			size * bcd.DigitsPerByte,
 		) // amortize the allocation of this temporary buffer
 		buffer = unpackBCD(size, payload, buffer)
 		writer.NumberBytes(buffer) // sends the buffer directly to the writer
@@ -246,8 +251,8 @@ func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 		assertOffsetInArena(offset, len(s.arena))
 
 		nibbles := s.arena[offset : offset+size]
-		buffer, redeem := borrowBytesWithRedeem(size * digitsPerByte)
-		buffer = decodeBCDAsNumber(nibbles, buffer)
+		buffer, redeem := borrowBytesWithRedeem(size * bcd.DigitsPerByte)
+		buffer = bcd.DecodeBCDAsNumber(nibbles, buffer)
 		writer.NumberBytes(buffer)
 		redeem()
 	case headerString: // large string
@@ -328,7 +333,7 @@ func (s *Store) PutNull() stores.Handle {
 	return stores.Handle(headerNull)
 }
 
-// PutNull is a shorthand for putting a bool value.
+// PutBool is a shorthand for putting a bool value.
 func (s *Store) PutBool(b bool) stores.Handle {
 	if b {
 		return stores.Handle(headerTrue)
@@ -391,10 +396,10 @@ func (s *Store) getLargeNumber(h stores.Handle) values.Value {
 	size, offset := withOffset(h)
 	assertOffsetInArena(offset, len(s.arena))
 	nibbles := s.arena[offset : offset+size]
-	buffer := s.getBuffer(digitsPerByte * size)
+	buffer := s.getBuffer(bcd.DigitsPerByte * size)
 
 	return values.MakeRawValue(
-		token.MakeWithValue(token.Number, decodeBCDAsNumber(nibbles, buffer)),
+		token.MakeWithValue(token.Number, bcd.DecodeBCDAsNumber(nibbles, buffer)),
 	)
 }
 
@@ -426,9 +431,9 @@ func (s *Store) getCompressedString(h stores.Handle) values.Value {
 }
 
 func (s *Store) putNumber(value []byte) stores.Handle {
-	nibbles, redeem := borrowBytesWithRedeem(nibbleSize(value))
+	nibbles, redeem := borrowBytesWithRedeem(bcd.NibbleSize(value))
 	defer redeem()
-	nibbles = encodeNumberAsBCD(value, nibbles)
+	nibbles = bcd.EncodeNumberAsBCD(value, nibbles)
 	if len(nibbles) <= maxInlineBytes {
 		return s.putInlinedNumber(nibbles)
 	}

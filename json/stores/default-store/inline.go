@@ -5,13 +5,14 @@ import (
 	"slices"
 
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/internal/bcd"
 )
 
 const asciiBits = 7
 
 // inlined extracts the size and payload from a handle representing a JSON value.
 //
-//nolint:gosec
+
 func inlined(h stores.Handle) (size int, payload uint64) {
 	size = int((h & smallMask) >> headerBits)
 	payload = uint64((h & payloadMask) >> (headerBits + smallBits))
@@ -21,7 +22,7 @@ func inlined(h stores.Handle) (size int, payload uint64) {
 
 // inlined extracts the size and payload from a handle representing blank space.
 //
-//nolint:gosec
+
 func inlinedBlanks(h stores.Handle) (size int, payload uint64) {
 	size = int((h & blankMask) >> headerBits)
 	payload = uint64((h & blankPayloadMask) >> (headerBits + blankBits))
@@ -131,7 +132,7 @@ func appendInlinedBCD(dst []byte, size int, payload uint64) []byte {
 	var buf [8]byte
 	binary.LittleEndian.PutUint64(buf[:], payload)
 
-	return appendBCDAsNumber(dst, buf[:size])
+	return bcd.AppendBCDAsNumber(dst, buf[:size])
 }
 
 // appendUnpackASCII unpacks the 8 ASCII characters (7 bits each) packed in payload and appends them
@@ -163,7 +164,7 @@ func unpackBCD(size int, payload uint64, buffer ...[]byte) []byte {
 	var buf [8]byte
 	binary.LittleEndian.PutUint64(buf[:], payload)
 
-	return decodeBCDAsNumber(buf[:size], buffer...)
+	return bcd.DecodeBCDAsNumber(buf[:size], buffer...)
 }
 
 // packBytes packs up to 7 bytes in a uint64

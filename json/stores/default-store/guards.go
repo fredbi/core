@@ -17,24 +17,6 @@ const (
 
 // code assertions turned on
 
-func assertBCDOutCapacity(out []byte, l int) {
-	if cap(out) < l {
-		panic(fmt.Errorf("insufficient bytes in out slice. Wanted at least %d. Got %d: %w", l, cap(out), ErrStore))
-	}
-}
-
-func assertBCDDigit(ok bool, digit byte) {
-	if !ok {
-		panic(fmt.Errorf("invalid input numerical character: %c: %w", digit, ErrStore))
-	}
-}
-
-func assertBCDNibble(ok bool, nibble byte) {
-	if !ok {
-		panic(fmt.Errorf("invalid input BCD nibble: %X: %w", nibble, ErrStore))
-	}
-}
-
 func assertCompressDeflateError(err error) {
 	if err != nil {
 		panic(fmt.Errorf("internal compression error: %w", err))

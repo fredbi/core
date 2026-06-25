@@ -7,11 +7,12 @@ import (
 	"io"
 	"sync"
 
+	"github.com/fredbi/core/json/stores/internal/bcd"
 	"github.com/fredbi/core/swag/pools"
 )
 
 const (
-	maxTemporarySliceCapacity = maxInlineBytes * digitsPerByte
+	maxTemporarySliceCapacity = maxInlineBytes * bcd.DigitsPerByte
 )
 
 var (

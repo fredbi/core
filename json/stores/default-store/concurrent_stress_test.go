@@ -69,27 +69,23 @@ func TestConcurrentStoreStress(t *testing.T) {
 		if len(registry) == 0 {
 			return registered{}, false
 		}
-		return registry[rand.IntN(len(registry))], true
+		return registry[rand.IntN(len(registry))], true //nolint:gosec // G404: rand is okay for tests
 	}
 
 	var wg sync.WaitGroup
 
 	for range putters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range opsPerPutter {
-				sample := samples[rand.IntN(len(samples))]
+				sample := samples[rand.IntN(len(samples))] //nolint:gosec // G404: rand is okay for tests
 				h := s.PutValue(sample.v)
 				record(h, sample.want)
 			}
-		}()
+		})
 	}
 
 	for range getters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			var scratch []byte
 			for range opsPerGetter {
 				r, ok := pick()
@@ -108,12 +104,16 @@ func TestConcurrentStoreStress(t *testing.T) {
 						reread := stressString(s.Get(r.h))
 						report = fmt.Sprintf(
 							"handle=%#x\n want      =%q\n Get       =%q\n Append    =%q\n Get(retry)=%q",
-							uint64(r.h), r.want, got, gotAppend, reread,
+							uint64(r.h),
+							r.want,
+							got,
+							gotAppend,
+							reread,
 						)
 					})
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -128,6 +128,7 @@ type stressSample struct {
 	v    values.Value
 }
 
+//nolint:gosec // G404: rand is okay for tests
 func stressSamples(n int) []stressSample {
 	out := make([]stressSample, 0, n)
 	for i := range n {

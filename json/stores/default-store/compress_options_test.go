@@ -35,7 +35,12 @@ func TestOptions(t *testing.T) {
 		base := DefaultOptions()
 		derived := base.WithCompressionLevel(9)
 
-		assert.Equal(t, defaultCompressionLevel, base.resolved.compressionLevel, "the base must be unchanged")
+		assert.Equal(
+			t,
+			defaultCompressionLevel,
+			base.resolved.compressionLevel,
+			"the base must be unchanged",
+		)
 		assert.Equal(t, 9, derived.resolved.compressionLevel)
 	})
 }

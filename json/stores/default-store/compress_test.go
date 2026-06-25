@@ -12,7 +12,7 @@ import (
 // TestUncompressStringReader is a regression test: uncompressStringReader used to return the raw
 // compressed buffer instead of the inflating reader, so WriteTo emitted compressed bytes.
 func TestUncompressStringReader(t *testing.T) {
-	s := New() // compression enabled by default (threshold 128 bytes)
+	s := New()                                    // compression enabled by default (threshold 128 bytes)
 	original := strings.Repeat("abcdefghij ", 40) // ~440 bytes, compressible
 
 	h := s.putCompressedString([]byte(original))

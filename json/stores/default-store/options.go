@@ -27,6 +27,7 @@ type Options struct {
 // options is the resolved configuration embedded in a store.
 type options struct {
 	compressionOptions
+
 	enableCompression bool
 	minArenaSize      int
 }

@@ -74,6 +74,7 @@ type verifyHandle struct {
 
 type testHandlesMap struct {
 	sync.Mutex
+
 	handles []verifyHandle
 }
 

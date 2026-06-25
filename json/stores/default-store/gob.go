@@ -23,7 +23,8 @@ func (s *Store) UnmarshalBinary(data []byte) error {
 	var target encodableStore
 
 	decoder := gob.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(&target); err != nil {
+	err := decoder.Decode(&target)
+	if err != nil {
 		return err
 	}
 
@@ -53,7 +54,8 @@ func (o *options) UnmarshalBinary(data []byte) error {
 	var target encodableOptions
 
 	decoder := gob.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(&target); err != nil {
+	err := decoder.Decode(&target)
+	if err != nil {
 		return err
 	}
 
@@ -88,7 +90,8 @@ func (o *compressionOptions) UnmarshalBinary(data []byte) error {
 	var target encodableCompressionOptions
 
 	decoder := gob.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(&target); err != nil {
+	err := decoder.Decode(&target)
+	if err != nil {
 		return err
 	}
 
@@ -103,7 +106,8 @@ func gobEncode(source any) ([]byte, error) {
 	var out bytes.Buffer
 	encoder := gob.NewEncoder(&out)
 
-	if err := encoder.Encode(source); err != nil {
+	err := encoder.Encode(source)
+	if err != nil {
 		return nil, err
 	}
 

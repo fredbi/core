@@ -52,7 +52,12 @@ func putAndCheck(t *testing.T, s stores.Store, payloads []string) []stores.Handl
 
 		var v values.Value
 		v, scratch = s.AppendValueBytes(scratch[:0], h)
-		assert.Equal(t, p, string(v.Bytes()), "AppendValueBytes must round-trip a dict-compressed string")
+		assert.Equal(
+			t,
+			p,
+			string(v.Bytes()),
+			"AppendValueBytes must round-trip a dict-compressed string",
+		)
 	}
 
 	return handles
@@ -94,13 +99,23 @@ func TestCompressionDictSurvivesGob(t *testing.T) {
 
 	// the dictionary travelled with the arena: previously-compressed payloads still decode.
 	for i, h := range handles {
-		assert.Equal(t, payloads[i], loaded.Get(h).String(), "reloaded Store must decode old payloads")
+		assert.Equal(
+			t,
+			payloads[i],
+			loaded.Get(h).String(),
+			"reloaded Store must decode old payloads",
+		)
 	}
 
 	// cw was rebuilt on load: the reloaded Store can compress a fresh payload and read it back.
 	fresh := "the quick brown fox " + strings.Repeat("writes again ", 12)
 	h := loaded.PutValue(values.MakeStringValue(fresh))
-	assert.Equal(t, fresh, loaded.Get(h).String(), "reloaded Store must be able to compress and decode new payloads")
+	assert.Equal(
+		t,
+		fresh,
+		loaded.Get(h).String(),
+		"reloaded Store must be able to compress and decode new payloads",
+	)
 }
 
 // TestCompressionDictReleasedOnReset proves the recycle contract: Store.Reset restores the defaults,
@@ -135,5 +150,10 @@ func TestCompressionDictAliasesCaller(t *testing.T) {
 	dict := dictTestDict()
 	s := newDictStore(dict)
 
-	assert.Equal(t, &dict[0], &s.dict[0], "WithCompressionDict aliases the caller slice; it must not be mutated while the Store is alive")
+	assert.Equal(
+		t,
+		&dict[0],
+		&s.dict[0],
+		"WithCompressionDict aliases the caller slice; it must not be mutated while the Store is alive",
+	)
 }

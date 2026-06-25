@@ -10,8 +10,10 @@ import (
 // Handle distributed by a [Store], which corresponds to some [values.Value].
 type Handle uint64
 
-// HandleZero is the zero value of a [Handle]. It represents "no value" (an absent or unset value),
-// which is distinct from a JSON null: resolving it yields [values.UndefinedValue], not a null.
+// HandleZero is the zero value of a [Handle].
+//
+// It represents "no value" (an absent or unset value), which is distinct from a JSON null.
+// Resolving it yields [values.UndefinedValue], not a null.
 //
 // Reserving the zero value for absence means an uninitialized Handle is never mistaken for a
 // legitimate null. Use [Handle.IsZero] to test for it.
@@ -43,7 +45,9 @@ type Store interface {
 	// returns a string [Value].
 	//
 	// A value returned by Get owns its memory and may be kept, shared and (for stores that support it)
-	// read concurrently. For a zero-allocation alternative for transient values, see [Store.AppendValueBytes].
+	// read concurrently.
+	//
+	// For a zero-allocation alternative for transient values, see [Store.AppendValueBytes].
 	Get(Handle) values.Value
 
 	// AppendValueBytes is the allocation-free counterpart of [Store.Get], for transient values.
@@ -53,9 +57,10 @@ type Store interface {
 	// does not allocate.
 	//
 	// The returned value is copied into dst (caller-owned memory): unlike [Store.Get] it never aliases
-	// the Store, so it stays valid even after the Store is modified or recycled. It does alias dst, so
-	// it is valid only until the caller next writes to or discards dst. Use [Store.Get] for a value
-	// that must outlive its scratch buffer.
+	// the Store, so it stays valid even after the Store is modified or recycled.
+	//
+	// It does alias dst, so it is valid only until the caller next writes to or discards dst. Use [Store.Get] for a value
+	// that outlives its scratch buffer.
 	AppendValueBytes(dst []byte, h Handle) (values.Value, []byte)
 
 	// WriteTo writes the value pointed to by the [Handle] to a [writers.StoreWriter].
@@ -95,5 +100,7 @@ type Store interface {
 	Len() int
 
 	// Resettable means the [Store] knows how to reset its internal state so as to be reused.
+	//
+	// Reset marks the end of a [Store] lifecycle and no values stored are available afterwards.
 	types.Resettable
 }

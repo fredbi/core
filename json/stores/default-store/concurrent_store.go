@@ -5,11 +5,14 @@ import (
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores"
+	"github.com/fredbi/core/json/stores/internal/bcd"
 	"github.com/fredbi/core/json/stores/values"
 	"github.com/fredbi/core/json/writers"
 )
 
 // ConcurrentStore is a [stores.Store] just like [Store] and may be used concurrently.
+//
+// See also [Store]: The [ConcurrentStore] exposes identical behavior and lifecycle constraints.
 //
 // # Concurrency
 //
@@ -18,9 +21,10 @@ import (
 //
 // Although it is safe to use [store.WriteTo] concurrently, it should not be used that way, as the result is not deterministic.
 type ConcurrentStore struct {
-	rwx sync.RWMutex
 	*Store
-	_ struct{}
+
+	rwx sync.RWMutex
+	_   struct{}
 }
 
 var _ stores.Store = &ConcurrentStore{} // ConcurrentStore implements [stores.Store]
@@ -40,7 +44,7 @@ func (s *ConcurrentStore) Len() int {
 
 // Get a [values.Value] from a [stores.Handle].
 func (s *ConcurrentStore) Get(h stores.Handle) values.Value {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	switch header {
 	case headerNone:
@@ -84,7 +88,7 @@ func (s *ConcurrentStore) Get(h stores.Handle) values.Value {
 // AppendValueBytes is the allocation-free counterpart of [ConcurrentStore.Get]. See
 // [Store.AppendValueBytes] for semantics.
 func (s *ConcurrentStore) AppendValueBytes(dst []byte, h stores.Handle) (values.Value, []byte) {
-	header := uint8(h & headerMask) //nolint:gosec
+	header := uint8(h & headerMask)
 
 	switch header {
 	case headerNumber, headerString, headerCompressedString:
@@ -151,9 +155,9 @@ func (s *ConcurrentStore) PutValue(v values.Value) stores.Handle {
 }
 
 func (s *ConcurrentStore) putNumber(value []byte) stores.Handle {
-	nibbles, redeem := borrowBytesWithRedeem(nibbleSize(value))
+	nibbles, redeem := borrowBytesWithRedeem(bcd.NibbleSize(value))
 	defer redeem()
-	nibbles = encodeNumberAsBCD(value, nibbles)
+	nibbles = bcd.EncodeNumberAsBCD(value, nibbles)
 	if len(nibbles) <= maxInlineBytes {
 		return s.putInlinedNumber(nibbles)
 	}

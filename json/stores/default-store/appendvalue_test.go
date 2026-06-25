@@ -15,10 +15,13 @@ import (
 // every storage path (inlined number/string/ascii, large number/string, compressed string).
 func TestAppendValueBytesMatchesGet(t *testing.T) {
 	cases := map[string]token.T{
-		"bool":           token.MakeBoolean(true),
-		"small int":      token.MakeWithValue(token.Number, []byte("1234")),
-		"exponent num":   token.MakeWithValue(token.Number, []byte("3.8e+20")),
-		"large num":      token.MakeWithValue(token.Number, []byte("12345678901234567890.12345e-7")),
+		"bool":         token.MakeBoolean(true),
+		"small int":    token.MakeWithValue(token.Number, []byte("1234")),
+		"exponent num": token.MakeWithValue(token.Number, []byte("3.8e+20")),
+		"large num": token.MakeWithValue(
+			token.Number,
+			[]byte("12345678901234567890.12345e-7"),
+		),
 		"small string":   token.MakeWithValue(token.String, []byte("abcd")),
 		"ascii string":   token.MakeWithValue(token.String, []byte("abcdefgh")),
 		"medium string":  token.MakeWithValue(token.String, []byte("abcdefghij-klmnop")),
@@ -96,5 +99,10 @@ func TestAppendValueBytesIndependentOfStore(t *testing.T) {
 	}
 
 	// the previously extracted value is unaffected
-	assert.Equal(t, original, val.Bytes(), "AppendValueBytes value must be independent of the store")
+	assert.Equal(
+		t,
+		original,
+		val.Bytes(),
+		"AppendValueBytes value must be independent of the store",
+	)
 }

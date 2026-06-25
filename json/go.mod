@@ -1,6 +1,6 @@
 module github.com/fredbi/core/json
 
-go 1.24.2
+go 1.25.0
 
 replace (
 	github.com/fredbi/core/swag => ../swag
@@ -18,6 +18,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/go-openapi/testify/v2 v2.5.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
