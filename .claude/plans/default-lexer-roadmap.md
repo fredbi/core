@@ -13,7 +13,10 @@
 > (distilled, transferable). Detail: `2026-06-perf-and-paradigm.md` (pull-vs-push,
 > SWAR, standings, L-vs-VL baseline), `2026-06-codegen-asm-jit.md` (the four
 > roads to speed; asm/JIT/SIMD rejected for the lexer), `2026-06-go-openapi-v2-context.md`
-> (why this block is shaped as it is). See also memory `go-openapi-v2-programme`.
+> (why this block is shaped as it is), `2026-06-go127-generics-devirtualization.md`
+> (go1.27rc1 measured: does NOT devirtualize the generic policy calls — the ~5% is
+> structural; jsontext regressed 5–23% under the RC). See also memory
+> `go-openapi-v2-programme`.
 
 ## Legend
 
@@ -402,6 +405,11 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
     (`p.emit`) routes through the **generics dictionary (indirect call)** even
     for a concrete zero-size policy — Go does not devirtualize it. Controlled
     reuse A/B: citm/whitespace +5%, twitter +4%. Within the ~3–7% ceiling band.
+    **Confirmed go1.27rc1 does NOT fix this** (2026-06-25): identical inliner
+    output + byte-identical disassembly (still `CALL R12`/`CALL AX` at the emit
+    sites) + no benchmark improvement. The ~5% is structural across compiler
+    generations. Full measurement:
+    [2026-06-go127-generics-devirtualization.md](ramblings/2026-06-go127-generics-devirtualization.md).
   - **Verdict:** generics viable (correct, 0-alloc) at ~5% L cost from per-token
     dict dispatch. **DECIDED 2026-06-24 (Fred): accept the ~5%, land it with
     generics** (road a). Generator (road b) stays the escape hatch. Execution is

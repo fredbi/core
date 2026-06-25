@@ -1,0 +1,224 @@
+goos: linux
+goarch: amd64
+pkg: github.com/fredbi/core/json/benchmarks/lexers
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+                                                       │   go1.26.4    │              go1.27rc1               │
+                                                       │    sec/op     │    sec/op     vs base                │
+Lexers/ints/default-lexer/bytes-16                        517.0µ ±  4%    516.8µ ± 3%        ~ (p=0.796 n=10)
+Lexers/ints/default-lexer/pooled-16                       513.6µ ±  1%    515.2µ ± 1%        ~ (p=0.393 n=10)
+Lexers/ints/lab/bytes-16                                  492.5µ ±  1%    505.7µ ± 1%   +2.68% (p=0.000 n=10)
+Lexers/ints/default-lexer/tokens-16                       398.1µ ±  2%    437.9µ ± 6%   +9.98% (p=0.000 n=10)
+Lexers/ints/lab/tokens-16                                 409.7µ ±  2%    412.3µ ± 2%        ~ (p=0.579 n=10)
+Lexers/ints/lab/verbatim-tokens-16                        1.630m ±  1%    1.671m ± 1%   +2.46% (p=0.000 n=10)
+Lexers/ints/default-lexer/reset-16                        514.4µ ±  1%    533.9µ ± 1%   +3.78% (p=0.000 n=10)
+Lexers/ints/default-lexer/verbatim-16                     2.472m ± 38%    2.076m ± 2%  -16.01% (p=0.000 n=10)
+Lexers/ints/default-lexer/verbatim-reset-16               2.305m ±  3%    2.057m ± 2%  -10.80% (p=0.000 n=10)
+Lexers/ints/jsontext/bytes-16                             347.1µ ± 11%    397.5µ ± 3%  +14.50% (p=0.001 n=10)
+Lexers/strings_plain/default-lexer/bytes-16               282.8µ ±  3%    284.6µ ± 1%        ~ (p=0.912 n=10)
+Lexers/strings_plain/default-lexer/pooled-16              279.0µ ±  1%    284.0µ ± 1%   +1.77% (p=0.000 n=10)
+Lexers/strings_plain/lab/bytes-16                         279.7µ ±  3%    289.2µ ± 4%   +3.40% (p=0.003 n=10)
+Lexers/strings_plain/default-lexer/tokens-16              257.5µ ±  1%    255.2µ ± 3%        ~ (p=0.529 n=10)
+Lexers/strings_plain/lab/tokens-16                        257.8µ ±  1%    256.9µ ± 2%        ~ (p=0.529 n=10)
+Lexers/strings_plain/lab/verbatim-tokens-16               771.7µ ±  1%    789.9µ ± 2%   +2.37% (p=0.001 n=10)
+Lexers/strings_plain/default-lexer/reset-16               280.5µ ±  2%    283.1µ ± 3%        ~ (p=0.075 n=10)
+Lexers/strings_plain/default-lexer/verbatim-16           1022.1µ ±  2%    921.3µ ± 2%   -9.86% (p=0.000 n=10)
+Lexers/strings_plain/default-lexer/verbatim-reset-16      999.1µ ±  1%    922.8µ ± 1%   -7.64% (p=0.000 n=10)
+Lexers/strings_plain/jsontext/bytes-16                    189.6µ ±  2%    231.7µ ± 1%  +22.22% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/bytes-16             566.3µ ±  2%    609.3µ ± 3%   +7.59% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/pooled-16            565.6µ ±  3%    601.9µ ± 1%   +6.42% (p=0.000 n=10)
+Lexers/canada_geometry/lab/bytes-16                       605.2µ ±  4%    565.6µ ± 2%   -6.54% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/tokens-16            448.5µ ±  5%    493.7µ ± 2%  +10.07% (p=0.000 n=10)
+Lexers/canada_geometry/lab/tokens-16                      479.9µ ±  2%    447.4µ ± 1%   -6.76% (p=0.000 n=10)
+Lexers/canada_geometry/lab/verbatim-tokens-16             1.394m ±  1%    1.384m ± 0%   -0.76% (p=0.035 n=10)
+Lexers/canada_geometry/default-lexer/reset-16             569.3µ ±  7%    601.2µ ± 1%   +5.60% (p=0.023 n=10)
+Lexers/canada_geometry/default-lexer/verbatim-16          1.823m ±  1%    1.668m ± 1%   -8.48% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/verbatim-reset-16    1.801m ±  1%    1.672m ± 1%   -7.17% (p=0.000 n=10)
+Lexers/canada_geometry/jsontext/bytes-16                  464.5µ ±  1%    496.0µ ± 1%   +6.79% (p=0.000 n=10)
+Lexers/citm_catalog/default-lexer/bytes-16                2.778m ±  2%    2.745m ± 1%        ~ (p=0.315 n=10)
+Lexers/citm_catalog/default-lexer/pooled-16               2.760m ±  1%    2.743m ± 1%        ~ (p=0.075 n=10)
+Lexers/citm_catalog/lab/bytes-16                          2.718m ±  1%    2.909m ± 3%   +7.02% (p=0.000 n=10)
+Lexers/citm_catalog/default-lexer/tokens-16               1.962m ±  2%    2.034m ± 2%   +3.68% (p=0.000 n=10)
+Lexers/citm_catalog/lab/tokens-16                         1.860m ±  1%    1.852m ± 1%        ~ (p=0.393 n=10)
+Lexers/citm_catalog/lab/verbatim-tokens-16                4.619m ±  2%    4.726m ± 1%   +2.31% (p=0.001 n=10)
+Lexers/citm_catalog/default-lexer/reset-16                2.746m ±  1%    2.751m ± 2%        ~ (p=0.393 n=10)
+Lexers/citm_catalog/default-lexer/verbatim-16             7.661m ±  2%    7.175m ± 1%   -6.35% (p=0.000 n=10)
+Lexers/citm_catalog/default-lexer/verbatim-reset-16       7.718m ±  1%    7.143m ± 1%   -7.45% (p=0.000 n=10)
+Lexers/citm_catalog/jsontext/bytes-16                     1.561m ±  2%    1.926m ± 2%  +23.38% (p=0.000 n=10)
+Lexers/twitter_status/default-lexer/bytes-16              974.1µ ±  1%   1008.1µ ± 5%   +3.49% (p=0.001 n=10)
+Lexers/twitter_status/default-lexer/pooled-16             975.6µ ±  1%    975.7µ ± 3%        ~ (p=0.796 n=10)
+Lexers/twitter_status/lab/bytes-16                        987.7µ ±  6%   1015.0µ ± 1%        ~ (p=0.105 n=10)
+Lexers/twitter_status/default-lexer/tokens-16             769.5µ ±  2%    782.7µ ± 3%   +1.70% (p=0.019 n=10)
+Lexers/twitter_status/lab/tokens-16                       748.0µ ±  2%    753.1µ ± 5%        ~ (p=0.089 n=10)
+Lexers/twitter_status/lab/verbatim-tokens-16              1.910m ±  4%    1.954m ± 1%        ~ (p=0.123 n=10)
+Lexers/twitter_status/default-lexer/reset-16             1016.6µ ±  2%    975.5µ ± 2%   -4.05% (p=0.000 n=10)
+Lexers/twitter_status/default-lexer/verbatim-16           2.920m ±  4%    2.594m ± 1%  -11.17% (p=0.000 n=10)
+Lexers/twitter_status/default-lexer/verbatim-reset-16     2.832m ±  2%    2.611m ± 2%   -7.81% (p=0.000 n=10)
+Lexers/twitter_status/jsontext/bytes-16                   1.035m ±  3%    1.092m ± 2%   +5.43% (p=0.000 n=10)
+geomean                                                   952.5µ          957.7µ        +0.54%
+
+                                                       │    go1.26.4    │              go1.27rc1               │
+                                                       │      B/s       │     B/s       vs base                │
+Lexers/ints/default-lexer/bytes-16                        483.6Mi ±  4%   483.8Mi ± 3%        ~ (p=0.796 n=10)
+Lexers/ints/default-lexer/pooled-16                       486.7Mi ±  1%   485.3Mi ± 1%        ~ (p=0.393 n=10)
+Lexers/ints/lab/bytes-16                                  507.6Mi ±  1%   494.4Mi ± 1%   -2.61% (p=0.000 n=10)
+Lexers/ints/default-lexer/tokens-16                       627.9Mi ±  2%   570.9Mi ± 6%   -9.07% (p=0.000 n=10)
+Lexers/ints/lab/tokens-16                                 610.3Mi ±  2%   606.4Mi ± 2%        ~ (p=0.579 n=10)
+Lexers/ints/lab/verbatim-tokens-16                        153.3Mi ±  1%   149.7Mi ± 1%   -2.40% (p=0.000 n=10)
+Lexers/ints/default-lexer/reset-16                        486.0Mi ±  1%   468.3Mi ± 1%   -3.64% (p=0.000 n=10)
+Lexers/ints/default-lexer/verbatim-16                     101.4Mi ± 28%   120.4Mi ± 2%  +18.80% (p=0.000 n=10)
+Lexers/ints/default-lexer/verbatim-reset-16               108.4Mi ±  3%   121.6Mi ± 2%  +12.11% (p=0.000 n=10)
+Lexers/ints/jsontext/bytes-16                             720.2Mi ± 10%   629.0Mi ± 3%  -12.66% (p=0.001 n=10)
+Lexers/strings_plain/default-lexer/bytes-16               884.2Mi ±  3%   878.5Mi ± 1%        ~ (p=0.912 n=10)
+Lexers/strings_plain/default-lexer/pooled-16              896.0Mi ±  1%   880.3Mi ± 1%   -1.74% (p=0.000 n=10)
+Lexers/strings_plain/lab/bytes-16                         893.8Mi ±  3%   864.4Mi ± 4%   -3.28% (p=0.003 n=10)
+Lexers/strings_plain/default-lexer/tokens-16              971.1Mi ±  1%   979.5Mi ± 3%        ~ (p=0.529 n=10)
+Lexers/strings_plain/lab/tokens-16                        969.8Mi ±  1%   973.1Mi ± 2%        ~ (p=0.529 n=10)
+Lexers/strings_plain/lab/verbatim-tokens-16               324.0Mi ±  1%   316.5Mi ± 2%   -2.31% (p=0.001 n=10)
+Lexers/strings_plain/default-lexer/reset-16               891.3Mi ±  2%   883.1Mi ± 3%        ~ (p=0.075 n=10)
+Lexers/strings_plain/default-lexer/verbatim-16            244.6Mi ±  2%   271.4Mi ± 2%  +10.94% (p=0.000 n=10)
+Lexers/strings_plain/default-lexer/verbatim-reset-16      250.2Mi ±  1%   270.9Mi ± 1%   +8.27% (p=0.000 n=10)
+Lexers/strings_plain/jsontext/bytes-16                    1.288Gi ±  2%   1.054Gi ± 1%  -18.18% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/bytes-16             455.4Mi ±  2%   423.2Mi ± 3%   -7.06% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/pooled-16            455.9Mi ±  2%   428.4Mi ± 1%   -6.03% (p=0.000 n=10)
+Lexers/canada_geometry/lab/bytes-16                       426.1Mi ±  3%   455.9Mi ± 2%   +6.99% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/tokens-16            574.9Mi ±  4%   522.3Mi ± 2%   -9.15% (p=0.000 n=10)
+Lexers/canada_geometry/lab/tokens-16                      537.4Mi ±  2%   576.3Mi ± 2%   +7.25% (p=0.000 n=10)
+Lexers/canada_geometry/lab/verbatim-tokens-16             184.9Mi ±  1%   186.4Mi ± 0%   +0.76% (p=0.035 n=10)
+Lexers/canada_geometry/default-lexer/reset-16             453.0Mi ±  7%   429.0Mi ± 1%   -5.30% (p=0.023 n=10)
+Lexers/canada_geometry/default-lexer/verbatim-16          141.5Mi ±  1%   154.6Mi ± 1%   +9.27% (p=0.000 n=10)
+Lexers/canada_geometry/default-lexer/verbatim-reset-16    143.2Mi ±  1%   154.2Mi ± 1%   +7.72% (p=0.000 n=10)
+Lexers/canada_geometry/jsontext/bytes-16                  555.2Mi ±  1%   519.9Mi ± 1%   -6.36% (p=0.000 n=10)
+Lexers/citm_catalog/default-lexer/bytes-16                593.0Mi ±  2%   600.1Mi ± 1%        ~ (p=0.315 n=10)
+Lexers/citm_catalog/default-lexer/pooled-16               596.9Mi ±  1%   600.6Mi ± 1%        ~ (p=0.075 n=10)
+Lexers/citm_catalog/lab/bytes-16                          606.0Mi ±  1%   566.2Mi ± 3%   -6.56% (p=0.000 n=10)
+Lexers/citm_catalog/default-lexer/tokens-16               839.4Mi ±  2%   809.6Mi ± 2%   -3.55% (p=0.000 n=10)
+Lexers/citm_catalog/lab/tokens-16                         885.7Mi ±  1%   889.3Mi ± 1%        ~ (p=0.393 n=10)
+Lexers/citm_catalog/lab/verbatim-tokens-16                356.6Mi ±  2%   348.6Mi ± 1%   -2.26% (p=0.001 n=10)
+Lexers/citm_catalog/default-lexer/reset-16                599.9Mi ±  1%   598.7Mi ± 2%        ~ (p=0.393 n=10)
+Lexers/citm_catalog/default-lexer/verbatim-16             215.0Mi ±  2%   229.6Mi ± 1%   +6.78% (p=0.000 n=10)
+Lexers/citm_catalog/default-lexer/verbatim-reset-16       213.4Mi ±  1%   230.6Mi ± 1%   +8.05% (p=0.000 n=10)
+Lexers/citm_catalog/jsontext/bytes-16                    1055.4Mi ±  2%   855.4Mi ± 2%  -18.95% (p=0.000 n=10)
+Lexers/twitter_status/default-lexer/bytes-16              618.3Mi ±  1%   597.5Mi ± 4%   -3.37% (p=0.001 n=10)
+Lexers/twitter_status/default-lexer/pooled-16             617.3Mi ±  1%   617.3Mi ± 3%        ~ (p=0.796 n=10)
+Lexers/twitter_status/lab/bytes-16                        609.9Mi ±  6%   593.4Mi ± 1%        ~ (p=0.105 n=10)
+Lexers/twitter_status/default-lexer/tokens-16             782.6Mi ±  2%   769.5Mi ± 2%   -1.68% (p=0.019 n=10)
+Lexers/twitter_status/lab/tokens-16                       805.2Mi ±  2%   799.7Mi ± 4%        ~ (p=0.089 n=10)
+Lexers/twitter_status/lab/verbatim-tokens-16              315.3Mi ±  4%   308.2Mi ± 1%        ~ (p=0.123 n=10)
+Lexers/twitter_status/default-lexer/reset-16              592.4Mi ±  2%   617.4Mi ± 2%   +4.21% (p=0.000 n=10)
+Lexers/twitter_status/default-lexer/verbatim-16           206.3Mi ±  4%   232.2Mi ± 1%  +12.57% (p=0.000 n=10)
+Lexers/twitter_status/default-lexer/verbatim-reset-16     212.6Mi ±  2%   230.7Mi ± 2%   +8.48% (p=0.000 n=10)
+Lexers/twitter_status/jsontext/bytes-16                   581.7Mi ±  3%   551.7Mi ± 2%   -5.15% (p=0.000 n=10)
+geomean                                                   459.1Mi         456.6Mi        -0.55%
+
+                                                       │    go1.26.4     │                 go1.27rc1                  │
+                                                       │      B/op       │     B/op       vs base                     │
+Lexers/ints/default-lexer/bytes-16                         328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/pooled-16                        1.000 ±   ?       1.000 ±   ?         ~ (p=1.000 n=10)
+Lexers/ints/lab/bytes-16                                   328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/tokens-16                        328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/lab/tokens-16                                  328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/lab/verbatim-tokens-16                         336.0 ±  0%       336.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/reset-16                         0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/verbatim-16                      336.0 ±  0%       336.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/verbatim-reset-16                0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/ints/jsontext/bytes-16                              376.0 ±  0%       376.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/bytes-16                328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/pooled-16               0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/lab/bytes-16                          328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/tokens-16               328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/lab/tokens-16                         328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/lab/verbatim-tokens-16                336.0 ±  0%       336.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/reset-16                0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/verbatim-16             336.0 ±  0%       336.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/verbatim-reset-16       0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/jsontext/bytes-16                     376.0 ±  0%       376.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/bytes-16              328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/pooled-16             1.000 ±  0%       1.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/lab/bytes-16                        328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/tokens-16             328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/lab/tokens-16                       328.0 ±  0%       328.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/lab/verbatim-tokens-16              336.0 ±  0%       336.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/reset-16              0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/verbatim-16           336.0 ±  0%       336.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/verbatim-reset-16     0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/jsontext/bytes-16                 1.125Ki ±  0%     1.125Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/bytes-16                 424.0 ±  0%       424.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/pooled-16                6.000 ± 17%       6.000 ± 17%         ~ (p=0.420 n=10)
+Lexers/citm_catalog/lab/bytes-16                           424.0 ±  0%       424.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/tokens-16                424.0 ±  0%       424.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/lab/tokens-16                          424.0 ±  0%       424.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/lab/verbatim-tokens-16                 432.0 ±  0%       432.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/reset-16                 0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/verbatim-16              488.0 ±  0%       488.0 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/verbatim-reset-16        1.000 ±  0%       0.000 ±  0%  -100.00% (p=0.000 n=10)
+Lexers/citm_catalog/jsontext/bytes-16                    29.94Ki ±  0%     29.94Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/bytes-16             1.305Ki ±  0%     1.305Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/pooled-16              2.500 ± 20%       2.500 ± 60%         ~ (p=0.779 n=10)
+Lexers/twitter_status/lab/bytes-16                       1.305Ki ±  0%     1.305Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/tokens-16            1.305Ki ±  0%     1.305Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/lab/tokens-16                      1.305Ki ±  0%     1.305Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/lab/verbatim-tokens-16             1.312Ki ±  0%     1.312Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/reset-16               0.000 ±  0%       0.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/verbatim-16          1.367Ki ±  0%     1.367Ki ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/verbatim-reset-16      2.000 ±  0%       2.000 ±  0%         ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/jsontext/bytes-16                  9.359Ki ±  0%     9.359Ki ±  0%         ~ (p=1.000 n=10) ¹
+geomean                                                                ²                  ?                       ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
+
+                                                       │   go1.26.4   │              go1.27rc1              │
+                                                       │  allocs/op   │ allocs/op   vs base                 │
+Lexers/ints/default-lexer/bytes-16                       2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/pooled-16                      0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/lab/bytes-16                                 2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/tokens-16                      2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/lab/tokens-16                                2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/lab/verbatim-tokens-16                       3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/reset-16                       0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/verbatim-16                    3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/default-lexer/verbatim-reset-16              0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/ints/jsontext/bytes-16                            3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/bytes-16              2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/pooled-16             0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/lab/bytes-16                        2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/tokens-16             2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/lab/tokens-16                       2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/lab/verbatim-tokens-16              3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/reset-16              0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/verbatim-16           3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/default-lexer/verbatim-reset-16     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/strings_plain/jsontext/bytes-16                   3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/bytes-16            2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/pooled-16           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/lab/bytes-16                      2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/tokens-16           2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/lab/tokens-16                     2.000 ± 0%     2.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/lab/verbatim-tokens-16            3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/reset-16            0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/verbatim-16         3.000 ± 0%     3.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/default-lexer/verbatim-reset-16   0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/canada_geometry/jsontext/bytes-16                 26.00 ± 0%     26.00 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/bytes-16               4.000 ± 0%     4.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/pooled-16              0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/lab/bytes-16                         4.000 ± 0%     4.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/tokens-16              4.000 ± 0%     4.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/lab/tokens-16                        4.000 ± 0%     4.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/lab/verbatim-tokens-16               5.000 ± 0%     5.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/reset-16               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/verbatim-16            8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/default-lexer/verbatim-reset-16      0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/citm_catalog/jsontext/bytes-16                    262.0 ± 0%     262.0 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/bytes-16             8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/pooled-16            0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/lab/bytes-16                       8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/tokens-16            8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/lab/tokens-16                      8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/lab/verbatim-tokens-16             9.000 ± 0%     9.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/reset-16             0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/verbatim-16          12.00 ± 0%     12.00 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/default-lexer/verbatim-reset-16    0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+Lexers/twitter_status/jsontext/bytes-16                  83.00 ± 0%     83.00 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                                                             ²               +0.00%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
