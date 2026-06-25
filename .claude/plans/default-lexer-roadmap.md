@@ -1,9 +1,12 @@
 # default-lexer roadmap
 
-> Status: **active** — Phases 0 & 1 complete; first R&D pass complete; L/VL
-> unification is the next major stream (paused by request 2026-06-24).
+> Status: **active** — Phases 0, 1 & 2 complete; first R&D pass complete. The
+> **L/VL unification (Phase 2) is DONE** (promoted to production `8a61c31`, on
+> branch `exploration`). Remaining work is **Phase 3 (semantic features)** and
+> **Phase 4 (performance polish)**, plus downstream-consumer migration and
+> housekeeping — see **§0 What's left** for the short list.
 > Scope: `json/lexers/default-lexer` (+ shared `json/lexers`, `json/lexers/token`, `json/lexers/error-codes`).
-> Last updated: 2026-06-24
+> Last updated: 2026-06-25
 >
 > **Companion research** (the "why" behind the decisions below) lives in
 > `.claude/plans/ramblings/`. Start with `2026-06-conclusions-fast-go-lexing.md`
@@ -20,6 +23,50 @@
 - 🔬 needs design decision (see "Open design decisions")
 - 💭 stretch / far-out
 - ❌ dropped / out of scope
+
+---
+
+## 0. What's left (snapshot 2026-06-25)
+
+Phases 0–2 are done: conformance + benchmarks + security nets, the full
+interface/API surface, and the **L/VL unification** (two generic cores, four hand
+loops gone, VL fast + reuse-safe, public API unchanged). What remains, roughly in
+priority order:
+
+**A. Correctness / consumers (do before calling the block "shippable")**
+- ⏳ **Downstream separator migration (from 1.2).** `WithElideSeparator` defaults
+  ON for `L`; `json/nodes/light`, `json/constrained`, `json/dynamic` still assume
+  `,`/`:` tokens. They *compile* against the unified lexer but their **tests fail**
+  until migrated to the elided model (the "revisit node.go deeply" work). Biggest
+  real debt. **Outside default-lexer itself**, but blocks its adoption.
+- ⏳ **Housekeeping: lint pass** (deferred 2026-06-25). Package isn't clean under
+  `default: all`; mostly pre-existing reference debt (`mnd` magic numbers, `gosec`
+  G115, a `NeVerbatimWithBytes` godoc typo, field/func ordering). Likely a mix of
+  small code fixes + a couple of `.golangci.yml` linter-disable decisions (Fred is
+  already curating the config). Non-blocking.
+
+**B. Semantic features (Phase 3) — net-new capability**
+- ⏳ **3.1 Optional input normalization.** Make `\u`/UTF-8 escape processing
+  toggleable (today `\u` is always decoded/canonicalized; §1 wants it optional).
+- ⏳ **3.3 NDJSON.** Line-delimited top-level values, mainly for streaming readers.
+
+**C. Performance polish (Phase 4) — optional, diminishing returns**
+- ⏳ **4.1 Long-string unescape / memcopy.** The one remaining L gap vs jsontext:
+  `strings_plain` ~82% of jsontext — needs a faster unescape slow path (SWAR the
+  clean runs). Also streaming zero-copy + rotating-buffer knob.
+- ⏳ **Streaming push fast-path (from 3b.8).** `Tokens()` uses the native push core
+  only in whole-buffer mode; streaming `Tokens()` falls back to the (unified) pull
+  loop. Correct and fast already; a native streaming push is a further optimization.
+- ⏳ **VL pooling (from 3b.5).** Deferred to the unification, now unblocked: VL is
+  `struct{ *L }`, so a `BorrowVerbatimLexer*` over the redeemable pool is
+  straightforward. Small, mechanical.
+- 💭 **4.4 SIMD variant.** Separate optional `simd-lexer` module behind the
+  interface; far-out, runtime-usage only (`GOEXPERIMENT=simd`).
+
+**Recommended next:** the **downstream separator migration (A)** — it's the only
+thing standing between the unified lexer and real use by the node/dynamic layers,
+and it unblocks the rest of the v2 programme. Everything in B/C is additive and
+can follow at leisure.
 
 ---
 
@@ -132,7 +179,10 @@ supersede or reframe items below. Recorded here so the phase list stays honest.
      double-/foreign-redeem and leaks; tests assert `pools.AssertNoLeaks` via
      `t.Cleanup` and run green in both build modes. Exported `pools.DebugBuild`
      for both-mode tests. **VL pooling deferred to the L/VL unification.**
-6. **L/VL unification is now the priority lever — and it's a perf play too.**
+6. **L/VL unification was the priority lever — and a perf play too. ✅ DONE
+   (2026-06-25, road a / generics).** Outcome: VL inherited L's fast paths
+   (~2–2.4× faster), the ~750-line duplication is gone (~1,900 lines net removed),
+   L stayed within its ~5–7% accepted band. Full record in 2.1 (stages 1–5).
    First recorded L-vs-VL baseline (06-24): **VL is 3–8× slower than L**, because
    VL never received any of L's fast paths (still the old byte-by-byte loop +
    per-token look-ahead). Generating/parameterizing both from one optimized source
@@ -149,15 +199,16 @@ supersede or reframe items below. Recorded here so the phase list stays honest.
    "canonicalization" as the shortest correct decimal form — is also dropped from
    the lexer for the same reason: the lexer does not evaluate numbers.) Phase 3.2
    is therefore removed.
-8. **Streaming on all fast paths is still owed.** Native push `Tokens()` is
-   whole-buffer only today; streams fall back to the `NextToken` loop. Functionally
-   complete, but the fast push path doesn't yet cover streams (incl. the
-   sliding-window-reload cost question). Folded into the unification work so we
-   don't hand-write a third main loop.
+8. **Streaming on all fast paths — partly resolved.** After unification, streaming
+   is served by the **unified pull core** (`scanTokenG`) for both `NextToken` and
+   (via fallback) `Tokens()` — so there is no third hand-written loop and streaming
+   is correct + fast. What's still owed is the *optional* native **push** fast-path
+   for streaming `Tokens()` (whole-buffer push exists; streaming push, incl. the
+   sliding-window-reload cost question, does not). Tracked in §0.C, not a blocker.
 
 ## 4. Phased roadmap
 
-### Phase 0 — Baseline & safety nets  🚧
+### Phase 0 — Baseline & safety nets  ✅
 
 Protect and measure before changing anything.
 
@@ -271,9 +322,12 @@ Additive, low-risk; done before the refactor so the core targets the final shape
   regression for no gain → deferred to Phase 4 with a fast happy-path scanner
   (IndexByte/SIMD). Streaming zero-copy + a rotating-buffer knob also Phase 4+.
 
-### Phase 2 — Consolidation: de-duplicate L / VL  🚧
+### Phase 2 — Consolidation: de-duplicate L / VL  ✅
 
 Risky remodel, executed with Phase 0 net in place and Phase 1 shape known.
+**Complete (2026-06-25):** L and VL run on two generic cores; ~1,900 lines of
+duplication deleted; VL is fast and reuse-safe; public API unchanged. See 2.1
+(stages 1–5) below.
 
 #### Profiling insights (2026-06-22, `lexers/profile_test.go`) — inform the design
 
@@ -319,12 +373,11 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
   zero-copy strings belong in it (they couldn't pay off in the pull design).
   Caveats to close when productionizing: bytes+streaming, full structural error
   detection/conformance, line/col, VL blanks, surrogate pairs, pooling.
-- 🚧 **2.0b Native push `Tokens()` landed (`0858b3f`+).** The spike graduated:
-  `scanPush` backs `Tokens()` (whole-buffer fast path), carrying the inline-int
-  fast path and reusing the value scanners. Token+error stream proven identical
-  to `NextToken` over all 318 fixtures. **But it is a second hand-written main
-  loop** — the iterator speedup was bought ahead of the dedup. The dedup (2.1/2.2)
-  is still open, and now also owes a *streaming* push path (see 3b.8).
+- ✅ **2.0b Native push `Tokens()` landed (`0858b3f`+), later subsumed by 2.1.**
+  The spike graduated: `scanPush` backed `Tokens()` (whole-buffer fast path),
+  proven identical to `NextToken` over all 318 fixtures. It was a *second*
+  hand-written loop — since **replaced** by the generic push core `scanPushG`
+  (2.1 stage 1); `scanPush` was deleted in stages 3–4.
 - ✅ **2.1a Sandbox stood up (`23a1649`).** Package
   `json/lexers/default-lexer/lab` is a verbatim copy of the lexer (package
   `lexer` → `lab`; `lab.L` is "L2"), kept side by side with the reference so the
@@ -384,9 +437,14 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
     restored the VL maxValueBytes-on-blanks circuit breaker (a production-only
     behavior lab equivalence didn't cover) in scanTokenG, mirrored to lab. `lab/`
     kept for future experiments; `P`/`NewPush` prototype untouched.
-  - ⏳ **Follow-up (non-blocking)**: inherited lint cleanup (dogsled,
-    gochecknoglobals, gocyclo on consumeNumberStreaming, `NeVerbatimWithBytes`
-    godoc typo, embedded-field order) — pre-existing in both reference and lab.
+  - ✅ **Post-promotion: Tokens()/NextToken() interleaving (`2a681f6`).** The two
+    APIs share all state on the struct (the push core writes the cursor back on
+    every exit path), so a caller can range over `Tokens()`, break, and continue
+    with `NextToken()` (or the reverse) — documented on `L.Tokens`, gated by
+    `handoff_test.go` for both L and VL. A clean property the old VL look-ahead
+    could not have offered.
+  - ⏳ **Follow-up (non-blocking)**: lint cleanup (deferred again 2026-06-25; see
+    §0.A) and VL pooling (§0.C, now unblocked).
   - Historical context (the head-to-head framing that led to choosing road a):
 - 🔬 **2.1-orig Unify L/VL — the two roads weighed (road a chosen).**
   Reframed by the R&D pass: this is no longer only a maintainability play. The
@@ -407,9 +465,13 @@ easyjson on both speed and allocations** (the spike confirms this on every workl
   Spike one value scanner (e.g. the number path) under each, compare real code +
   numbers, then commit. Gate: conformance- and benchmark-neutral for L; VL must
   improve and stay conformant.
-- ⏳ **2.2 Migrate** `L` then `VL` onto the chosen shared core; native push for
-  **both bytes and streams**; keep all tests green (Phase 0 suite is the gate).
-  Re-run benchmarks; no L regression, VL must close most of the 3–8× gap.
+- ✅ **2.2 Migrate `L` and `VL` onto the shared core — DONE via 2.1 stages 1–5.**
+  Both lex via the generic pull core (`scanTokenG`, bytes + streaming) and the
+  generic push core (`scanPushG`, whole-buffer `Tokens()`). Phase 0 suite green
+  throughout; L within its ~5–7% accepted band, VL ~2–2.4× faster (gap closed to
+  the genuine cost of fidelity). **One remainder:** a native *streaming* push
+  fast-path for `Tokens()` (streaming `Tokens()` uses the unified pull loop today)
+  — moved to §0.C as an optional optimization, not a correctness gap.
 
 ### Phase 3 — Semantic features  ⏳
 
@@ -463,24 +525,40 @@ Resolved (kept for the record):
    only in whole-buffer mode; constraint is buffer stability, not ownership.
 7. ✅ **Numbers/canonicalization (3.2):** dropped — out of lexer scope (3b.7).
 
+Resolved (continued):
+
+8. ✅ **L/VL unification road (2.1):** chose **generics with a concrete policy
+   type** (road a), accepting the ~5% per-token dict-dispatch on L. Landed and
+   promoted to production (`8a61c31`). The vendored `refactor/inline` generator
+   (road b) remains the escape hatch if the 5% ever bites.
+
 Still open:
 
-8. 🔬 **L/VL unification road (2.1):** generics-with-concrete-policy-type vs
-   vendored `refactor/inline` generator. Decide by head-to-head spike — on
-   maintainability + VL speed, not L speed (which is at its ~3–7% ceiling).
 9. 🔬 **SIMD packaging (4.4):** separate module + build tags; pure-Go fallback;
    relationship to `GOEXPERIMENT=simd`. Runtime-usage only; far-out.
+10. 🔬 **Streaming push fast-path (§0.C):** worth the sliding-window-reload
+    complexity, or is the unified pull loop good enough for streaming `Tokens()`?
 
 ---
 
-## 6. Next step (when the unification stream resumes)
+## 6. Next step
 
-**Phase 2.1 spike:** prototype one value scanner (the number path) under both
-unification roads — (a) generics with a concrete policy type, (b) vendored
-`refactor/inline` generator — and compare real code + benchmarks before
-committing. Deliver as a reviewable plan doc first (Fred's preferred rhythm),
-then validate with the spike. Success = same/better L throughput, a much faster
-VL (close most of the 3–8× gap), and the ~750-line L/VL duplication gone, with
-native push covering **both** bytes and streams.
+The unification stream is **complete** (Phase 2 done, promoted `8a61c31`). The
+full remaining backlog is in **§0 What's left**. Recommended order:
 
-*(Stream paused 2026-06-24 by request; pick up here.)*
+1. **Downstream separator migration (§0.A).** Migrate `json/nodes/light`,
+   `json/constrained`, `json/dynamic` off the assumption that `,`/`:` are emitted
+   (they break under the `WithElideSeparator` default). This is the only thing
+   gating real adoption of the unified lexer by the higher layers; deliver as a
+   reviewable plan first (Fred's rhythm), then migrate package by package with
+   their test suites as the gate.
+2. **Housekeeping (§0.A):** the deferred lint pass + VL pooling — small, do
+   opportunistically.
+3. **Phase 3 features (§0.B):** optional `\u` normalization, then NDJSON — when
+   the consumers need them.
+4. **Phase 4 polish (§0.C):** long-string unescape, streaming push, SIMD — perf,
+   diminishing returns, pick up only if a workload demands it.
+
+**Branch state:** all unification work is on `exploration` (off master `1ac8025`):
+stages 3–4 `47b2aa7`, promotion `8a61c31`, plan tracking `3718d64`/`9fce335`,
+handoff `2a681f6`. Ready to review / merge to master.
