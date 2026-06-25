@@ -9,6 +9,7 @@ import (
 
 	"github.com/fredbi/core/json/stores/internal/bcd"
 	"github.com/fredbi/core/swag/pools"
+	"github.com/fredbi/core/swag/pools/shared"
 )
 
 const (
@@ -16,9 +17,8 @@ const (
 )
 
 var (
-	poolOfStores       = pools.New[Store]()
-	poolOfBytesBuffers = pools.NewRedeemable[bytes.Buffer]()
-	poolOfBytes        = pools.NewPoolSlice[byte](
+	poolOfStores = pools.New[Store]()
+	poolOfBytes  = pools.NewPoolSlice[byte](
 		pools.WithMinimumCapacity(maxTemporarySliceCapacity),
 	)
 	poolOfReaders = pools.NewRedeemable[tranparentReader]()
@@ -26,8 +26,9 @@ var (
 
 // BorrowStore borrows a new or recycled [Store] from the pool.
 //
-// The borrowed Store starts from the defaults ([Store.Reset] is applied on borrow). Pass an
-// [Options] to configure it; the compression writer rebuilds lazily from the (level, dict) on the
+// The borrowed Store starts from the defaults ([Store.Reset] is applied on borrow).
+//
+// Pass an [Options] to configure it; the compression writer rebuilds lazily from the (level, dict) on the
 // first compression, so re-injecting a caller-owned dictionary each generation is allocation-free.
 func BorrowStore(opts ...Options) *Store {
 	s := poolOfStores.Borrow()
@@ -42,14 +43,15 @@ func BorrowStore(opts ...Options) *Store {
 //
 // The caller must ensure the Store is no longer needed: any [values.Value] previously returned by
 // [Store.Get] may alias the Store's arena and becomes invalid once the Store is recycled (see the
-// "Lifecycle and value aliasing" note on [Store]). Only redeem a Store between whole, independent
-// documents whose values are no longer referenced.
+// "Lifecycle and value aliasing" note on [Store]).
+//
+// Only redeem a [Store] between whole, independent documents whose values are no longer referenced.
 func RedeemStore(s *Store) {
 	poolOfStores.Redeem(s)
 }
 
 func borrowBufferWithRedeem(size int) (*bytes.Buffer, func()) {
-	b, redeem := poolOfBytesBuffers.BorrowWithRedeem() // bytes.Buffer knows how to Reset
+	b, redeem := shared.BorrowBufferWithRedeem() // bytes.Buffer knows how to Reset
 	if size > b.Cap() {
 		b.Grow(size)
 	}

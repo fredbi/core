@@ -35,11 +35,19 @@ const maxSharedCapacity = 1 << 16
 // Buffers grown beyond 64 KiB are dropped on redeem instead of being recycled.
 var Bytes = pools.NewPoolSlice[byte](pools.WithMaxCapacity(maxSharedCapacity))
 
-var buffers = pools.New[bytes.Buffer]()
+var (
+	buffers       = pools.New[bytes.Buffer]()
+	redeemBuffers = pools.NewRedeemable[bytes.Buffer]()
+)
 
 // BorrowBuffer borrows a reset [bytes.Buffer] from the shared pool.
 func BorrowBuffer() *bytes.Buffer {
 	return buffers.Borrow()
+}
+
+// BorrowBufferWithRedeem borrows a reset [bytes.Buffer] from the shared pool, with its redeem closure.
+func BorrowBufferWithRedeem() (*bytes.Buffer, func()) {
+	return redeemBuffers.BorrowWithRedeem()
 }
 
 // RedeemBuffer returns a [bytes.Buffer] to the shared pool.
