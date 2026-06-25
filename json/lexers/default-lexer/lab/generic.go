@@ -1,21 +1,24 @@
 package lab
 
-// Generics spike (roadmap 2.1): a policy-parameterized push core, to measure
-// whether Go's monomorphization penalizes the per-token emission path when the
-// token type and construction are abstracted behind a concrete policy type.
+// Unified lexer core (roadmap 2.1): two policy-parameterized generic cores —
+// scanPushG (push) and scanTokenG (pull) — are the single source of truth for
+// both the semantic lexer L and the verbatim lexer VL. A concrete zero-size
+// policy per lexer (semanticPolicy / verbatimPolicy) selects the emitted token
+// type and how each token is built, replacing the four hand-written loops the
+// two lexers used to carry.
 //
-// Design (see the design discussion in the session log / roadmap 2.1):
-//   - The per-byte hot loop is policy-free: it operates on []byte + ints exactly
-//     as the hand-written scanPush does. No generics cost there by construction.
+// Design:
+//   - The per-byte hot loop is policy-free: it operates on []byte + ints. No
+//     generics cost there by construction.
 //   - l.current (a token.T) stays the grammar-state memory: the loop reads its
-//     Kind/Delimiter to validate the next token, unchanged.
+//     Kind/Delimiter to validate the next token.
 //   - Emission is the ONLY thing routed through the policy, once per token. For
 //     the semantic lexer the policy is identity (it emits the token.T already
-//     built for grammar state), so construction happens exactly once — the fair
-//     measurement of the per-token generic-call overhead.
-//
-// The policy takes *L so a future verbatim policy can read the blanks/position
-// the core records; the semantic policy ignores it.
+//     built for grammar state); for the verbatim lexer it wraps that token.T
+//     into a token.VT with the preceding blanks + position.
+//   - Accepted cost: the per-token policy call routes through the generics
+//     dictionary (Go does not devirtualize type-param method calls), ~5% on L.
+//     See roadmap 2.1 for the measurement and the rationale for accepting it.
 
 import (
 	"errors"
@@ -60,20 +63,20 @@ func (verbatimPolicy) emit(t token.T, blanks []byte, line, col int) token.VT {
 func (verbatimPolicy) none() token.VT            { return token.VNone }
 func (verbatimPolicy) eof(blanks []byte) token.VT { return token.MakeVerbatimEOF(blanks) }
 
-// scanPushG is the generic, policy-parameterized counterpart of scanPush. It is
-// a near-verbatim copy: every `yield(l.current)` becomes `yield(p.emit(...))`,
-// and the token type is the type parameter T. Instantiated with a concrete
-// policy (e.g. scanPushG[token.T, semanticPolicy]) so the policy call is a
-// statically-known, devirtualizable call rather than an interface dispatch.
+// scanPushG is the generic, policy-parameterized push core backing Tokens() for
+// both L and VL in whole-buffer mode. The per-byte hot loop keeps the cursor in
+// a local; each token is emitted via `yield(p.emit(...))`, with the token type
+// the type parameter T. Instantiated with a concrete policy (e.g.
+// scanPushG[token.T, semanticPolicy]) so the policy is a statically-known type.
 //
 // scanPushSemantic is a non-generic wrapper around the generic core for the
 // semantic lexer. It must stay a real (non-inlined) call in the body of the
 // iter.Seq returned by Tokens: range-over-func keeps the yield closure on the
 // stack only when the Seq body calls a concrete function whose "yield does not
-// escape" summary crosses the package boundary (as the reference's scanPush
-// does). If this wrapper inlines, the generic scanPushG call resurfaces in the
-// Seq body and the range-over-func desugaring heap-allocates the yield closure
-// in external callers (+2 allocs/call). Keep it opaque.
+// escape" summary crosses the package boundary. If this wrapper inlines, the
+// generic scanPushG call resurfaces in the Seq body and the range-over-func
+// desugaring heap-allocates the yield closure in external callers (+2
+// allocs/call). Keep it opaque.
 //
 //go:noinline
 func (l *L) scanPushSemantic(yield func(token.T) bool) {
@@ -492,12 +495,14 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 	}
 
 	writeback(i)
-	l.errCheck(io.EOF)
+	// classify the terminal EOF for its side effects on l.err/l.isAtEOF; the
+	// push core yields no token here, so the returned EOF token is discarded.
+	_ = errCheckG(l, p, io.EOF)
 }
 
-// errCheckG is the generic counterpart of (*L).errCheck: shared EOF/error
-// classification, returning the policy's eof token (with trailing blanks for the
-// verbatim policy) on clean EOF, or the none token otherwise.
+// errCheckG performs the shared EOF/error classification for both cores,
+// returning the policy's eof token (with trailing blanks for the verbatim
+// policy) on clean EOF, or the none token otherwise.
 func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 	hadToken := l.current.IsKnown()
 	l.current = token.None
@@ -527,9 +532,9 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 }
 
 // scanTokenG is the generic, policy-parameterized pull core: it scans and
-// returns exactly one token, shared by L.NextToken and VL.NextToken. It mirrors
-// (*L).scanToken exactly (cursor in the struct, per-byte advance, readMore for
-// streaming, deferred-error semantics) and emits via the policy. When
+// returns exactly one token, shared by L.NextToken and VL.NextToken. The cursor
+// lives in the struct (per-byte advance, readMore for streaming, deferred-error
+// semantics) and each token is emitted via the policy. When
 // l.trackBlanks is set (verbatim) it accumulates the preceding whitespace run
 // into l.blanks (byte-by-byte, so it survives streaming refills); the semantic
 // policy ignores blanks.

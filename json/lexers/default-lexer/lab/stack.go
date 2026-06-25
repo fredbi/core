@@ -56,12 +56,9 @@ func (l *L) isInContainer() bool {
 //	Input: [ { "a": 1 } ]
 //	Level: 1 2   22 2 1 0
 func (l *L) IndentLevel() int {
-	// lastStack is still set by the verbatim lexer's look-ahead (see L.lastStack);
-	// the semantic lexer L no longer uses it (look-ahead folded out).
-	if l.lastStack > 0 {
-		return int(l.lastStack)
-	}
-
+	// Both L and VL drive the unified pull/push cores one token at a time (no
+	// look-ahead), so the container stack always reflects the current token and
+	// the depth is the indent level for both.
 	return l.depth()
 }
 

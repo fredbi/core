@@ -33,10 +33,12 @@ func (l *L) consumeStringWhole() token.T {
 	start := l.consumed // first content byte
 
 	// fast path: jump to the first byte that needs attention — the closing
-	// quote, an escape, or a control char — scanning 8 bytes at a time with the
-	// same SWAR test as indexStringSpecial (inlined here to avoid a call per
-	// string). The overwhelmingly common case (no escapes, no control chars)
-	// then aliases the input with zero copy.
+	// quote, an escape, or a control char — scanning 8 bytes at a time with a
+	// SWAR test (Sean Anderson's "has a byte less than / equal to n" bit tricks,
+	// inlined here to avoid a call per string). The SWAR word test is only a fast
+	// filter; a plain byte scan then locates the exact first match. The
+	// overwhelmingly common case (no escapes, no control chars) aliases the input
+	// with zero copy.
 	i := start
 	{
 		const (
@@ -355,51 +357,6 @@ func (l *L) unescapeUnicodeSequence() (rune, error) {
 	}
 
 	return r, nil
-}
-
-// indexStringSpecial returns the index of the first byte in b that requires
-// attention while scanning a JSON string body — the closing quote ('"'), an
-// escape ('\\'), or a control character (< 0x20) — or len(b) if there is none.
-//
-// It scans 8 bytes per iteration with SWAR bit tricks (Sean Anderson's "has a
-// byte less than n" / "has a byte equal to n"), which detect a matching word
-// without a per-byte branch. The SWAR test is only a fast filter: once a word is
-// flagged, a plain byte scan locates the exact first match, so the result never
-// depends on the SWAR marker placement (no false negatives; a false positive
-// merely costs a short linear scan). This is the multi-needle search that
-// bytes.IndexByte (single needle) cannot express, and it has no per-call SIMD
-// overhead, so it pays off for short strings too.
-func indexStringSpecial(b []byte) int {
-	const (
-		ones = ^uint64(0) / 255 // 0x0101010101010101
-		high = ones * 128       // 0x8080808080808080
-	)
-
-	i := 0
-	for ; i+8 <= len(b); i += 8 {
-		w := binary.LittleEndian.Uint64(b[i:])
-
-		// any byte < 0x20
-		m := (w - ones*0x20) & ^w & high
-		// any byte == '"' (0x22)
-		q := w ^ (ones * 0x22)
-		m |= (q - ones) & ^q & high
-		// any byte == '\\' (0x5C)
-		s := w ^ (ones * 0x5C)
-		m |= (s - ones) & ^s & high
-
-		if m != 0 {
-			break // a special byte is within this word; locate it below
-		}
-	}
-
-	for ; i < len(b); i++ {
-		if c := b[i]; c == doubleQuote || c == escape || c < 0x20 {
-			return i
-		}
-	}
-
-	return len(b)
 }
 
 func unhex(c byte) (byte, bool) {
