@@ -8,6 +8,8 @@ import (
 
 type (
 	// hook functions to customize how the node is decoded.
+
+	// HookKeyFunc is a callback executed on every object key.
 	HookKeyFunc     func(ctx *ParentContext, l lexers.Lexer, key values.InternedKey) (skip bool, err error)
 	HookKeyNodeFunc func(ctx *ParentContext, l lexers.Lexer, key values.InternedKey, n Node) (skip bool, err error)
 	HookElemFunc    func(ctx *ParentContext, l lexers.Lexer, elem Node) (skip bool, err error)
