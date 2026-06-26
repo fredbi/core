@@ -173,7 +173,7 @@ func (b *Builder) AppendKey(key string, value Node) *Builder {
 	}
 
 	b.n.children = append(b.n.children, value)
-	b.n.keysIndex[value.key] = len(b.n.children)
+	b.n.keysIndex[value.key] = len(b.n.children) - 1
 
 	return b
 }
@@ -237,6 +237,7 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 	}
 
 	b.ensureIndex()
+	value.key = values.MakeInternedKey(key)
 	if _, ok := b.n.keysIndex[value.key]; ok {
 		b.err = fmt.Errorf(
 			"key is already present in object: %q: %w",
@@ -246,7 +247,6 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 		return b
 	}
 
-	value.key = values.MakeInternedKey(key)
 	b.n.children = slices.Insert(b.n.children, position, value)
 
 	for k, index := range b.n.keysIndex {
@@ -283,6 +283,13 @@ func (b *Builder) RemoveKey(key string) *Builder {
 
 	delete(b.n.keysIndex, k)
 	b.n.children = slices.Delete(b.n.children, index, index+1)
+
+	// every key past the removed slot has shifted left by one: re-index.
+	for ki, kindex := range b.n.keysIndex {
+		if kindex > index {
+			b.n.keysIndex[ki] = kindex - 1
+		}
+	}
 
 	return b
 }

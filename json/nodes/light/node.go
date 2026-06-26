@@ -112,11 +112,9 @@ func (n Node) IsBool(s stores.Store) bool {
 }
 
 func (n Node) IsNull(_ stores.Store) bool {
-	if n.kind != nodes.KindScalar {
-		return false
-	}
-
-	return n.value == stores.HandleZero
+	// JSON null is represented by a dedicated KindNull node (holding a proper, non-zero null handle).
+	// HandleZero is "no value"/absence, not null, so it must not be conflated here.
+	return n.kind == nodes.KindNull
 }
 
 // AtKey returns the [Node] held under a key in an object, or false if not found.
@@ -627,6 +625,18 @@ func (n Node) encode(ctx *ParentContext) {
 		w.Null()
 
 	case nodes.KindScalar:
+		// A scalar must point to a real value handle. HandleZero means "no value" (an absent or
+		// corrupted handle), which is distinct from a JSON null (KindNull holds a proper null handle).
+		// WriteTo(HandleZero) would silently emit nothing and produce invalid JSON, so flag it instead.
+		if n.value.IsZero() {
+			w.SetErr(fmt.Errorf(
+				"scalar node has a zero (absent) value handle: %w",
+				nodecodes.ErrNode,
+			))
+
+			return
+		}
+
 		// short-circuit with s.Write(n.value) (no need to allocate memory to keep the value)
 		s.WriteTo(w, n.value)
 
