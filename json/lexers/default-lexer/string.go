@@ -93,19 +93,14 @@ func (l *L) consumeStringWhole() token.T {
 	}
 	// otherwise c == escape: fall through to the unescape slow path
 
-	// slow path: an escape was found; copy the clean prefix then unescape the rest
+	// slow path: an escape was found at i; copy the clean prefix then unescape the
+	// rest. The loop invariant is that data[i] is the next "stop" byte (quote,
+	// escape, or control) — clean runs between stops are copied in bulk rather
+	// than byte-by-byte.
 	l.currentValue = append(l.currentValue[:0], data[start:i]...)
 
 	for i < n {
-		if l.maxValueBytes > 0 && len(l.currentValue) > l.maxValueBytes {
-			l.consumed, l.offset = i, uint64(i)
-			l.err = codes.ErrMaxValueBytes
-
-			return token.None
-		}
-
-		c := data[i]
-		switch {
+		switch c := data[i]; {
 		case c == doubleQuote:
 			i++
 			l.consumed, l.offset = i, uint64(i)
@@ -123,20 +118,28 @@ func (l *L) consumeStringWhole() token.T {
 			switch data[i] {
 			case doubleQuote:
 				l.currentValue = append(l.currentValue, '"')
+				i++
 			case escape:
 				l.currentValue = append(l.currentValue, '\\')
+				i++
 			case slash:
 				l.currentValue = append(l.currentValue, '/')
+				i++
 			case 'b':
 				l.currentValue = append(l.currentValue, '\b')
+				i++
 			case 'f':
 				l.currentValue = append(l.currentValue, '\f')
+				i++
 			case 'n':
 				l.currentValue = append(l.currentValue, '\n')
+				i++
 			case 't':
 				l.currentValue = append(l.currentValue, '\t')
+				i++
 			case 'r':
 				l.currentValue = append(l.currentValue, '\r')
+				i++
 			case 'u':
 				// hand off to the surrogate-aware decoder, which reads from
 				// l.consumed; offset==index lets us sync trivially
@@ -150,25 +153,42 @@ func (l *L) consumeStringWhole() token.T {
 				}
 				l.currentValue = utf8.AppendRune(l.currentValue, r)
 				i = l.consumed
-				continue
 			default:
 				l.consumed, l.offset = i, uint64(i)
 				l.err = codes.ErrUnknownEscape
 
 				return token.None
 			}
-			i++
 
 		case c < 0x20:
 			l.consumed, l.offset = i, uint64(i)
 			l.err = codes.ErrControlChar
 
 			return token.None
-
-		default:
-			l.currentValue = append(l.currentValue, c)
-			i++
 		}
+
+		// batch-copy the clean run following the escape up to the next stop byte,
+		// then append it in one shot. A scalar scan (not SWAR) is deliberate: in
+		// escape-dense strings the runs are tiny, and the SWAR word math would cost
+		// more than it saves on a 3-byte run; the real win here is the single bulk
+		// append (memmove) replacing one append per byte. The bound is checked
+		// against len + the run width *before* the append so an over-long value is
+		// rejected without first copying a huge clean run, and escape-only
+		// expansion (no clean bytes) is still caught when the run width is zero.
+		stop := i
+		for ; stop < n; stop++ {
+			if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {
+				break
+			}
+		}
+		if l.maxValueBytes > 0 && len(l.currentValue)+(stop-i) > l.maxValueBytes {
+			l.consumed, l.offset = i, uint64(i)
+			l.err = codes.ErrMaxValueBytes
+
+			return token.None
+		}
+		l.currentValue = append(l.currentValue, data[i:stop]...)
+		i = stop
 	}
 
 	l.consumed, l.offset = i, uint64(i)

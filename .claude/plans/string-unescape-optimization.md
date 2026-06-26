@@ -13,14 +13,35 @@ root cause is **byte-by-byte copying in the unescape loop**: after the first
 escape we append one byte per iteration with no clean-run batching. jsontext's
 `AppendUnquote` batches clean runs (scan to next escape, one bulk `append`).
 
-**Plan: lift our SWAR scan into a reusable helper and re-enter it inside the
-escape loop, so the slow path copies clean runs in bulk** — mirroring
-`AppendUnquote`'s shape while keeping our *eager-decode* contract. Low risk, no
-public API change, targets our weakest number directly.
+**Plan: batch clean runs in the unescape slow path** — after each escape, a
+scalar scan finds the next stop byte and one bulk append copies the clean run,
+mirroring `AppendUnquote`'s shape while keeping our *eager-decode* contract.
 
-Explicitly **out of scope**: the `strings_plain` gap (that is per-token dispatch
-overhead, addressed by road-b `writegen`-style de-genericization, not the
-scanner) and UTF-8 validation (we deliberately don't validate on the alias path).
+**OUTCOME (✅ shipped):** `strings_escaped_long` **+75–82% B/s vs our own
+baseline** (closes the gap to jsontext from 38% → **69%**; it does **not** beat
+jsontext — see correction below), real corpora +1.9% geomean with **no
+regressions**, fast-path canaries untouched/flat. Only the synthetic dense-escape
+`strings_escaped` regresses ~8% (tiny-run memmove cost) and that profile never
+appears in real data. Notable twists vs the original plan: (a) a *shared*
+`scanStringStop` helper was abandoned — it wouldn't inline and regressed the fast
+path, so the fast path is left byte-identical to baseline; (b) the slow-path scan
+is **scalar, not SWAR** — SWAR's word math costs more than it saves on the short
+runs. See §4.2/§4.3/§4.7.
+
+> **CORRECTION (2026-06-26):** an earlier draft said this "now beats jsontext" on
+> `strings_escaped_long`. That was wrong for the **shipped scalar** variant: a
+> full run vs json/v2 shows jsontext 1726 MB/s vs our 1193 (push) — we reach
+> **69%**, not a win. The "+75/+82%" figures are correct but are deltas vs *our
+> own* byte-by-byte baseline, not vs jsontext. The "beats jsontext" number
+> (~2350 MB/s) came from the **SWAR** slow-path variant, which we did **not**
+> ship (it regressed dense `strings_escaped` -16% vs scalar's -8%). Open item:
+> re-evaluate SWAR vs scalar on **real corpora** before settling — SWAR may be the
+> better ship if its long-string win outweighs the dense-escape loss in real data
+> (only scalar was validated on real corpora so far).
+
+Explicitly **out of scope**: the `strings_plain` gap (per-token dispatch
+overhead, road-b `writegen`-style de-genericization, not the scanner) and UTF-8
+validation (we deliberately don't validate on the alias path).
 
 ## 1. Background — the two architectures
 
@@ -217,27 +238,34 @@ Notes:
 > §4.1 landing `strings_uescaped`. If the benchstat says `\u` is rare/cheap in
 > practice, we skip the inlining entirely — measure first.
 
-### 4.2 ⬜ Lift the SWAR scan into a reusable helper
-- Extract the fast-path SWAR + byte-scan from `consumeStringWhole` into an
-  unexported helper, e.g. `scanStringStop(data []byte, i, n int) int` returning
-  the index of the next `"` / `\` / `<0x20` (or `n`). Keep it inlinable /
-  allocation-free; verify it still inlines into the fast path (`-gcflags=-m`).
-- The fast path calls it once; the slow path calls it after every escape.
+### 4.2 ✅ (revised) Helper extraction abandoned — fast path left untouched
+- **Tried** lifting the SWAR into `scanStringStop` and calling it from both
+  paths. It does **not** inline (cost 98 > 80), so the fast path paid a call per
+  string and **regressed** `strings_plain`/`unicode`/`uescaped` ~3–5%.
+- **Then tried** factoring only the word-test (`hasStringStop`, cost 50, inlines)
+  and writing the loop inline in both paths. Fast path recovered, but the
+  `tokens` push path still showed a ~5% wobble on the Unicode canaries.
+- **Final decision: do not touch the fast path at all.** The slow path uses a
+  *scalar* run-scan (not SWAR — see 4.3), so it never needed the helper. The
+  fast-path SWAR block is now byte-identical to baseline → Unicode/uescaped/plain
+  canaries are statistically flat (p>0.1). Lesson: a shared helper isn't worth a
+  fast-path inlining regression; duplication-free here means "don't share".
 
-### 4.3 ⬜ Batch clean runs in the unescape slow path
-- Rewrite the slow-path loop to mirror `AppendUnquote`: after handling an escape
-  (and at entry, for the prefix), call `scanStringStop`, then a single
-  `append(l.currentValue, data[i:stop]...)` for the clean run, then dispatch on
-  `data[stop]` (`"` → done, `\` → escape, `<0x20` → ErrControlChar).
-- Preserve every existing error path and `maxValueBytes` circuit-breaker (check
-  bound against `len(l.currentValue)` as today).
-- Keep eager `\u` decode via `unescapeUnicodeSequence` unchanged in this round
-  (#3 is a separate, optional follow-up).
+### 4.3 ✅ Batch clean runs in the unescape slow path (scalar scan)
+- Rewrote the slow-path loop: after each escape, a **scalar** scan finds the next
+  stop byte (`"`/`\`/`<0x20`), then **one bulk `append(l.currentValue,
+  data[i:stop]...)`** copies the clean run. Scalar (not SWAR) is deliberate — on
+  escape-dense strings the runs are tiny and the SWAR word math costs more than it
+  saves; the win is the single memmove replacing one append per byte.
+- `maxValueBytes` checked as `len + (stop-i)` **before** the append (rejects an
+  over-long value without copying a huge run; zero-width run still catches
+  escape-only expansion). Eager `\u` decode unchanged.
+- All tests + `-race` green (conformance, handoff, zerocopy, security, max-value).
 
-### 4.4 ⬜ Apply the same batching to the push core (`scanPushG`) if it has a
-  parallel slow path — confirm `consumeStringWhole` is shared by both cores
-  first; if shared, push gets the win for free (push already leads pull: 669 vs
-  528, so verify it still improves).
+### 4.4 ✅ Push core shares the win
+- `consumeStringWhole` is shared by pull + push; the `tokens` (push) benchmark
+  shows the same `strings_escaped_long` gain (-45% sec/op), confirmed. No
+  separate change needed.
 
 ### 4.5 ⬜ Streaming path (`consumeStringStreaming`)
 - Lower priority. The refill loop is inherently byte-at-a-time across buffer
@@ -261,14 +289,61 @@ Notes:
   the `\u` path is a measurable fraction. Otherwise record "skipped, `\u` not hot"
   and move on. (Answers FRED's inlining question: hot/cold split, not whole-fn.)
 
-### 4.8 ⬜ Validation
-- `go test ./...` in the package (suite + conformance + handoff + zerocopy +
-  security), `-race`, and the equivalence tests (push==pull, lab==ref).
-- Re-run benchstat vs the 4.1 baseline; target: `strings_escaped` and
-  `strings_escaped_long` materially up, `strings_plain`/`strings_unicode`
-  unchanged (no fast-path regression). Save raw + benchstat under ramblings.
-- Confirm `scanStringStop` inlines and the fast path keeps 0 unamortized allocs
-  (pooled/reset variants stay 0 B/op).
+### 4.7 ✅ Results (go1.26.4, count=10, benchstat; raw in ramblings/2026-06-strings-cleanrun-*)
+
+**Synthetic strings (B/s vs *our own* baseline — NOT vs jsontext):**
+
+| workload | pull | push | note |
+|---|---|---|---|
+| `strings_plain`        | ~ | ~ | flat (fast path untouched) |
+| `strings_unicode`      | ~ | ~ | flat (canary held) |
+| `strings_uescaped`     | ~ | ~ | flat (canary held) |
+| `strings_escaped`      | -8.4% | -8.7% | dense-escape tradeoff (tiny runs) |
+| `strings_escaped_long` | **+75%** | **+82%** | the target; also allocs 8→5 |
+
+**vs jsontext (push MB/s, full run 2026-06-26)** — for calibration, this is where
+we actually land, not just vs our baseline:
+
+| workload | our push | jsontext | ratio |
+|---|---|---|---|
+| `strings_escaped_long` | 1193 | 1726 | **0.69** (was 0.38) |
+| `strings_escaped`      | 555  | 797  | 0.70 |
+| `strings_plain`        | 1024 | 1389 | 0.74 |
+| `strings_unicode`      | 978  | 620  | **1.58** |
+| `strings_uescaped`     | 954  | 594  | **1.61** |
+
+**Real corpora (B/s vs baseline) — the decisive gate, all flat-to-faster:**
+
+| workload | pull | push |
+|---|---|---|
+| `citm_catalog`   | +1.4% | ~ |
+| `twitter_status` | ~     | +3.9% |
+| `mixed`          | +2.8% | ~ |
+| `object_keys`    | ~     | ~ |
+| **geomean**      | **+1.9%** | (no regressions) |
+
+**Verdict:** net win **vs our prior code** (the gate that matters for shipping).
+The clean-run batching closes `strings_escaped_long` from 38% → 69% of jsontext —
+a big improvement but **not** a win against json/v2. The only regression
+(`strings_escaped`, dense short escapes) does not appear in any real-world
+workload; the representative escaped profile (occasional escape in long clean text
+= `strings_escaped_long` / twitter) improves most. Fast-path canaries untouched.
+Shipped (scalar variant). **Open: the SWAR variant beats jsontext on
+`strings_escaped_long` but was not validated on real corpora — re-evaluate.**
+
+### 4.8 ✅ Validation
+- ✅ `go test ./...` (suite + conformance + handoff + zerocopy + security +
+  max-value), `-race`, equivalence tests (push==pull, lab==ref) — all green.
+- ✅ benchstat vs baseline captured (§4.7). `strings_escaped_long` up +75/+82%,
+  fast-path canaries (`plain`/`unicode`/`uescaped`) statistically flat (p>0.1),
+  real corpora flat-to-faster (+1.9% geomean). Raw under ramblings.
+- ✅ Fast path untouched, so its 0-unamortized-alloc property is unchanged
+  (pooled/reset variants still 0 B/op). Slow-path `currentValue` peak grows
+  modestly (bulk-append rounding: escaped_long 832→960 B/op) — a one-time reused
+  buffer, not a per-token leak.
+- ✅ Added `maxValueBytes` slow-path regression cases to `TestMaxValueBytes`
+  (leading escape forces the unescape path; oversized clean run trips, under-limit
+  escaped value accepted).
 
 ## 5. Risks / watch-list
 - **Fast-path regression**: extracting the SWAR into a helper must keep it

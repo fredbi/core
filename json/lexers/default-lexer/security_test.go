@@ -71,6 +71,21 @@ func TestMaxValueBytes(t *testing.T) {
 		require.NoError(t, drainErr(NewWithBytes([]byte(smallString), WithMaxValueBytes(limit))))
 		require.NoError(t, drainVErr(NewVerbatimWithBytes([]byte(smallString), WithMaxValueBytes(limit))))
 	})
+
+	// Slow-path coverage: a leading escape forces the unescape path, where the
+	// bound is checked against len + the clean-run width *before* the bulk append.
+	// These pin that the batched copy still rejects an over-long value mid run.
+	bigEscaped := `"\n` + strings.Repeat("a", 10*limit) + `"`
+	smallEscaped := `"\n` + strings.Repeat("a", limit/2) + `"`
+
+	t.Run("L trips on oversized escaped string (slow-path clean run)", func(t *testing.T) {
+		err := drainErr(NewWithBytes([]byte(bigEscaped), WithMaxValueBytes(limit)))
+		require.ErrorIs(t, err, codes.ErrMaxValueBytes)
+	})
+
+	t.Run("escaped value within the limit is accepted", func(t *testing.T) {
+		require.NoError(t, drainErr(NewWithBytes([]byte(smallEscaped), WithMaxValueBytes(limit))))
+	})
 }
 
 func TestMaxValueBytesBoundsVerbatimBlanks(t *testing.T) {
