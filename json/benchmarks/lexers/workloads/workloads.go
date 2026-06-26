@@ -29,7 +29,9 @@ func All() []Workload {
 		{Name: "floats", Data: arrayOf(floatElem)},
 		{Name: "strings_plain", Data: arrayOf(plainStringElem)},
 		{Name: "strings_escaped", Data: arrayOf(escapedStringElem)},
+		{Name: "strings_escaped_long", Data: arrayOf(escapedLongStringElem)},
 		{Name: "strings_unicode", Data: arrayOf(unicodeStringElem)},
+		{Name: "strings_uescaped", Data: arrayOf(uEscapedStringElem)},
 		{Name: "bools_nulls", Data: arrayOf(boolNullElem)},
 		{Name: "object_keys", Data: objectKeys()},
 		{Name: "nested_arrays", Data: nested("[", "]")},
@@ -78,10 +80,33 @@ func escapedStringElem(i int) string {
 	return fmt.Sprintf(`"line\t%d\ncol\\\"%d\"end"`, i, i)
 }
 
+// escapedLongStringElem renders a string with a couple of escapes up front
+// followed by a long run of clean bytes. This is the worst case for a
+// byte-by-byte unescape loop and the best case for clean-run batching: once the
+// leading escapes are handled, the long tail should be copied in one bulk append
+// rather than one append per byte.
+func escapedLongStringElem(i int) string {
+	const tail = "the quick brown fox jumps over the lazy dog and keeps on running far past the edge of the field"
+	return fmt.Sprintf(`"hdr\t%d\n%s %s %08d"`, i, tail, tail, i)
+}
+
 func unicodeStringElem(i int) string {
-	// \u escapes, including a surrogate pair (U+1D11E) every few elements
+	// literal multibyte UTF-8 (NOT \u escapes), incl. an astral rune every few
+	// elements — exercises the zero-copy alias path, not the unescape path.
 	if i%4 == 0 {
 		return fmt.Sprintf(`"snow☃ clef𝄞 n%04d"`, i%10000)
+	}
+	return fmt.Sprintf(`"accentéèê x%04d"`, i%10000)
+}
+
+// uEscapedStringElem renders a string using \uXXXX escapes, including a UTF-16
+// surrogate pair (U+1D11E MUSICAL SYMBOL G CLEF = 𝄞) every fourth
+// element. This is the only workload that exercises the \u decode + surrogate
+// path under benchmark.
+func uEscapedStringElem(i int) string {
+	if i%4 == 0 {
+		// surrogate pair + BMP accented letters, all as \u escapes
+		return fmt.Sprintf(`"clef𝄞 néèê %04d"`, i%10000)
 	}
 	return fmt.Sprintf(`"accentéèê x%04d"`, i%10000)
 }
