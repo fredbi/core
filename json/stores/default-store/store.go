@@ -249,7 +249,9 @@ func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 		writer.StringBytes(out)
 	case headerNumber: // large number
 		size, offset := withOffset(h)
-		assertOffsetInArena(offset, len(s.arena))
+		if !writeToOffsetInArena(writer, offset, len(s.arena)) {
+			return
+		}
 
 		nibbles := s.arena[offset : offset+size]
 		buffer, redeem := borrowBytesWithRedeem(size * bcd.DigitsPerByte)
@@ -258,13 +260,17 @@ func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 		redeem()
 	case headerString: // large string
 		size, offset := withOffset(h)
-		assertOffsetInArena(offset, len(s.arena))
+		if !writeToOffsetInArena(writer, offset, len(s.arena)) {
+			return
+		}
 
 		strBytes := s.arena[offset : offset+size]
 		writer.StringBytes(strBytes)
 	case headerCompressedString: // large compressed string
 		size, offset := withOffset(h)
-		assertOffsetInArena(offset, len(s.arena))
+		if !writeToOffsetInArena(writer, offset, len(s.arena)) {
+			return
+		}
 
 		inflater, redeem := s.uncompressStringReader(s.arena[offset : offset+size])
 		writer.StringCopy(inflater)
@@ -278,7 +284,7 @@ func (s *Store) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 		writer.StringCopy(inflater)
 		redeem()
 	default:
-		assertValidHeader(header)
+		writeToInvalidHeader(writer, header)
 	}
 }
 

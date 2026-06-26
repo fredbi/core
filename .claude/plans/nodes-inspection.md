@@ -153,6 +153,39 @@
   concurrent `Borrow` could hand out the same writer). Now a `defer RedeemUnbuffered(jw)` redeems only
   after `Encode` completes. New `TestNodeDump` loops to exercise pooled borrow/redeem reuse.
 
+### Encoding path (E-series)
+
+- ⏳ **E1 — unbounded recursion / no depth guard (TODO, delegated).** `encode` recurses one frame per
+  nesting level. Per Fred: depth is bounded upstream by the **lexer's max-depth option** (the caller
+  injects the lexer), so a decoded hierarchy is safe; programmatically built trees are the builder
+  caller's responsibility. Valid but not urgent — left as a `TODO(fred)` on `encode`, no encode-side
+  guard added.
+- ✅ **E2 — children loops now re-check `w.Ok()` (fixed).** They previously checked only after
+  `StartObject`/`StartArray`, so a mid-stream writer error still walked the whole subtree issuing
+  writer calls — wasteful, and unsafe against the non-sticky buffered writer. Now each loop iteration
+  (and the closing `End*`) bails on `!w.Ok()`. Test `TestEncodeWriterError` asserts the underlying
+  writer is hit only a few times after a failure (no per-node write storm) and the error surfaces.
+- ✅ **E3 — nil-safety (fixed).** `Encode` no longer derefs a nil `ctx.W` in its defer (guards up
+  front); `encode` bails on a nil writer and raises a clean error on a nil store at a scalar leaf
+  instead of nil-panicking. Tests `TestEncodeNilWriter` / `TestEncodeNilStore`.
+- ⏳ **E4 — object encode trusts child keys (TODO, upstream).** Per Fred, key validity is guaranteed
+  upstream by the builder/decoder, not re-checked by the consuming encoder; documented as a comment on
+  the object branch, no encoder-side guard.
+- ✅ **E5 — corrupted handle now errors instead of panicking on the writer-driven path (fixed).**
+  `Store.WriteTo` routed corruption (out-of-range offset, invalid header) through panicking asserts;
+  panics also block compiler inlining. New non-panicking `writeToOffsetInArena` / `writeToInvalidHeader`
+  route the fault through the writer's `SetErr`, so a corrupt handle surfaces as an error to the
+  encoder. The value-returning `Get`/`AppendValueBytes` (no error sink) **keep** the panic-on-corruption
+  contract — converting those is a separate store-wide decision (store-hardening track). `Store`'s
+  existing `Get`/`PutToken` panic tests are unaffected; new `TestWriteToCorruptHandle` covers the
+  WriteTo error path.
+- ℹ️ **E6 — `encode` now uses a pointer receiver + index-based loops** (Fred: "slightly faster"),
+  avoiding the per-recursive-call Node copy and the per-child range copy. No behaviour change (encode
+  never mutates).
+- ℹ️ **Cross-ref (default-writer, out of scope here):** the *buffered* writer is not sticky on error —
+  `buffered.writeSingleByte`/`flush` don't check `w.err`, and `flush` reassigns `w.err` unconditionally,
+  so a later successful flush can clear an earlier error. File as a default-writer finding.
+
 ---
 
 ## 3. Proposed sequencing (for review — not started)

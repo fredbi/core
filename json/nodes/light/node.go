@@ -243,6 +243,10 @@ func (n *Node) Decode(ctx *ParentContext) {
 //
 // This consumes the values stored in the provided [stores.Store].
 func (n Node) Encode(ctx *ParentContext) {
+	if ctx.W == nil {
+		return
+	}
+
 	defer func() {
 		if err := ctx.W.Err(); err != nil {
 			ctx.C = &codes.ErrContext{
@@ -564,9 +568,20 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 	}
 }
 
-func (n Node) encode(ctx *ParentContext) {
+// encode walks the node hierarchy and drives the [writers.StoreWriter].
+//
+// It uses a pointer receiver to avoid copying the Node on every recursive call; it never mutates the
+// node, so re-encoding the same hierarchy is safe.
+//
+// TODO(fred): recursion is bounded only by the runtime stack. Decode-time nesting is already capped by
+// the lexer's max-depth option (the caller injects the lexer), so a decoded hierarchy is safe;
+// programmatically built trees are the builder caller's responsibility. Revisit if a hard encode-side
+// depth guard is wanted.
+func (n *Node) encode(ctx *ParentContext) {
 	w := ctx.W
-	s := ctx.S
+	if w == nil {
+		return
+	}
 
 	if !w.Ok() {
 		return
@@ -585,15 +600,23 @@ func (n Node) encode(ctx *ParentContext) {
 			return
 		}
 
+		// the builder and decoder guarantee every child of an object carries a valid key, so the
+		// encoder writes keys without re-validating them here.
 		w.Key(n.children[0].key)
 		n.children[0].encode(ctx)
 
-		for _, value := range n.children[1:] {
+		for i := 1; i < len(n.children); i++ {
+			if !w.Ok() {
+				return
+			}
 			w.Comma()
-			w.Key(value.key)
-			value.encode(ctx)
+			w.Key(n.children[i].key)
+			n.children[i].encode(ctx)
 		}
 
+		if !w.Ok() {
+			return
+		}
 		w.EndObject()
 
 		return
@@ -612,11 +635,17 @@ func (n Node) encode(ctx *ParentContext) {
 
 		n.children[0].encode(ctx)
 
-		for _, elem := range n.children[1:] {
+		for i := 1; i < len(n.children); i++ {
+			if !w.Ok() {
+				return
+			}
 			w.Comma()
-			elem.encode(ctx)
+			n.children[i].encode(ctx)
 		}
 
+		if !w.Ok() {
+			return
+		}
 		w.EndArray()
 
 		return
@@ -637,8 +666,14 @@ func (n Node) encode(ctx *ParentContext) {
 			return
 		}
 
+		if ctx.S == nil {
+			w.SetErr(fmt.Errorf("nil store: cannot resolve scalar value: %w", nodecodes.ErrNode))
+
+			return
+		}
+
 		// short-circuit with s.Write(n.value) (no need to allocate memory to keep the value)
-		s.WriteTo(w, n.value)
+		ctx.S.WriteTo(w, n.value)
 
 	default:
 		w.SetErr(fmt.Errorf("invalid node: %v: %w", n.kind, nodecodes.ErrNode))

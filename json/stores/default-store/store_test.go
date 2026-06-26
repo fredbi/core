@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"compress/flate"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/fredbi/core/json/stores"
 	"github.com/fredbi/core/json/stores/values"
 	"github.com/fredbi/core/json/types"
+	writer "github.com/fredbi/core/json/writers/default-writer"
 )
 
 func TestStores(t *testing.T) {
@@ -338,6 +340,36 @@ func testEdgeCases(s stores.Store) func(*testing.T) {
 				"providing a compressed string handle that refer to an uncharted arena part should panic",
 				testOutOfRangeHandle(s, headerCompressedString),
 			)
+		})
+	}
+}
+
+// TestWriteToCorruptHandle covers the writer-driven path (E5): unlike Get, WriteTo has the writer as an
+// error sink, so a corrupted handle surfaces as an error via the writer instead of panicking.
+func TestWriteToCorruptHandle(t *testing.T) {
+	s := New()
+	for name, headerPart := range map[string]uint8{
+		"number":           headerNumber,
+		"string":           headerString,
+		"compressedString": headerCompressedString,
+	} {
+		t.Run("out of range "+name+" handle errors (no panic)", func(t *testing.T) {
+			const (
+				dummySize        = uint64(10)
+				outOfRangeOffset = uint64(100)
+			)
+			h := stores.Handle(
+				uint64(headerPart) |
+					(dummySize << headerBits) |
+					(outOfRangeOffset << (headerBits + lengthBits)),
+			)
+
+			var buf bytes.Buffer
+			w := writer.NewUnbuffered(&buf)
+
+			require.NotPanics(t, func() { s.WriteTo(w, h) })
+			require.Error(t, w.Err())
+			assert.ErrorContains(t, w.Err(), "out of range offset")
 		})
 	}
 }
