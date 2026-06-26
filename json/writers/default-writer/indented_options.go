@@ -2,17 +2,23 @@ package writer
 
 var defaultIndent = []byte("  ") //nolint:gochecknoglobals
 
-type IndentedOption func(*indentedOptions)
+// IndentedOption configures the [Indented] writer. It threads the configuration value through, so it
+// never allocates (see [BufferedOption]).
+type IndentedOption func(indentedOptions) indentedOptions
 
 func WithIndent(indent string) IndentedOption {
-	return func(o *indentedOptions) {
+	return func(o indentedOptions) indentedOptions {
 		o.indent = []byte(indent)
+
+		return o
 	}
 }
 
 func WithIndentBufferedOptions(opts ...BufferedOption) IndentedOption {
-	return func(o *indentedOptions) {
+	return func(o indentedOptions) indentedOptions {
 		o.applyBufferedOptions = opts
+
+		return o
 	}
 }
 
@@ -21,20 +27,11 @@ type indentedOptions struct {
 	applyBufferedOptions []BufferedOption
 }
 
-func (o *indentedOptions) Reset() {
-	o.indent = defaultIndent
-	o.applyBufferedOptions = nil
-}
-
-func (o *indentedOptions) redeem() {
-	// no inner resources to relinquish
-}
-
-func indentedOptionsWithDefaults(opts []IndentedOption) *indentedOptions {
-	o := poolOfIndentedOptions.Borrow()
+func indentedOptionsWithDefaults(opts []IndentedOption) indentedOptions {
+	o := indentedOptions{indent: defaultIndent}
 
 	for _, apply := range opts {
-		apply(o)
+		o = apply(o)
 	}
 
 	if len(o.indent) == 0 {

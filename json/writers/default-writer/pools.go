@@ -14,17 +14,12 @@ const (
 )
 
 var (
-	poolOfUnbuffered        = pools.New[Unbuffered]()
-	poolOfUnbufferedOptions = pools.New[unbufferedOptions]()
-
-	poolOfBuffered        = pools.New[Buffered]()
-	poolOfBufferedOptions = pools.New[bufferedOptions]()
-
-	poolOfIndented        = pools.New[Indented]()
-	poolOfIndentedOptions = pools.New[indentedOptions]()
-
-	poolOfYAML        = pools.New[YAML]()
-	poolOfYAMLOptions = pools.New[yamlOptions]()
+	// Writer-instance pools. Configuration (the *Options structs) is no longer pooled: it is a plain
+	// value threaded through the options and stored by value on the writer — see buffered_options.go.
+	poolOfUnbuffered = pools.New[Unbuffered]()
+	poolOfBuffered   = pools.New[Buffered]()
+	poolOfIndented   = pools.New[Indented]()
+	poolOfYAML       = pools.New[YAML]()
 
 	poolOfNumberBuffers = pools.NewPoolSlice[byte](
 		pools.WithMinimumCapacity(defaultCapacityForNumbers),
@@ -45,14 +40,10 @@ var (
 // they are readily available in the pool.
 //
 // The caller is responsible for calling [RedeemUnbuffered] after the work is done, and relinquish resources to the pool.
-func BorrowUnbuffered(writer io.Writer, opts ...UnbufferedOption) *Unbuffered {
+func BorrowUnbuffered(writer io.Writer, _ ...UnbufferedOption) *Unbuffered {
 	w := poolOfUnbuffered.Borrow()
 	w.w = writer
 	w.bw, _ = writer.(io.ByteWriter)
-	if w.unbufferedOptions != nil {
-		poolOfUnbufferedOptions.Redeem(w.unbufferedOptions)
-	}
-	w.unbufferedOptions = unbufferedOptionsWithDefaults(opts)
 	w.jw = &w.unbuffered
 
 	return w
@@ -69,9 +60,6 @@ func RedeemUnbuffered(w *Unbuffered) {
 func BorrowBuffered(writer io.Writer, opts ...BufferedOption) *Buffered {
 	w := poolOfBuffered.Borrow()
 	w.w = writer
-	if w.bufferedOptions != nil {
-		poolOfBufferedOptions.Redeem(w.bufferedOptions)
-	}
 	w.bufferedOptions = bufferedOptionsWithDefaults(opts)
 	w.borrowBuffer()
 	w.jw = &w.buffered
@@ -86,9 +74,6 @@ func RedeemBuffered(w *Buffered) {
 
 func BorrowIndented(writer io.Writer, opts ...IndentedOption) *Indented {
 	w := poolOfIndented.Borrow()
-	if w.indentedOptions != nil {
-		poolOfIndentedOptions.Redeem(w.indentedOptions)
-	}
 	w.indentedOptions = indentedOptionsWithDefaults(opts)
 
 	if w.Buffered == nil {
@@ -99,13 +84,9 @@ func BorrowIndented(writer io.Writer, opts ...IndentedOption) *Indented {
 		return w
 	}
 
-	// this is a recycled Indented: we already have a Buffered, we just need to Reset it
+	// this is a recycled Indented: reuse the inner Buffered, re-apply options, borrow a fresh buffer
 	w.Buffered.Reset()
-
-	// re-apply options and borrow a fresh working buffer for the recycled instance
-	if w.bufferedOptions == nil {
-		w.bufferedOptions = bufferedOptionsWithDefaults(w.applyBufferedOptions)
-	}
+	w.bufferedOptions = bufferedOptionsWithDefaults(w.applyBufferedOptions)
 	w.borrowBuffer()
 
 	// set the new underlying writer for this recycled instance
@@ -121,26 +102,19 @@ func RedeemIndented(w *Indented) {
 
 func BorrowYAML(writer io.Writer, opts ...YAMLOption) *YAML {
 	w := poolOfYAML.Borrow()
-	if w.yamlOptions != nil {
-		poolOfYAMLOptions.Redeem(w.yamlOptions)
-	}
 	w.yamlOptions = yamlOptionsWithDefaults(opts)
 
 	if w.Buffered == nil {
-		// this is a new Indented: we need to borrow the inner Buffered
+		// this is a new YAML: we need to borrow the inner Buffered
 		w.Buffered = BorrowBuffered(writer, w.applyBufferedOptions...)
 		w.redeemBuffered = w.Buffered // mark for redemption later on
 
 		return w
 	}
 
-	// this is a recycled YAML: we already have a Buffered, we just need to Reset it
+	// this is a recycled YAML: reuse the inner Buffered, re-apply options, borrow a fresh buffer
 	w.Buffered.Reset()
-
-	// re-apply options and borrow a fresh working buffer for the recycled instance
-	if w.bufferedOptions == nil {
-		w.bufferedOptions = bufferedOptionsWithDefaults(w.applyBufferedOptions)
-	}
+	w.bufferedOptions = bufferedOptionsWithDefaults(w.applyBufferedOptions)
 	w.borrowBuffer()
 
 	// set the new underlying writer for this recycled instance

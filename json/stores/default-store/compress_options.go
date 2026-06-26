@@ -3,7 +3,6 @@ package store
 import (
 	"bytes"
 	"compress/flate"
-	"fmt"
 	"io"
 )
 
@@ -54,23 +53,25 @@ func (co *compressionOptions) compressWriter() flateWriter {
 // WithCompressionLevel sets the DEFLATE compression level (see [compress/flate]: [flate.HuffmanOnly]
 // (-2) to [flate.BestCompression] (9), with [flate.DefaultCompression] (-1) meaning level 6).
 //
-// It panics on a level outside that range.
-func (o Options) WithCompressionLevel(level int) Options {
-	if level < flate.HuffmanOnly || level > flate.BestCompression {
-		panic(fmt.Errorf("invalid compress level: %d: %w", level, ErrStore))
+// A level outside that range is silently clamped into it.
+func WithCompressionLevel(level int) Option {
+	level = min(max(level, flate.HuffmanOnly), flate.BestCompression)
+
+	return func(o options) options {
+		o.compressionLevel = level
+
+		return o
 	}
-
-	o.resolved.compressionLevel = level
-
-	return o
 }
 
 // WithCompressionThreshold sets the minimum string length (in bytes) above which compression is
 // attempted. A threshold of 0 disables compression via this path (nothing is ever compressed).
-func (o Options) WithCompressionThreshold(threshold int) Options {
-	o.resolved.compressionThreshold = threshold
+func WithCompressionThreshold(threshold int) Option {
+	return func(o options) options {
+		o.compressionThreshold = threshold
 
-	return o
+		return o
+	}
 }
 
 // WithCompressionDict injects a preset DEFLATE dictionary used to seed both string compression and
@@ -92,8 +93,10 @@ func (o Options) WithCompressionThreshold(threshold int) Options {
 // store generations. This is how a compression dictionary "learns": the corpus is trained externally
 // and a fresh, frozen dictionary is injected into the next generation — the dict mutates between
 // stores, never within one.
-func (o Options) WithCompressionDict(dict []byte) Options {
-	o.resolved.dict = dict
+func WithCompressionDict(dict []byte) Option {
+	return func(o options) options {
+		o.dict = dict
 
-	return o
+		return o
+	}
 }

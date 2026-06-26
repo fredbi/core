@@ -1,23 +1,10 @@
 package writer
 
 // UnbufferedOption configures the [Unbuffered] writer.
-type UnbufferedOption func(*unbufferedOptions)
+//
+// [Unbuffered] currently exposes no configuration knobs; the type exists for API symmetry with the
+// other writers and for forward compatibility. Like the other writer options it threads the
+// configuration value through, so it never allocates.
+type UnbufferedOption func(unbufferedOptions) unbufferedOptions
 
 type unbufferedOptions struct{}
-
-// Reset options to default and reset the inner [Buffer].
-func (o *unbufferedOptions) Reset() {
-}
-
-func (o *unbufferedOptions) redeem() {
-}
-
-func unbufferedOptionsWithDefaults(opts []UnbufferedOption) *unbufferedOptions {
-	o := poolOfUnbufferedOptions.Borrow()
-
-	for _, apply := range opts {
-		apply(o)
-	}
-
-	return o
-}

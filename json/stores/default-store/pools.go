@@ -28,12 +28,13 @@ var (
 //
 // The borrowed Store starts from the defaults ([Store.Reset] is applied on borrow).
 //
-// Pass an [Options] to configure it; the compression writer rebuilds lazily from the (level, dict) on the
-// first compression, so re-injecting a caller-owned dictionary each generation is allocation-free.
-func BorrowStore(opts ...Options) *Store {
+// Pass [Option] functions to configure it; the compression writer rebuilds lazily from the (level,
+// dict) on the first compression, so re-injecting a caller-owned dictionary each generation is
+// allocation-free.
+func BorrowStore(opts ...Option) *Store {
 	s := poolOfStores.Borrow()
 	if len(opts) > 0 {
-		s.options = resolveOptions(opts)
+		s.options = optionsWithDefaults(opts)
 	}
 
 	return s

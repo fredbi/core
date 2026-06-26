@@ -30,8 +30,8 @@ func dictTestDict() []byte {
 // newDictStore builds a Store whose compression always kicks in (low threshold) and is seeded with a
 // caller-provided preset dictionary.
 func newDictStore(dict []byte) *Store {
-	return New(DefaultOptions().
-		WithCompressionDict(dict).
+	return New(
+		WithCompressionDict(dict),
 		WithCompressionThreshold(16))
 }
 

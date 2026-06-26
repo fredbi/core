@@ -185,8 +185,8 @@ func testGetPutValue(s stores.Store) func(*testing.T) {
 		})
 
 		t.Run("with Store and compression options", func(t *testing.T) {
-			s := New(DefaultOptions().
-				WithCompressionLevel(flate.BestCompression).
+			s := New(
+				WithCompressionLevel(flate.BestCompression),
 				WithCompressionThreshold(10))
 
 			t.Run("with compressed string (len=150)", func(t *testing.T) {

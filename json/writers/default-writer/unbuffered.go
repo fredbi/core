@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"runtime"
 	"unicode/utf8"
 	"unsafe"
 
@@ -52,53 +51,35 @@ type Unbuffered struct {
 
 type unbuffered struct {
 	baseWriter
-	*unbufferedOptions
 
 	bw      io.ByteWriter // w.w asserted to io.ByteWriter once (nil if unsupported); avoids a per-call type assertion
 	scratch [1]byte       // reused for single-byte writes to avoid a per-call allocation
 }
 
 // NewUnbuffered JSON writer that copies JSON to [io.Writer] w, without buffering.
-func NewUnbuffered(w io.Writer, opts ...UnbufferedOption) *Unbuffered {
+//
+// [Unbuffered] has no configurable options and holds no pooled resources, so there is nothing to
+// relinquish: no options finalizer is registered.
+func NewUnbuffered(w io.Writer, _ ...UnbufferedOption) *Unbuffered {
 	writer := &Unbuffered{
 		unbuffered: unbuffered{
 			baseWriter: baseWriter{
 				w: w,
 			},
-			unbufferedOptions: unbufferedOptionsWithDefaults(
-				opts,
-			), // always borrow options from the pool
 		},
 	}
 	writer.jw = &writer.unbuffered
 	writer.bw, _ = w.(io.ByteWriter)
-
-	// when using New, borrowed inner resources must be relinquished when the gc claims the writer.
-	runtime.AddCleanup(writer, func(o *unbufferedOptions) {
-		if o != nil {
-			o.redeem()
-			poolOfUnbufferedOptions.Redeem(o)
-		}
-	}, writer.unbufferedOptions)
 
 	return writer
 }
 
 func (w *Unbuffered) Reset() {
 	w.baseWriter.Reset()
-	if w.unbufferedOptions != nil {
-		w.unbufferedOptions.Reset()
-	}
 }
 
-func (w *unbuffered) redeem() {
-	if w.unbufferedOptions != nil {
-		w.unbufferedOptions.redeem()
-
-		poolOfUnbufferedOptions.Redeem(w.unbufferedOptions)
-		w.unbufferedOptions = nil
-	}
-}
+// redeem has no inner resources to relinquish for the Unbuffered writer.
+func (w *unbuffered) redeem() {}
 
 func (w *unbuffered) writeSingleByte(c byte) {
 	if w.err != nil {

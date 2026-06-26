@@ -2,7 +2,6 @@ package writer
 
 import (
 	"io"
-	"runtime"
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores/values"
@@ -25,7 +24,8 @@ const (
 // TODO: text escaping rules
 type YAML struct {
 	*Buffered
-	*yamlOptions
+	yamlOptions // configuration, embedded by value (no pool, no finalizer)
+
 	level           int
 	redeemBuffered  *Buffered // mark that the Buffered must be redeemed
 	lastSeparator   byte
@@ -44,14 +44,8 @@ func NewYAML(w io.Writer, opts ...YAMLOption) *YAML {
 	}
 	writer.nestingLevel[0] = 1 // the initial value for the stack must be 1: this bit is thereafter shifted right or left
 
-	// when using New, borrowed inner resources must be relinquished when the gc claims the writer.
-	runtime.AddCleanup(writer, func(o *yamlOptions) {
-		if o != nil {
-			o.redeem()
-
-			poolOfYAMLOptions.Redeem(o)
-		}
-	}, writer.yamlOptions)
+	// the inner Buffered registers its own working-buffer finalizer; YAML holds no extra pooled
+	// resource of its own on the New path, so it needs none.
 
 	return writer
 }
@@ -72,10 +66,7 @@ func (w *YAML) Reset() {
 	if w.Buffered != nil {
 		w.Buffered.Reset()
 	}
-
-	if w.yamlOptions != nil {
-		w.yamlOptions.Reset()
-	}
+	// configuration (yamlOptions) is preserved across Reset; the Borrow path re-sets it explicitly.
 }
 
 func (w *YAML) Flush() error {
@@ -329,15 +320,10 @@ func (w *YAML) Number(v any) {
 }
 
 func (w *YAML) redeem() {
-	if w.redeemBuffered != nil { // this is hydrated when borrowing from a pool and remains nil when created with New
+	// redeemBuffered is NOT cleared: a recycled YAML keeps reusing the same inner *Buffered across
+	// Borrow/Redeem cycles, so the handle must survive to redeem the working buffer next time.
+	if w.redeemBuffered != nil { // hydrated when borrowing from a pool; nil when created with New
 		RedeemBuffered(w.redeemBuffered)
-	}
-
-	if w.yamlOptions != nil {
-		w.yamlOptions.redeem()
-
-		poolOfYAMLOptions.Redeem(w.yamlOptions)
-		w.yamlOptions = nil
 	}
 }
 

@@ -11,9 +11,9 @@ import (
 )
 
 func TestGob(t *testing.T) {
-	s := New(DefaultOptions().
-		WithCompressionLevel(9).
-		WithCompressionThreshold(16).
+	s := New(
+		WithCompressionLevel(9),
+		WithCompressionThreshold(16),
 		WithArenaSize(8192))
 
 	value := values.MakeStringValue(strings.Repeat("xyz", 100))

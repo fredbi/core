@@ -2,7 +2,6 @@ package writer
 
 import (
 	"io"
-	"runtime"
 
 	"github.com/fredbi/core/json/lexers/token"
 	"github.com/fredbi/core/json/stores/values"
@@ -18,7 +17,8 @@ var (
 
 type Indented struct {
 	*Buffered
-	*indentedOptions
+	indentedOptions // configuration, embedded by value (no pool, no finalizer)
+
 	level           int
 	redeemBuffered  *Buffered // mark that the Buffered must be redeemed
 	lastSeparator   byte
@@ -27,21 +27,13 @@ type Indented struct {
 
 func NewIndented(w io.Writer, opts ...IndentedOption) *Indented {
 	o := indentedOptionsWithDefaults(opts)
-	writer := &Indented{
+
+	// the inner Buffered registers its own working-buffer finalizer; Indented holds no extra pooled
+	// resource of its own on the New path, so it needs none.
+	return &Indented{
 		Buffered:        NewBuffered(w, o.applyBufferedOptions...),
 		indentedOptions: o,
 	}
-
-	// when using New, borrowed inner resources must be relinquished when the gc claims the writer.
-	runtime.AddCleanup(writer, func(o *indentedOptions) {
-		if o != nil {
-			o.redeem()
-
-			poolOfIndentedOptions.Redeem(o)
-		}
-	}, writer.indentedOptions)
-
-	return writer
 }
 
 func (w *Indented) Reset() {
@@ -51,10 +43,7 @@ func (w *Indented) Reset() {
 	if w.Buffered != nil {
 		w.Buffered.Reset()
 	}
-
-	if w.indentedOptions != nil {
-		w.indentedOptions.Reset()
-	}
+	// configuration (indentedOptions) is preserved across Reset; the Borrow path re-sets it explicitly.
 }
 
 func (w *Indented) Flush() error {
@@ -259,15 +248,10 @@ func (w *Indented) Number(v any) {
 }
 
 func (w *Indented) redeem() {
-	if w.redeemBuffered != nil { // this is hydrated when borrowing from a pool and remains nil when created with New
+	// redeemBuffered is NOT cleared: a recycled Indented keeps reusing the same inner *Buffered across
+	// Borrow/Redeem cycles, so the handle must survive to redeem the working buffer next time.
+	if w.redeemBuffered != nil { // hydrated when borrowing from a pool; nil when created with New
 		RedeemBuffered(w.redeemBuffered)
-	}
-
-	if w.indentedOptions != nil {
-		w.indentedOptions.redeem()
-
-		poolOfIndentedOptions.Redeem(w.indentedOptions)
-		w.indentedOptions = nil
 	}
 }
 

@@ -72,10 +72,11 @@ var _ stores.Store = &Store{} // [Store] implements [stores.Store]
 
 // New [Store].
 //
-// Call New() for the defaults, or pass an [Options] built from [DefaultOptions] to alter settings.
-func New(opts ...Options) *Store {
+// Call New() for the defaults, or pass [Option] functions (e.g. [WithCompressionLevel],
+// [WithArenaSize]) to alter settings.
+func New(opts ...Option) *Store {
 	s := &Store{
-		options: resolveOptions(opts),
+		options: optionsWithDefaults(opts),
 	}
 
 	s.arena = make([]byte, 0, s.minArenaSize)
@@ -352,7 +353,7 @@ func (s *Store) PutBool(b bool) stores.Handle {
 // Reset rewinds the arena (the per-document data) and restores the default configuration, so a
 // recycled Store starts from a clean slate: any injected dictionary reference is released and the
 // lazily-built compression writer is dropped (it rebuilds on demand). This is cheap — the defaults
-// are two ints and a nil dict (see [DefaultOptions]).
+// are two ints and a nil dict (see [optionsWithDefaults]).
 //
 // Reconfigure a recycled Store at borrow time via [BorrowStore]; the dictionary, being caller-owned,
 // is simply re-injected (aliased, not copied) for the next generation.
@@ -360,7 +361,7 @@ func (s *Store) PutBool(b bool) stores.Handle {
 // Implements [pools.Resettable].
 func (s *Store) Reset() {
 	s.arena = s.arena[:0]
-	s.options = DefaultOptions().resolved
+	s.options = optionsWithDefaults(nil)
 }
 
 func (s *Store) getInlinedNumber(h stores.Handle) values.Value {

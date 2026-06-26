@@ -35,9 +35,10 @@ type Buffered struct {
 
 type buffered struct {
 	baseWriter
-	*bufferedOptions
+	bufferedOptions // configuration, embedded by value (no pool, no finalizer)
 
-	buf []byte // working buffer (direct field: keeps the hot path one indirection shallower)
+	buf          []byte // working buffer (direct field: keeps the hot path one indirection shallower)
+	redeemBuffer func() // returns buf to poolOfBuffers; runtime state, set by borrowBuffer
 }
 
 func NewBuffered(w io.Writer, opts ...BufferedOption) *Buffered {
@@ -46,22 +47,19 @@ func NewBuffered(w io.Writer, opts ...BufferedOption) *Buffered {
 			baseWriter: baseWriter{
 				w: w,
 			},
-			bufferedOptions: bufferedOptionsWithDefaults(
-				opts,
-			), // always borrow options from the pool
+			bufferedOptions: bufferedOptionsWithDefaults(opts),
 		},
 	}
 	writer.borrowBuffer()
 	writer.jw = &writer.buffered
 
-	// when using New, borrowed inner resources must be relinquished when the gc claims the writer.
-	runtime.AddCleanup(writer, func(o *bufferedOptions) {
-		if o != nil {
-			o.redeem()
-
-			poolOfBufferedOptions.Redeem(o)
+	// On the New path the working buffer is relinquished to the pool when the gc claims the writer.
+	// (The Borrow path redeems it explicitly via RedeemBuffered.)
+	runtime.AddCleanup(writer, func(redeem func()) {
+		if redeem != nil {
+			redeem()
 		}
-	}, writer.bufferedOptions)
+	}, writer.redeemBuffer)
 
 	return writer
 }
@@ -69,9 +67,7 @@ func NewBuffered(w io.Writer, opts ...BufferedOption) *Buffered {
 func (w *Buffered) Reset() {
 	w.baseWriter.Reset()
 	w.buf = w.buf[:0]
-	if w.bufferedOptions != nil {
-		w.bufferedOptions.Reset()
-	}
+	// configuration (bufferedOptions) is preserved across Reset; the Borrow path re-sets it explicitly.
 }
 
 // Flush the internal buffer of the [Buffered] writer to the underlying [io.Writer].
@@ -106,13 +102,11 @@ func (w *buffered) flush() {
 	w.buf = w.buf[:0]
 }
 
-// redeem inner resources
+// redeem inner resources: return the working buffer to the pool.
 func (w *buffered) redeem() {
-	if w.bufferedOptions != nil {
-		w.bufferedOptions.redeem() // returns the working buffer to the pool via redeemBuffer
-
-		poolOfBufferedOptions.Redeem(w.bufferedOptions)
-		w.bufferedOptions = nil
+	if w.redeemBuffer != nil {
+		w.redeemBuffer()
+		w.redeemBuffer = nil
 	}
 	w.buf = nil
 }

@@ -5,23 +5,31 @@ var (
 	yamlElementPrefix = []byte{yamlElement, space} //nolint:gochecknoglobals
 )
 
-type YAMLOption func(*yamlOptions)
+// YAMLOption configures the [YAML] writer. It threads the configuration value through, so it never
+// allocates (see [BufferedOption]).
+type YAMLOption func(yamlOptions) yamlOptions
 
 func WithYAMLIndent(indent string) YAMLOption {
-	return func(o *yamlOptions) {
+	return func(o yamlOptions) yamlOptions {
 		o.indent = []byte(indent)
+
+		return o
 	}
 }
 
 func WithYAMLDocHeading(enabled bool) YAMLOption {
-	return func(o *yamlOptions) {
+	return func(o yamlOptions) yamlOptions {
 		o.withDocHeader = enabled
+
+		return o
 	}
 }
 
 func WithYAMLBufferedOptions(opts ...BufferedOption) YAMLOption {
-	return func(o *yamlOptions) {
+	return func(o yamlOptions) yamlOptions {
 		o.applyBufferedOptions = opts
+
+		return o
 	}
 }
 
@@ -31,21 +39,11 @@ type yamlOptions struct {
 	withDocHeader        bool
 }
 
-func (o *yamlOptions) Reset() {
-	o.indent = defaultIndent
-	o.applyBufferedOptions = nil
-	o.withDocHeader = false
-}
-
-func (o *yamlOptions) redeem() {
-	// no inner resources to relinquish
-}
-
-func yamlOptionsWithDefaults(opts []YAMLOption) *yamlOptions {
-	o := poolOfYAMLOptions.Borrow()
+func yamlOptionsWithDefaults(opts []YAMLOption) yamlOptions {
+	o := yamlOptions{indent: defaultYAMLIndent}
 
 	for _, apply := range opts {
-		apply(o)
+		o = apply(o)
 	}
 
 	if len(o.indent) == 0 {

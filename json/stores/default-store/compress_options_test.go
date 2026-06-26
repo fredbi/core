@@ -1,23 +1,26 @@
 package store
 
 import (
+	"compress/flate"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestOptions(t *testing.T) {
-	t.Run("should panic on invalid compression level setting", func(t *testing.T) {
-		assert.Panics(t, func() {
-			_ = DefaultOptions().WithCompressionLevel(12)
-		})
+	t.Run("should clamp an out-of-range compression level", func(t *testing.T) {
+		hi := optionsWithDefaults([]Option{WithCompressionLevel(12)})
+		assert.Equal(t, flate.BestCompression, hi.compressionLevel, "above range clamps to max")
+
+		lo := optionsWithDefaults([]Option{WithCompressionLevel(-10)})
+		assert.Equal(t, flate.HuffmanOnly, lo.compressionLevel, "below range clamps to min")
 	})
 
 	t.Run("should apply options", func(t *testing.T) {
-		o := DefaultOptions().
-			WithCompressionLevel(4).
-			WithCompressionThreshold(45).
-			resolved
+		o := optionsWithDefaults([]Option{
+			WithCompressionLevel(4),
+			WithCompressionThreshold(45),
+		})
 
 		assert.Equal(t, 4, o.compressionLevel)
 		assert.Equal(t, 45, o.compressionThreshold)
@@ -31,16 +34,23 @@ func TestOptions(t *testing.T) {
 		})
 	})
 
-	t.Run("builder is immutable: each With* returns a fresh copy", func(t *testing.T) {
-		base := DefaultOptions()
-		derived := base.WithCompressionLevel(9)
+	t.Run("options compose left to right and defaults seed the rest", func(t *testing.T) {
+		o := optionsWithDefaults([]Option{WithCompressionLevel(9)})
 
+		assert.Equal(t, 9, o.compressionLevel)
+		assert.Equal(
+			t,
+			defaultCompressionThreshold,
+			o.compressionThreshold,
+			"unset fields keep their defaults",
+		)
+
+		base := optionsWithDefaults(nil)
 		assert.Equal(
 			t,
 			defaultCompressionLevel,
-			base.resolved.compressionLevel,
-			"the base must be unchanged",
+			base.compressionLevel,
+			"defaults are unaffected by other resolutions",
 		)
-		assert.Equal(t, 9, derived.resolved.compressionLevel)
 	})
 }
