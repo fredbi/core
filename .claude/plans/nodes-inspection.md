@@ -165,7 +165,25 @@
 
 ## 3b. Target architecture (future) — `DocumentFactory` arena
 
-The settled direction for node memory management (Fred), to revisit when the document layer drives it:
+The settled direction for node memory management (Fred), to revisit when the document layer drives it.
+
+**Why it pays off — the uniform `Node` makes the pool *fungible*.** Every JSON value of every shape
+decodes into the same `Node` type, so a node freed by one document can back a totally unrelated
+structure on the next cycle. This is strictly stronger than a typed `sync.Pool[*T]`, which is
+monomorphic and *fragments by type* (a thousand idle `*User`s don't help you allocate an `*Order`). A
+node reservoir never fragments by schema because there is no schema at the node level → it approaches
+~100% reuse across arbitrary traffic. Requirements/seams this implies:
+- **Zero residual type identity on reset.** A recycled node must return as a neutral cell. Ours already
+  is: `kind`, `children`, `value` (handle), `keysIndex`, `key`, `ctx` — all generic, nothing
+  schema-shaped clings.
+- **The fungible unit is the node *slot*; sub-resources are semi-specialized.** Object cells carry a
+  `keysIndex` map, array cells a `[]Node`, scalars neither. So the arena is three reservoirs (node
+  slots, `[]Node` backings, index maps) reassembled per shape — a node recycled object→array reuses the
+  slot/slice but returns its map unused. (Same "maps aren't values" seam as everywhere else.)
+- Same bet as the rest of the stack: tokens (lexer) → handles (store) → nodes (document) — a uniform,
+  schema-agnostic, reusable currency, paid for with a heavier API than codegen'd typed structs.
+
+Mechanics:
 
 - **A `DocumentFactory` one level above is the allocator and the redeem oracle.** It spawns documents
   and their nodes from a region it owns; recycling the factory bulk-recycles *every* document and node
