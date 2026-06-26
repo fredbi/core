@@ -1,3 +1,4 @@
+//nolint:dupl // writegen lifts commonWriter verbatim onto each concrete writer; the triplication is by design.
 package writer
 
 import (
@@ -19,7 +20,9 @@ type wrt interface {
 	writeSingleByte(byte)
 	writeBinary([]byte)
 	writeEscaped([]byte) []byte
-	Err() error
+	// Ok is the cheap, inlinable hot-path status check (w.err == nil), used for the
+	// per-operation guards instead of the value-receiver Err which copies and wraps.
+	Ok() bool
 	SetErr(error)
 }
 
@@ -65,25 +68,6 @@ func (w *baseWriter) inc(n int) {
 	w.written += int64(n)
 }
 
-func writeEscaped(w wrt, data []byte) {
-	if w.Err() != nil {
-		return
-	}
-
-	var remainder []byte
-
-	escapedHolder, redeemEscaped := poolOfEscapedBuffers.BorrowWithSizeAndRedeem(
-		len(data),
-	) // TODO: more elaborate pool
-	escapedBuffer := escapedHolder.Slice()
-	escapedBuffer, remainder = escapedBytes(data, escapedBuffer)
-	w.writeBinary(escapedBuffer)
-	redeemEscaped()
-	if len(remainder) > 0 {
-		w.SetErr(fmt.Errorf("incomplete rune at end of input: %c: %w", remainder, ErrDefaultWriter))
-	}
-}
-
 // commonWriter implements most methods for writers based on
 // a few primitive methods defined by the [wrt] interface.
 //
@@ -124,7 +108,7 @@ func (w *commonWriter[T]) StartObject() {
 
 // Bool writes a boolean value as JSON.
 func (w *commonWriter[T]) Bool(v bool) {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -139,7 +123,7 @@ func (w *commonWriter[T]) Bool(v bool) {
 
 // Raw appends raw bytes to the buffer, without quotes and without escaping.
 func (w *commonWriter[T]) Raw(data []byte) {
-	if w.jw.Err() != nil || len(data) == 0 {
+	if !w.jw.Ok() || len(data) == 0 {
 		return
 	}
 
@@ -150,7 +134,7 @@ func (w *commonWriter[T]) Raw(data []byte) {
 //
 // The empty string is a legit input.
 func (w *commonWriter[T]) String(s string) {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -161,7 +145,7 @@ func (w *commonWriter[T]) String(s string) {
 //
 // An empty slice is a legit input.
 func (w *commonWriter[T]) StringBytes(data []byte) {
-	if w.jw.Err() != nil || data == nil {
+	if !w.jw.Ok() || data == nil {
 		return
 	}
 
@@ -172,10 +156,12 @@ func (w *commonWriter[T]) StringBytes(data []byte) {
 //
 // An empty slice is a legit input.
 func (w *commonWriter[T]) StringRunes(data []rune) {
-	if w.jw.Err() != nil || data == nil {
+	if !w.jw.Ok() || data == nil {
 		return
 	}
-	holder, redeem := poolOfEscapedBuffers.BorrowWithSizeAndRedeem(len(data) * utf8.MaxRune)
+	// worst case is utf8.UTFMax (4) bytes per rune. utf8.MaxRune is a code point, not a
+	// byte width: using it here over-allocates by ~280,000x.
+	holder, redeem := poolOfEscapedBuffers.BorrowWithSizeAndRedeem(len(data) * utf8.UTFMax)
 	defer redeem()
 
 	buf := holder.Slice()
@@ -190,7 +176,7 @@ func (w *commonWriter[T]) StringRunes(data []rune) {
 //
 // No check is carried out.
 func (w *commonWriter[T]) NumberBytes(data []byte) {
-	if w.jw.Err() != nil || len(data) == 0 {
+	if !w.jw.Ok() || len(data) == 0 {
 		return
 	}
 
@@ -206,7 +192,7 @@ func (w *commonWriter[T]) NumberCopy(r io.Reader) {
 
 // RawCopy writes the bytes consumed from an [io.Reader], without quotes and without escaping.
 func (w *commonWriter[T]) RawCopy(r io.Reader) {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -223,7 +209,7 @@ func (w *commonWriter[T]) RawCopy(r io.Reader) {
 
 		if n > 0 {
 			w.jw.writeBinary(buf[:n])
-			if w.jw.Err() != nil {
+			if !w.jw.Ok() {
 				break
 			}
 		}
@@ -238,7 +224,7 @@ func (w *commonWriter[T]) RawCopy(r io.Reader) {
 
 func (w *commonWriter[T]) StringCopy(r io.Reader) {
 	w.jw.writeSingleByte(quote)
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -260,7 +246,7 @@ func (w *commonWriter[T]) StringCopy(r io.Reader) {
 
 		if n > 0 {
 			remainder = w.jw.writeEscaped(buf[:n])
-			if w.jw.Err() != nil {
+			if !w.jw.Ok() {
 				return
 			}
 
@@ -295,27 +281,30 @@ func (w *commonWriter[T]) StringCopy(r io.Reader) {
 				var single [utf8.UTFMax]byte
 				copy(single[:], remainder)
 
-				n, err = r.Read(single[notWritten:runeSize])
-				if err != nil && !errors.Is(err, io.EOF) {
-					w.jw.SetErr(err) // TODO: wrap error
+				// Read exactly the missing bytes of the split rune. io.ReadFull tolerates
+				// short reads (e.g. a reader that yields one byte at a time) and only fails
+				// when the input ends before the rune is complete.
+				// Note: this must not clobber the outer loop's n/err, which drive termination.
+				if _, rerr := io.ReadFull(r, single[notWritten:runeSize]); rerr != nil {
+					if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
+						w.jw.SetErr(
+							fmt.Errorf(
+								"unexpected incomplete rune at end of input: %c: %w",
+								remainder,
+								ErrDefaultWriter,
+							),
+						)
+
+						return
+					}
+
+					w.jw.SetErr(rerr)
 
 					return
 				}
 
-				if n < runeSize-notWritten || (err != nil && errors.Is(err, io.EOF)) {
-					w.jw.SetErr(
-						fmt.Errorf(
-							"unexpected incomplete rune at end of input: %c: %w",
-							remainder,
-							ErrDefaultWriter,
-						),
-					)
-
-					return
-				}
-
-				remainder = w.jw.writeEscaped(single[:n])
-				if w.jw.Err() != nil {
+				remainder = w.jw.writeEscaped(single[:runeSize])
+				if !w.jw.Ok() {
 					return
 				}
 				if len(remainder) > 0 {
@@ -340,25 +329,30 @@ func (w *commonWriter[T]) StringCopy(r io.Reader) {
 	w.jw.writeSingleByte(quote)
 }
 
+// completeRuneSize returns the total byte width of a UTF-8 rune from its leading byte.
+//
+// It returns 0 when c is not a valid multi-byte lead byte (i.e. an ASCII byte or a
+// continuation byte 10xxxxxx).
 func completeRuneSize(c byte) int {
 	//nolint:mnd
 	switch {
-	case c&0b11110000 > 0:
-		return 4
-	case c&0b11100000 > 0:
-		return 3
-	case c&0b11000000 > 0:
-		return 2
+	case c&0b11111000 == 0b11110000:
+		return 4 // 11110xxx
+	case c&0b11110000 == 0b11100000:
+		return 3 // 1110xxxx
+	case c&0b11100000 == 0b11000000:
+		return 2 // 110xxxxx
 	default:
-		return 0 // invalid
+		return 0 // ASCII (0xxxxxxx) or continuation byte (10xxxxxx): not a multi-byte lead
 	}
 }
 
 // JSONString writes a JSON value of [types.String].
 //
-// Nothing is written if the value is undefined.
+// Nothing is written if the value is undefined (nil). A defined but empty value
+// (e.g. [types.EmptyString]) is a legit input and renders as the empty JSON string ("").
 func (w *commonWriter[T]) JSONString(value types.String) {
-	if w.jw.Err() != nil || !value.IsDefined() || len(value.Value) == 0 {
+	if !w.jw.Ok() || !value.IsDefined() {
 		return
 	}
 
@@ -369,7 +363,7 @@ func (w *commonWriter[T]) JSONString(value types.String) {
 //
 // Nothing is written if the value is undefined.
 func (w *commonWriter[T]) JSONNumber(value types.Number) {
-	if w.jw.Err() != nil || !value.IsDefined() || len(value.Value) == 0 {
+	if !w.jw.Ok() || !value.IsDefined() || len(value.Value) == 0 {
 		return
 	}
 
@@ -380,7 +374,7 @@ func (w *commonWriter[T]) JSONNumber(value types.Number) {
 //
 // Nothing is written if the value is undefined.
 func (w *commonWriter[T]) JSONBoolean(value types.Boolean) {
-	if w.jw.Err() != nil || !value.IsDefined() {
+	if !w.jw.Ok() || !value.IsDefined() {
 		return
 	}
 
@@ -391,7 +385,7 @@ func (w *commonWriter[T]) JSONBoolean(value types.Boolean) {
 //
 // Nothing is written if the value is undefined.
 func (w *commonWriter[T]) JSONNull(value types.NullType) {
-	if w.jw.Err() != nil || !value.IsDefined() {
+	if !w.jw.Ok() || !value.IsDefined() {
 		return
 	}
 
@@ -416,7 +410,7 @@ func (w *commonWriter[T]) Value(v values.Value) {
 
 // Null writes a null token ("null").
 func (w *commonWriter[T]) Null() {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -437,7 +431,7 @@ func (w *commonWriter[T]) Key(key values.InternedKey) {
 //
 // The method panics if the argument is not a numerical type or []byte.
 func (w *commonWriter[T]) Number(v any) {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -511,7 +505,7 @@ func (w *commonWriter[T]) Number(v any) {
 //
 // For key tokens, you'd need to call explicitly with the following colon token.
 func (w *commonWriter[T]) Token(tok token.T) {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -552,7 +546,7 @@ func (w *commonWriter[T]) Token(tok token.T) {
 //
 // Non-significant white-space preceding each token is written to the buffer.
 func (w *commonWriter[T]) VerbatimToken(tok token.VT) {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -561,7 +555,7 @@ func (w *commonWriter[T]) VerbatimToken(tok token.VT) {
 }
 
 func (w *commonWriter[T]) VerbatimValue(value values.VerbatimValue) {
-	if w.jw.Err() != nil {
+	if !w.jw.Ok() {
 		return
 	}
 
@@ -592,7 +586,10 @@ func (w *commonWriter[T]) appendFloat(n *big.Float) {
 	defer redeem()
 	b := buf.Slice()
 
-	b = n.Append(b, 'g', int(n.MinPrec())) //nolint:gosec // the int conversion is fine
+	// MinPrec() keeps the conversion allocation-free for the common float64-backed case.
+	// It prints the full binary expansion (e.g. 12.23 -> 12.2300…426) rather than the
+	// shortest round-trip form, but the value is exact; prec -1 would roughly double allocs.
+	b = n.Append(b, 'g', int(n.MinPrec()))
 	w.jw.writeBinary(b)
 }
 

@@ -48,6 +48,7 @@ var (
 func BorrowUnbuffered(writer io.Writer, opts ...UnbufferedOption) *Unbuffered {
 	w := poolOfUnbuffered.Borrow()
 	w.w = writer
+	w.bw, _ = writer.(io.ByteWriter)
 	if w.unbufferedOptions != nil {
 		poolOfUnbufferedOptions.Redeem(w.unbufferedOptions)
 	}
@@ -72,6 +73,7 @@ func BorrowBuffered(writer io.Writer, opts ...BufferedOption) *Buffered {
 		poolOfBufferedOptions.Redeem(w.bufferedOptions)
 	}
 	w.bufferedOptions = bufferedOptionsWithDefaults(opts)
+	w.borrowBuffer()
 	w.jw = &w.buffered
 
 	return w
@@ -100,12 +102,11 @@ func BorrowIndented(writer io.Writer, opts ...IndentedOption) *Indented {
 	// this is a recycled Indented: we already have a Buffered, we just need to Reset it
 	w.Buffered.Reset()
 
-	// now ensure that the recycled Buffered got the correct options
+	// re-apply options and borrow a fresh working buffer for the recycled instance
 	if w.bufferedOptions == nil {
 		w.bufferedOptions = bufferedOptionsWithDefaults(w.applyBufferedOptions)
-	} else {
-		w.updateOptions(w.applyBufferedOptions)
 	}
+	w.borrowBuffer()
 
 	// set the new underlying writer for this recycled instance
 	w.w = writer
@@ -133,15 +134,14 @@ func BorrowYAML(writer io.Writer, opts ...YAMLOption) *YAML {
 		return w
 	}
 
-	// this is a recycled Indented: we already have a Buffered, we just need to Reset it
+	// this is a recycled YAML: we already have a Buffered, we just need to Reset it
 	w.Buffered.Reset()
 
-	// now ensure that the recycled Buffered got the correct options
+	// re-apply options and borrow a fresh working buffer for the recycled instance
 	if w.bufferedOptions == nil {
 		w.bufferedOptions = bufferedOptionsWithDefaults(w.applyBufferedOptions)
-	} else {
-		w.updateOptions(w.applyBufferedOptions)
 	}
+	w.borrowBuffer()
 
 	// set the new underlying writer for this recycled instance
 	w.w = writer

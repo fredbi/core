@@ -26,6 +26,7 @@ use (
 	./json/lexers/default-lexer/benchmarks/comparative
 	./json/lexers/default-lexer/benchmarks/extras
 	./json/lexers/default-lexer/examples
+	./json/writers/benchmark
 	./json/writers/contrib
 	./jsonschema
 	./mangling

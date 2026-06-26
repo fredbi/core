@@ -5,10 +5,12 @@ import (
 )
 
 const (
-	maxStack      = 1 << 63
-	stackedArray  = 1
-	stackedObject = 2
-	stackScale    = 63 // 2^8-1
+	maxStack = 1 << 63
+	// seed values for a fresh stack word when the current one overflows: a sentinel bit
+	// (bit 1) plus the level bit at bit 0 (1 for array, 0 for object).
+	stackedArray  = 0b11 // sentinel + array bit
+	stackedObject = 0b10 // sentinel + object bit
+	stackScale    = 63   // levels encoded per stack word
 )
 
 /*
@@ -63,7 +65,11 @@ func (w *YAML) pushObject() {
 	stack := w.nestingLevel[len(w.nestingLevel)-1]
 
 	if stack >= maxStack {
+		// the current word is full: start a new word seeded with a fresh object level.
+		// (shifting further would push the sentinel bit out of the 64-bit word).
 		w.nestingLevel = append(w.nestingLevel, stackedObject)
+
+		return
 	}
 
 	w.nestingLevel[len(w.nestingLevel)-1] = stack << 1
@@ -74,7 +80,10 @@ func (w *YAML) pushArray() {
 	stack := w.nestingLevel[len(w.nestingLevel)-1]
 
 	if stack >= maxStack {
+		// the current word is full: start a new word seeded with a fresh array level.
 		w.nestingLevel = append(w.nestingLevel, stackedArray)
+
+		return
 	}
 
 	w.nestingLevel[len(w.nestingLevel)-1] = stack<<1 + 1
@@ -96,5 +105,13 @@ func (w *YAML) popContainer() {
 		return
 	}
 
-	w.nestingLevel[len(w.nestingLevel)-1] = stack >> 1
+	stack >>= 1
+	w.nestingLevel[len(w.nestingLevel)-1] = stack
+
+	// if an extra word is spent down to its bare sentinel, drop it so the top word always
+	// reflects the real innermost container (keeps isInArray/IndentLevel correct across
+	// word boundaries). Word 0 legitimately holds the bare sentinel at the top level.
+	if stack == 1 && len(w.nestingLevel) > 1 {
+		w.nestingLevel = w.nestingLevel[:len(w.nestingLevel)-1]
+	}
 }

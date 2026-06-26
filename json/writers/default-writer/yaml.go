@@ -59,7 +59,13 @@ func NewYAML(w io.Writer, opts ...YAMLOption) *YAML {
 func (w *YAML) Reset() {
 	w.lastSeparator = 0
 	w.level = 0
-	w.nestingLevel = w.nestingLevel[:1]
+	// a YAML borrowed fresh from the pool has a nil nestingLevel: the pool calls Reset
+	// before BorrowYAML initializes it, so allocate the initial word here when needed.
+	if cap(w.nestingLevel) == 0 {
+		w.nestingLevel = make([]uint64, 1)
+	} else {
+		w.nestingLevel = w.nestingLevel[:1]
+	}
 	w.nestingLevel[0] = 1
 	w.lastStack = 0
 
@@ -203,6 +209,10 @@ func (w *YAML) Token(tok token.T) {
 		default:
 			// ignore
 		}
+	case token.Null:
+		// route through YAML.Null so a null token renders as "~", consistently with
+		// Null/Value/JSONNull (Buffered.Token would emit the literal "null").
+		w.Null()
 	default:
 		w.releaseHold(true)
 		w.yamlCheckIsElement()
@@ -282,7 +292,11 @@ func (w *YAML) JSONBoolean(value types.Boolean) {
 	w.Buffered.JSONBoolean(value)
 }
 
-func (w *YAML) JSONNull(_ types.NullType) {
+func (w *YAML) JSONNull(value types.NullType) {
+	if !value.IsDefined() {
+		return
+	}
+
 	w.Null()
 }
 
