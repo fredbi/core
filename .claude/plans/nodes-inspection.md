@@ -133,13 +133,15 @@
 
 ### Minor / cosmetic
 
-- ⏳ **M1 — typos in exported doc comments:** `node.go:59` "the alue of", `node.go:30` "use cases hat",
-  `decodeArray` comment "empty object" should read "empty array" (`node.go:523`).
-- ⏳ **M2 — `AppendKey`/`PrependKey` duplicate the object-kind-guard + dup-check boilerplate** across 5
-  methods; candidate for a small helper once behaviour is fixed.
-- ⏳ **M3 — `Dump` redeems the unbuffered writer (`node.go:271`) *before* calling `Encode` with it**
-  (`node.go:272`). Works only because RedeemUnbuffered doesn't invalidate the writer; still reads as a
-  use-after-redeem and should be reordered.
+- ✅ **M1 — doc-comment typos (fixed):** "the alue of" → "the value of", "use cases hat" → "use cases
+  that", and `decodeArray`'s mislabeled "empty object" comment → "empty array".
+- ✅ **M2 — kind-guard + dup-check boilerplate extracted (fixed).** Added `requireObject(action)` /
+  `requireArray(action)` and `rejectDuplicateKey(key, ik)` helpers; the 8 key/elem mutators now use
+  them, removing the repeated `fmt.Errorf` blocks while preserving the exact error messages.
+- ✅ **M3 — `Dump` use-after-redeem (real bug, fixed).** `Dump` called `RedeemUnbuffered(jw)` *before*
+  `Encode(ctx)` used `jw` — the writer was returned to the pool while still being written to (a
+  concurrent `Borrow` could hand out the same writer). Now a `defer RedeemUnbuffered(jw)` redeems only
+  after `Encode` completes. New `TestNodeDump` loops to exercise pooled borrow/redeem reuse.
 
 ---
 

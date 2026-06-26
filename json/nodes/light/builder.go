@@ -180,24 +180,14 @@ func (b *Builder) AppendKey(key string, value Node) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf(
-			"can't add a key to a non-object node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireObject("add a key to") {
 		return b
 	}
 
 	b.cloneForWrite()
 	b.ensureIndex()
 	value.key = values.MakeInternedKey(key)
-	if _, ok := b.n.keysIndex[value.key]; ok {
-		b.err = fmt.Errorf(
-			"key is already present in object: %q: %w",
-			key, nodecodes.ErrBuilder,
-		)
-
+	if b.rejectDuplicateKey(key, value.key) {
 		return b
 	}
 
@@ -212,25 +202,14 @@ func (b *Builder) PrependKey(key string, value Node) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf(
-			"can't prepend a key into a non-object node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireObject("prepend a key into") {
 		return b
 	}
 
 	b.cloneForWrite()
 	b.ensureIndex()
 	value.key = values.MakeInternedKey(key)
-
-	if _, ok := b.n.keysIndex[value.key]; ok {
-		b.err = fmt.Errorf(
-			"key is already present in object: %q: %w",
-			key, nodecodes.ErrBuilder,
-		)
-
+	if b.rejectDuplicateKey(key, value.key) {
 		return b
 	}
 
@@ -249,12 +228,7 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf(
-			"can't insert a key into a non-object node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireObject("insert a key into") {
 		return b
 	}
 
@@ -269,12 +243,7 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 	b.cloneForWrite()
 	b.ensureIndex()
 	value.key = values.MakeInternedKey(key)
-	if _, ok := b.n.keysIndex[value.key]; ok {
-		b.err = fmt.Errorf(
-			"key is already present in object: %q: %w",
-			key, nodecodes.ErrBuilder,
-		)
-
+	if b.rejectDuplicateKey(key, value.key) {
 		return b
 	}
 
@@ -295,12 +264,7 @@ func (b *Builder) RemoveKey(key string) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindObject {
-		b.err = fmt.Errorf(
-			"can't remove a key from a non-object node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireObject("remove a key from") {
 		return b
 	}
 
@@ -331,12 +295,7 @@ func (b *Builder) AppendElem(value Node) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf(
-			"can't add an element to a non-array node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireArray("add an element to") {
 		return b
 	}
 
@@ -352,12 +311,7 @@ func (b *Builder) PrependElem(value Node) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf(
-			"can't add an element to a non-array node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireArray("add an element to") {
 		return b
 	}
 
@@ -373,12 +327,7 @@ func (b *Builder) InsertElem(position int, value Node) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf(
-			"can't add an element to a non-array node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireArray("add an element to") {
 		return b
 	}
 
@@ -402,12 +351,7 @@ func (b *Builder) RemoveElem(position int) *Builder {
 		return b
 	}
 
-	if b.n.kind != nodes.KindArray {
-		b.err = fmt.Errorf(
-			"can't remove an element from a non-array node. Node kind is %v: %w",
-			b.n.kind, nodecodes.ErrBuilder,
-		)
-
+	if !b.requireArray("remove an element from") {
 		return b
 	}
 	if position >= len(b.n.children) || position < 0 {
@@ -695,6 +639,50 @@ func (b *Builder) ensureChildren() {
 	if b.n.children == nil {
 		b.n.children = make([]Node, 0)
 	}
+}
+
+// requireObject sets a build error and returns false when the current node is not an object.
+// action describes the attempted operation, e.g. "add a key to".
+func (b *Builder) requireObject(action string) bool {
+	if b.n.kind != nodes.KindObject {
+		b.err = fmt.Errorf(
+			"can't %s a non-object node. Node kind is %v: %w",
+			action, b.n.kind, nodecodes.ErrBuilder,
+		)
+
+		return false
+	}
+
+	return true
+}
+
+// requireArray sets a build error and returns false when the current node is not an array.
+// action describes the attempted operation, e.g. "add an element to".
+func (b *Builder) requireArray(action string) bool {
+	if b.n.kind != nodes.KindArray {
+		b.err = fmt.Errorf(
+			"can't %s a non-array node. Node kind is %v: %w",
+			action, b.n.kind, nodecodes.ErrBuilder,
+		)
+
+		return false
+	}
+
+	return true
+}
+
+// rejectDuplicateKey sets a build error and returns true when ik is already present in the object.
+func (b *Builder) rejectDuplicateKey(key string, ik values.InternedKey) bool {
+	if _, ok := b.n.keysIndex[ik]; ok {
+		b.err = fmt.Errorf(
+			"key is already present in object: %q: %w",
+			key, nodecodes.ErrBuilder,
+		)
+
+		return true
+	}
+
+	return false
 }
 
 func buildFromFloat[T conv.Float](b *Builder, value T) *Builder {

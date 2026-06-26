@@ -232,6 +232,26 @@ func mustScalar(t *testing.T, s *store.Store, n Node) string {
 	return string(v.StringValue().Value)
 }
 
+func TestNodeDump(t *testing.T) {
+	s := store.New()
+	scalar := func(v string) Node { return NewBuilder(s).StringValue(v).Node() }
+
+	n := NewBuilder(s).Object().
+		AppendKey("a", scalar("A")).
+		AppendKey("b", NewBuilder(s).Array().
+			AppendElems(scalar("x"), scalar("y")).Node()).
+		Node()
+
+	const want = `{"a":"A","b":["x","y"]}`
+
+	// loop so the pooled unbuffered writer is borrowed/redeemed repeatedly: the M3 fix (redeem after
+	// Encode, not before) must keep every Dump correct even under reuse.
+	for i := range 8 {
+		got := n.Dump(s)
+		assert.JSONEqf(t, want, got, "Dump mismatch on iteration %d", i)
+	}
+}
+
 func TestNodeIsNullAndEncodeHandles(t *testing.T) {
 	s := store.New()
 

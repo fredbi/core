@@ -27,7 +27,7 @@ var nullNode = Node{} //nolint:gochecknoglobals
 //
 // [Node.Decode] and [Node.Encode] maintain the order of object keys.
 // [Node] does not guarantee to be verbatim: non significant space (indentations, new lines) or escaped unicode sequences are not kept verbatim.
-// Use [VerbatimNode] to cover use cases hat require that the original JSON can be reconstructed verbatim.
+// Use [VerbatimNode] to cover use cases that require the original JSON to be reconstructed verbatim.
 //
 // Duplicate keys in an object trigger an error by default (option available to tolerate duplicates).
 //
@@ -56,7 +56,7 @@ func (n Node) Value(s stores.Store) (values.Value, bool) {
 	}
 }
 
-// Handle of the alue of a node of kind nodes.KindScalar.
+// Handle of the value of a node of kind nodes.KindScalar.
 func (n Node) Handle() (stores.Handle, bool) {
 	switch n.kind {
 	case nodes.KindScalar:
@@ -261,12 +261,12 @@ func (n Node) Encode(ctx *ParentContext) {
 func (n Node) Dump(s stores.Store) string {
 	var w bytes.Buffer
 	jw := writer.BorrowUnbuffered(&w)
+	defer writer.RedeemUnbuffered(jw) // redeem only after Encode is done writing into jw
 
 	ctx := &ParentContext{
 		S: s,
 		W: jw,
 	}
-	writer.RedeemUnbuffered(jw)
 	n.Encode(ctx)
 
 	return w.String()
@@ -518,7 +518,7 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 			}
 
 			if tok.IsEndArray() {
-				// empty object
+				// empty array
 				return
 			}
 
