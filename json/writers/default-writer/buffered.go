@@ -142,6 +142,7 @@ func (w *buffered) writeBinary(data []byte) {
 	}
 }
 
+//nolint:gocyclo // inline the escape loop in one single call
 func (w *buffered) writeEscaped(data []byte) (remainder []byte) {
 	if w.err != nil {
 		return nil
@@ -153,7 +154,6 @@ func (w *buffered) writeEscaped(data []byte) (remainder []byte) {
 	)
 
 	// first iterates over non-escaped bytes.
-	// TODO: imitate easyjson writer and do  it in chunks
 	for ; p < len(data); p++ {
 		c := data[p]
 		if c < lowestPrintable || c >= utf8.RuneSelf || c == '\t' || c == '\r' || c == '\n' ||

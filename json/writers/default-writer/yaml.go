@@ -22,6 +22,10 @@ const (
 
 // TODO: optionally add yaml doc separator "---"
 // TODO: text escaping rules
+
+// YAML is a writer that produces a yaml document.
+//
+// The [YAML] writer is always buffered.
 type YAML struct {
 	*Buffered
 	yamlOptions // configuration, embedded by value (no pool, no finalizer)

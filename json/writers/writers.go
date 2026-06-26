@@ -8,6 +8,7 @@ import (
 	"github.com/fredbi/core/json/types"
 )
 
+//nolint:interfacebloat // the writer has a rich interface to support programmatic writing of all JSON tokens
 type BaseWriter interface {
 	// write delimiters
 	StartObject()
