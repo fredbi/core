@@ -163,6 +163,30 @@
 2. **Phase B — API/representation.** Resolve D1/D4 (null model + options), then D2/D3 pooling/alloc.
 3. **Phase C — Docs + cosmetics.** M1–M3, doc pass, decide VerbatimNode (D5) fate.
 
+## 3b. Target architecture (future) — `DocumentFactory` arena
+
+The settled direction for node memory management (Fred), to revisit when the document layer drives it:
+
+- **A `DocumentFactory` one level above is the allocator and the redeem oracle.** It spawns documents
+  and their nodes from a region it owns; recycling the factory bulk-recycles *every* document and node
+  it produced. The factory is the unique root, so "safe to redeem" becomes decidable at its boundary —
+  which a single node can never decide locally (COW aliasing shares its `children`/`keysIndex` into
+  clones with unknown lifetime). Region/arena allocation, not per-node reference pooling.
+- **Unifies the two arenas under one lifetime.** `stores.Store` is already the value arena; the factory
+  owns (or is) both the store and a node-structure arena. One `factory.Recycle()` resets both. The
+  store's region model is the template.
+- **Keeps the C5 COW model sound — the factory boundary is its safe scope.** Clones may share backing
+  within one factory generation; the whole region drops together. Hard contract: **a node must not
+  escape its factory** (never shared across a recycle).
+- **Maps can't be arena'd.** Slab-allocate the `[]Node` child backings; pool-and-`clear()` the
+  `map[InternedKey]int` index (Go maps are runtime-managed). Same "maps are references" property that
+  forced per-mutation index copies forces the index to be pooled, not arena'd.
+- **Integration seam = `cloneForWrite`.** It currently does `slices.Clone`/`maps.Clone` against the Go
+  heap; to capture those in the factory the Builder needs an allocator handle (thread it like the store,
+  via the builder's store ref or `ParentContext`) so COW draws from the factory, not the heap.
+- D2 (`Builder.Reset` dropping capacity) is the local symptom of this: only the factory arena can
+  reclaim that capacity; `Reset` itself must keep dropping.
+
 ## 4. Open decisions to confirm with Fred
 
 - D1: single null model — fold `KindNull` into a null-handle scalar, or keep `KindNull` and make all
