@@ -3,6 +3,7 @@ package light
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"slices"
 
@@ -16,10 +17,19 @@ import (
 )
 
 // Builder to construct a [Node] programmatically.
+//
+// A [Node] is immutable: cloning one (via [Builder.From]) and mutating the clone never alters the
+// original. The builder achieves this with copy-on-write — see [Builder.cloneForWrite]. Cloning is
+// cheap (a shallow share) and a mutation chain copies the shared slice and index at most once.
 type Builder struct {
 	s   stores.Store
 	err error
 	n   Node
+
+	// aliased reports that n.children and n.keysIndex may be shared with a foreign Node (seeded via
+	// From) or with a snapshot already handed out by Node. While set, the next mutation must clone
+	// them before writing (copy-on-write).
+	aliased bool
 }
 
 // NewBuilder yields a fresh [Node] builder.
@@ -44,6 +54,7 @@ func (b *Builder) SetErr(err error) {
 func (b *Builder) Reset() {
 	b.err = nil
 	b.n = nullNode
+	b.aliased = false
 }
 
 func (b *Builder) WithStore(s stores.Store) *Builder {
@@ -60,12 +71,18 @@ func (b *Builder) Node() Node {
 		return nullNode
 	}
 
+	// the returned Node shares this builder's slice and index; mark aliased so the next mutation
+	// copies-on-write and leaves the handed-out snapshot unaltered.
+	b.aliased = true
+
 	return b.n
 }
 
 func (b *Builder) From(n Node) *Builder {
-	b.resetNode()
+	// seed from a foreign Node: share its slice and index read-only (no copy). The first mutation
+	// will clone-on-write, so n is never altered.
 	b.n = n
+	b.aliased = true
 
 	return b
 }
@@ -143,6 +160,8 @@ func (b *Builder) Swap(i, j int) *Builder {
 		return b
 	}
 
+	b.cloneForWrite()
+
 	// only objects carry a key index; arrays must not get a phantom keysIndex map.
 	if b.n.kind == nodes.KindObject {
 		keyi := b.n.children[i].key
@@ -170,6 +189,7 @@ func (b *Builder) AppendKey(key string, value Node) *Builder {
 		return b
 	}
 
+	b.cloneForWrite()
 	b.ensureIndex()
 	value.key = values.MakeInternedKey(key)
 	if _, ok := b.n.keysIndex[value.key]; ok {
@@ -201,6 +221,7 @@ func (b *Builder) PrependKey(key string, value Node) *Builder {
 		return b
 	}
 
+	b.cloneForWrite()
 	b.ensureIndex()
 	value.key = values.MakeInternedKey(key)
 
@@ -245,6 +266,7 @@ func (b *Builder) InsertKey(key string, position int, value Node) *Builder {
 		return b.AppendKey(key, value)
 	}
 
+	b.cloneForWrite()
 	b.ensureIndex()
 	value.key = values.MakeInternedKey(key)
 	if _, ok := b.n.keysIndex[value.key]; ok {
@@ -286,10 +308,11 @@ func (b *Builder) RemoveKey(key string) *Builder {
 	k := values.MakeInternedKey(key)
 	index, ok := b.n.keysIndex[k]
 	if !ok {
-		// key is not present: no error
+		// key is not present: no error (and no copy-on-write — nothing is mutated)
 		return b
 	}
 
+	b.cloneForWrite()
 	delete(b.n.keysIndex, k)
 	b.n.children = slices.Delete(b.n.children, index, index+1)
 
@@ -317,6 +340,7 @@ func (b *Builder) AppendElem(value Node) *Builder {
 		return b
 	}
 
+	b.cloneForWrite()
 	b.ensureChildren()
 	b.n.children = append(b.n.children, value)
 
@@ -337,6 +361,7 @@ func (b *Builder) PrependElem(value Node) *Builder {
 		return b
 	}
 
+	b.cloneForWrite()
 	b.ensureChildren()
 	b.n.children = slices.Insert(b.n.children, 0, value)
 
@@ -365,6 +390,7 @@ func (b *Builder) InsertElem(position int, value Node) *Builder {
 		return b.AppendElem(value)
 	}
 
+	b.cloneForWrite()
 	b.ensureChildren()
 	b.n.children = slices.Insert(b.n.children, position, value)
 
@@ -393,6 +419,7 @@ func (b *Builder) RemoveElem(position int) *Builder {
 		return b
 	}
 
+	b.cloneForWrite()
 	b.ensureChildren()
 	b.n.children = slices.Delete(b.n.children, position, position+1)
 
@@ -612,11 +639,40 @@ func (b *Builder) Null() *Builder {
 	}
 
 	b.n = nullNode
+	b.aliased = false
 
 	return b
 }
 
+// cloneForWrite implements copy-on-write.
+//
+// The first mutation after the builder was seeded from a foreign [Node] (via [Builder.From]) or after
+// it handed out a snapshot (via [Builder.Node]) clones the shared slice and index, so the original is
+// never altered. Clearing the aliased flag makes every subsequent mutation in the same chain a no-op
+// here: a mutation chain therefore copies at most once, no matter how long it is.
+func (b *Builder) cloneForWrite() {
+	if !b.aliased {
+		return
+	}
+
+	b.n.children = slices.Clone(b.n.children)
+	if b.n.keysIndex != nil {
+		b.n.keysIndex = maps.Clone(b.n.keysIndex)
+	}
+	b.aliased = false
+}
+
 func (b *Builder) resetNode() {
+	if b.aliased {
+		// the slice and index are shared read-only; don't reuse them, start fresh so the original
+		// (or a handed-out snapshot) is left intact.
+		b.n.children = nil
+		b.n.keysIndex = nil
+		b.aliased = false
+
+		return
+	}
+
 	if b.n.children != nil {
 		b.n.children = b.n.children[:0]
 	}

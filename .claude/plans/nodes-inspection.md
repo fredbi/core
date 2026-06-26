@@ -84,6 +84,26 @@
   encoder now **errors** on a `KindScalar` node whose value `IsZero()` (previously `WriteTo(HandleZero)`
   silently emitted nothing → invalid JSON).
 
+- ✅ **C5 — `Builder` clone-and-mutate was not copy-on-write; mutating a clone corrupted the original
+  (fixed).** `Node` is meant to be immutable and cheap to clone, with `From(n)` yielding a mutable
+  derivative that leaves `n` intact. `From` was a **shallow struct copy** (`b.n = n`), so `b.n.children`
+  aliased `n`'s backing array and `b.n.keysIndex` aliased the *same map*, and no mutation did
+  copy-on-write. Proven (probes): `From(obj).AppendKey` mutated the original's index in place
+  (`{a,b}`→`{a,b,c}` over a length-2 children → self-inconsistent, `AtKey` can panic); `From(arr).
+  RemoveElem(0)` ran `slices.Delete` in place (`[e0 e1 e2]`→`[e1 e2 …]`); `Swap` reordered the shared
+  backing. So **no** mutation reliably left the original unaltered.
+
+  **Fix — guarded copy-on-write.** Added an `aliased` flag + `cloneForWrite()` that `slices.Clone`s the
+  children and `maps.Clone`s the index on the *first* mutation, then clears the flag. `From` and `Node`
+  both set `aliased = true` (so a seeded clone *and* every handed-out snapshot are protected). The flag
+  is what avoids over-copying along a fluent chain: a chain copies the slice+index **at most once**, not
+  per step; further ops mutate the now-owned structures in place. `resetNode` is COW-aware (drops the
+  shared refs instead of reusing them). Allocation profile (measured): clone-without-mutation **0**;
+  one object mutation **4**; a **five**-mutation chain **5** (≈ one mutation, not 5×) — the index is
+  copied once. Tests: `builder_cow_test.go` asserts the original is byte-for-byte unaltered after every
+  object/array op, that two snapshots from one builder diverge independently, and the alloc profile.
+  Race-clean; coverage 53.0% → 57.8%.
+
 ### Design / API smells
 
 - ✅ **D1 — Null representation (decided).** JSON null = `KindNull` node holding a dedicated non-zero
