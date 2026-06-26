@@ -112,10 +112,20 @@
   `KindNull` node — revisit whether a null node should yield `(NullValue,true)` so callers can
   distinguish null from absence via the accessor too.
 
-- 🔬 **D2 — `Builder.Reset` discards pooled capacity.** `builder.go:46` does `b.n = nullNode`, dropping
-  the `children` slice and `keysIndex` map. Since `Builder` is pooled (`poolOfBuilders`), Borrow→Reset
-  loses the per-builder allocations every cycle — partly defeating the pool. Consider reusing via
-  `resetNode()` semantics (keep backing arrays, clear length) like the decode reset paths.
+- ✅ **D2 — `Builder.Reset` drops the children/index capacity — and that is correct, not a leak
+  (resolved by the C5 COW model).** Original worry: `b.n = nullNode` throws away the slice + map every
+  Borrow→Reset cycle. But under copy-on-write the builder is `aliased` as soon as it hands out a
+  `Node()`, so by the time `Reset` runs those backing arrays belong to the returned snapshot; reusing
+  them would corrupt an already-published node. So `Reset` **must** drop them. The lost capacity is the
+  irreducible cost of immutability and cannot be reclaimed by tweaking `Reset`.
+
+  **Bigger picture (Fred, parked):** a *node-granularity* pool is unsound by construction — because
+  aliasing can share a node's `children`/`keysIndex` into any number of clones that outlive the builder,
+  "safe to redeem" is not locally decidable; it needs whole-document reachability. The only viable
+  model is a **document-scoped allocator/arena** (an external oracle that frees all of a document's node
+  structure in one shot), mirroring how `stores.Store` already arena-allocates scalar values. Individual
+  nodes never self-redeem. Deferred until the document layer drives it; per-node pooling is considered
+  moot. See [[nodes-inspection]] memory.
 
 - ✅ **D3 — `Swap` allocated a `keysIndex` for arrays (fixed).** `Swap` called `ensureIndex()`
   unconditionally, creating an unused map for array nodes; removed — only the object branch touches the
