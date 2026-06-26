@@ -134,7 +134,16 @@ func (b *Builder) Swap(i, j int) *Builder {
 		return b
 	}
 
-	b.ensureIndex()
+	if i < 0 || j < 0 || i >= len(b.n.children) || j >= len(b.n.children) {
+		b.err = fmt.Errorf(
+			"can't swap out of range children. Indices (%d,%d) out of [0,%d): %w",
+			i, j, len(b.n.children), nodecodes.ErrBuilder,
+		)
+
+		return b
+	}
+
+	// only objects carry a key index; arrays must not get a phantom keysIndex map.
 	if b.n.kind == nodes.KindObject {
 		keyi := b.n.children[i].key
 		keyj := b.n.children[j].key

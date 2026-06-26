@@ -97,8 +97,11 @@
   loses the per-builder allocations every cycle — partly defeating the pool. Consider reusing via
   `resetNode()` semantics (keep backing arrays, clear length) like the decode reset paths.
 
-- 💭 **D3 — `Swap` allocates a `keysIndex` for arrays.** `builder.go:137` calls `ensureIndex()`
-  unconditionally, creating an (unused) map for array nodes. Cheap to gate behind the object branch.
+- ✅ **D3 — `Swap` allocated a `keysIndex` for arrays (fixed).** `Swap` called `ensureIndex()`
+  unconditionally, creating an unused map for array nodes; removed — only the object branch touches the
+  index now, arrays stay `keysIndex == nil`. Also added the missing bounds check (was an unguarded
+  out-of-range panic; now returns an `ErrBuilder` like `RemoveElem`). Covered by two new subtests in
+  `TestBuilderObjectIndex`.
 
 - 🔬 **D4 — `options.go` is skeletal / dead-ish.** `DecodeOptions` embeds hooks + `tolerateDuplKey`;
   `EncodeOptions` is empty with a commented field; file header literally says "I don't think we really

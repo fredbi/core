@@ -165,6 +165,40 @@ func TestBuilderObjectIndex(t *testing.T) {
 		assert.Equal(t, []string{"c", "b", "a"}, objectKeys(n))
 	})
 
+	t.Run("Swap on an array allocates no key index (D3)", func(t *testing.T) {
+		b := NewBuilder(s).Array().AppendElems(scalar("x"), scalar("y"), scalar("z"))
+		require.True(t, b.Ok())
+
+		b.Swap(0, 2)
+		require.True(t, b.Ok())
+
+		n := b.Node()
+		require.Nil(t, n.keysIndex, "an array must never carry a keysIndex map")
+		require.Equal(t, 3, n.Len())
+
+		first, _ := n.Elem(0)
+		last, _ := n.Elem(2)
+		assert.Equal(t, "z", mustScalar(t, s, first))
+		assert.Equal(t, "x", mustScalar(t, s, last))
+	})
+
+	t.Run("Swap out of range yields an error instead of panicking (D3)", func(t *testing.T) {
+		for _, tc := range []struct{ i, j int }{{0, 5}, {-1, 0}, {0, 0}} {
+			b := NewBuilder(s).Array().AppendElems(scalar("only"))
+			require.True(t, b.Ok())
+
+			b.Swap(tc.i, tc.j)
+			if tc.i == 0 && tc.j == 0 {
+				// (0,0) is in range for a 1-element array: must succeed.
+				require.Truef(t, b.Ok(), "Swap(0,0) on a 1-elem array should be a valid no-op")
+
+				continue
+			}
+			require.Falsef(t, b.Ok(), "Swap(%d,%d) should error", tc.i, tc.j)
+			require.ErrorContains(t, b.Err(), "out of range")
+		}
+	})
+
 	t.Run("duplicate keys are rejected on every insertion path (C3)", func(t *testing.T) {
 		for _, tc := range []struct {
 			name string
