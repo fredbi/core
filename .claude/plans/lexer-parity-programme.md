@@ -211,12 +211,34 @@ pushing work onto every consumer, which contradicts the contract we keep.
 
 ## 5. Tricks — inlining, switch cost, token size
 
-### 5.1 Devirtualization by codegen (PREP) 🚧
+### 5.1 Devirtualization by codegen (PREP) ✅ built — adoption pending
 The tax: `scanTokenG[T,P]`/`scanPushG[T,P]` call `p.emit/p.none/p.eof` through the
-generics dictionary (indirect, non-devirtualized) — ~5% on `L`. The generic cores
-are ~350 lines and will *never* inline; the point is **not** to inline them but to
+generics dictionary (indirect, non-devirtualized). The generic cores are ~350
+lines and will *never* inline; the point is **not** to inline them but to
 **remove the indirect dictionary call** so the tiny `emit` body becomes a direct,
 inlinable construction.
+
+**Built:** `lab/internal/lexgen` generates `lab/scan_gen.go` (6 funcs: the 3 cores
+× 2 policies), monomorphized — type params erased, policy bound concrete. Confirmed
+via `gcflags=-m`: the generated cores **inline `semanticPolicy.emit/none/eof`**;
+the generic cores show **no** such devirtualized inline (dictionary call). Devirt
+proven **byte-for-byte equivalent** to generic (pull+push, L+VL, whole-buffer +
+streaming, valid + malformed) by `TestDevirtEquivalence*`.
+
+**Measured gap (in one binary — no cross-pkg alignment noise; count=8,
+`ramblings/2026-06-devirt-lexgen.txt`):**
+- **Push: +7…+18% everywhere** (separators +18, ints +17, exp +12, decimals/uesc
+  +10, plain +9). The dict tax on push is far bigger than the assumed ~5% — the
+  push core is hot/resident, every `yield(p.emit())` was a dictionary call.
+- **Pull: mixed** — +2…+9% on dispatch/value-heavy paths, but **−4%/−2% on
+  ints_pos/ints_neg** (number fast-path codegen shifts unfavourably when
+  monomorphized; escaped_long flat). 
+
+**Adoption call (for Fred):** wire `Tokens()` (push) → devirt now — unambiguous win
+on the preferred high-throughput path. Hold `NextToken()` (pull) on generic until
+the ints regression is understood (likely the inlined number fast-path; may want
+that path factored out). The generator stays the single source of truth: re-run
+`go generate ./...` in `lab/` after any core change.
 
 Design — port the writer's `writegen` (`json/writers/default-writer/internal/writegen/main.go`),
 which lifts `commonWriter[T]` method bodies onto concrete receivers verbatim so
@@ -318,7 +340,9 @@ with the measurement, so we don't relitigate them.
 3. 🚧 In-tree SWAR module + inline gate (§3) — DONE: module built/tested/inline-gated,
    string-stop consolidated (perf-neutral). Remaining: digit-run SWAR (→§4.1),
    whitespace (deferred). FirstByte fast-path lead parked for §4.2.
-4. ⬜ `lexgen` devirt generator (§5.1) — body-agnostic, so build it now; re-gen cheaply after each core change.
+4. ✅ `lexgen` devirt generator (§5.1) — built, generates 6 monomorphized cores,
+   devirt proven equivalent + inlined. Gap: push +7-18%, pull mixed (ints -4%).
+   Adoption pending: wire push→devirt; hold pull pending ints investigation.
 
 **Experiments (each: win micro-bench → no regressions → hold on corpora):**
 4. ⬜ Token: 16-byte `*[]byte` candidate (§5.3) — likely top throughput lever after devirt.

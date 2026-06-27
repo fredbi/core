@@ -1,0 +1,28 @@
+# lexgen devirt gap — generic vs monomorphized cores, IN-BINARY (no cross-pkg noise)
+# go1.26.4, Ryzen 7 5800X, count=8 medians, lab BenchmarkDevirt
+
+workload               mode     generic    devirt    gap%
+bools                  pull       243.6     255.8   +5.0%
+bools                  push       271.9     291.0   +7.0%
+decimals               pull       516.7     530.5   +2.7%
+decimals               push       548.4     606.4  +10.6%
+exponential            pull       377.2     384.7   +2.0%
+exponential            push       405.9     453.1  +11.7%
+ints_neg               pull       637.2     625.7   -1.8%
+ints_neg               push       654.6     767.2  +17.2%
+ints_pos               pull       610.2     585.9   -4.0%
+ints_pos               push       638.5     747.4  +17.1%
+nulls                  pull       234.8     243.1   +3.5%
+nulls                  push       252.8     276.8   +9.5%
+separators             pull       134.2     146.6   +9.2%
+separators             push       158.0     186.8  +18.2%
+strings_escaped        pull       585.9     599.0   +2.2%
+strings_escaped        push       585.6     609.0   +4.0%
+strings_escaped_long   pull      1371.9    1369.5   -0.2%
+strings_escaped_long   push      1364.0    1382.6   +1.4%
+strings_plain          pull      1000.3    1063.9   +6.4%
+strings_plain          push      1029.2    1120.0   +8.8%
+strings_uescaped       pull       912.6     951.1   +4.2%
+strings_uescaped       push       925.6    1018.3  +10.0%
+strings_unicode        pull       935.9     977.6   +4.5%
+strings_unicode        push       960.4    1042.0   +8.5%

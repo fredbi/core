@@ -1,5 +1,7 @@
 package lab
 
+//go:generate go run ./internal/lexgen
+
 // Unified lexer core (roadmap 2.1): two policy-parameterized generic cores —
 // scanPushG (push) and scanTokenG (pull) — are the single source of truth for
 // both the semantic lexer L and the verbatim lexer VL. A concrete zero-size
