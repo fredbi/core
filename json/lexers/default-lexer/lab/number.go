@@ -29,11 +29,19 @@ import (
 // rejected ".3"); the document is still rejected.
 func (l *L) consumeNumberWhole(start byte) token.T {
 	buf := l.buffer[:l.bufferized]
-	numStart := l.consumed - 1
-	n := l.consumed // index just past start
+	// Index and length are unsigned locals. The unsigned compare `n < lbuf` is the
+	// bounds-check-elimination idiom: it folds the n>=0 check into one comparison,
+	// so the compiler drops the bounds check on every buf[n] below. Keeping n
+	// unsigned avoids re-casting it at each comparison (l.consumed et al. stay int —
+	// they are sliced and arithmetic'd as int across the whole lexer; converting
+	// them all would ripple far past this hot loop for no gain). buf is never
+	// re-sliced, so lbuf is hoisted once.
+	lbuf := uint(len(buf))
+	numStart := uint(l.consumed) - 1 // l.consumed >= 1 here: the start byte was consumed
+	n := uint(l.consumed)            // index just past start
 
 	fail := func(code error) token.T {
-		l.consumed = n
+		l.consumed = int(n)
 		l.offset = uint64(n)
 		l.err = code
 
@@ -42,7 +50,7 @@ func (l *L) consumeNumberWhole(start byte) token.T {
 
 	// integer part: optional '-', then '0' alone or [1-9][0-9]*
 	if start == minusSign {
-		if uint(n) >= uint(len(buf)) {
+		if n >= lbuf {
 			return fail(codes.ErrMissingInteger)
 		}
 		start = buf[n]
@@ -52,11 +60,11 @@ func (l *L) consumeNumberWhole(start byte) token.T {
 	switch {
 	case start == '0':
 		// a leading zero is only valid as the lone integer digit "0"
-		if uint(n) < uint(len(buf)) && buf[n] >= '0' && buf[n] <= '9' {
+		if n < lbuf && buf[n] >= '0' && buf[n] <= '9' {
 			return fail(codes.ErrLeadingZero)
 		}
 	case start >= '1' && start <= '9':
-		for uint(n) < uint(len(buf)) && buf[n] >= '0' && buf[n] <= '9' {
+		for n < lbuf && buf[n] >= '0' && buf[n] <= '9' {
 			n++
 		}
 	default: // start is '.' (or otherwise not a digit): missing integer part
@@ -64,36 +72,36 @@ func (l *L) consumeNumberWhole(start byte) token.T {
 	}
 
 	// fractional part: '.' 1*digit
-	if uint(n) < uint(len(buf)) && buf[n] == decimalPoint {
+	if n < lbuf && buf[n] == decimalPoint {
 		n++
-		if uint(n) >= uint(len(buf)) || buf[n] < '0' || buf[n] > '9' {
+		if n >= lbuf || buf[n] < '0' || buf[n] > '9' {
 			return fail(codes.ErrInvalidFractional)
 		}
-		for uint(n) < uint(len(buf)) && buf[n] >= '0' && buf[n] <= '9' {
+		for n < lbuf && buf[n] >= '0' && buf[n] <= '9' {
 			n++
 		}
 	}
 
 	// exponent part: ('e'|'E') ['+'|'-'] 1*digit
-	if uint(n) < uint(len(buf)) && (buf[n] == 'e' || buf[n] == 'E') {
+	if n < lbuf && (buf[n] == 'e' || buf[n] == 'E') {
 		n++
-		if uint(n) < uint(len(buf)) && (buf[n] == '+' || buf[n] == '-') {
+		if n < lbuf && (buf[n] == '+' || buf[n] == '-') {
 			n++
 		}
-		if uint(n) >= uint(len(buf)) || buf[n] < '0' || buf[n] > '9' {
+		if n >= lbuf || buf[n] < '0' || buf[n] > '9' {
 			return fail(codes.ErrInvalidExponent)
 		}
-		for uint(n) < uint(len(buf)) && buf[n] >= '0' && buf[n] <= '9' {
+		for n < lbuf && buf[n] >= '0' && buf[n] <= '9' {
 			n++
 		}
 	}
 
 	// n stops at the terminator (or end of input); it is left unconsumed, so the
 	// next scan validates it via the standard start-of-token checks.
-	l.consumed = n
+	l.consumed = int(n)
 	l.offset = uint64(n)
 
-	return token.MakeWithValue(token.Number, l.buffer[numStart:n:n])
+	return token.MakeWithValue(token.Number, buf[numStart:n:n])
 }
 
 // consumeNumberStreaming consumes a JSON number byte-by-byte. It is the general
