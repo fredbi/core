@@ -1,0 +1,25 @@
+# What did line/col accounting actually cost? (Fred's decomposition) — semantic pull,
+# citm_catalog (newline/whitespace-heavy) + numbers, lab/bytes, count=8-10 medians, MB/s.
+# Built on top of the locked "no line/col + fast whitespace skip" core (65ce3bd).
+#
+#   variant                                   citm    decimals  ints_pos   what it isolates
+#   none (locked: fast skip, no line/col)     1047      581       550      -
+#   B-only: per-token col calc only           1007      557       513      eager column compute
+#           (l.tokCol = offset-lineStart, every token; l.line/lineStart NOT maintained)
+#   A-only: per-newline line/lineStart only    757      601       556      keeping line state
+#           (count newlines in the skip; NO per-token col calc)
+#
+# READING:
+# - A (keep line/lineStart current) is the EXPENSIVE part: citm -28% (1047 -> 757).
+#   Cause: the fast whitespace skip is a tight no-branch loop (consumeWhitespace) the
+#   compiler optimizes hard; maintaining line state forces NEWLINE COUNTING inside the
+#   skip, which defeats it. It does NOT affect numbers (no whitespace to count).
+# - B (eager per-token column compute) is MODERATE: ~ -4..-7%, and it hits EVERY token
+#   incl. numbers (it is a per-token subtraction + 2 writes).
+#
+# CONCLUSION: eager line/col accounting is costly, dominated by A (line tracking ->
+# newline counting in the skip). To restore L.Line()/Column() cheaply, do NOT track
+# eagerly: compute LAZILY on demand (count newlines from the buffer up to the current
+# offset when queried; cache last (offset,line,lineStart) for amortized O(1) across
+# monotonically-advancing tokens). Zero hot-path cost; matches jsontext's offset-only
+# model. Verbatim keeps eager accounting (position is baked into token.VT).
