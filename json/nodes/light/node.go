@@ -298,6 +298,23 @@ func (n *Node) decode(ctx *ParentContext) {
 	}
 }
 
+// putValue assigns the store handle h to this node.
+//
+// The store presents an error-free interface: on failure it returns the zero [stores.Handle] rather
+// than an error. This guards against that — a zero handle means the store rejected the value, which is
+// reported through the lexer's error channel, and the caller must stop (returns false).
+func (n *Node) putValue(ctx *ParentContext, h stores.Handle) bool {
+	if h.IsZero() {
+		ctx.L.SetErr(fmt.Errorf("store returned a zero handle for a stored value: %w", nodecodes.ErrNode))
+
+		return false
+	}
+
+	n.value = h
+
+	return true
+}
+
 func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 	l := ctx.L
 	s := ctx.S
@@ -325,7 +342,9 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 	case tok.IsStartObject():
 		n.keysIndex = make(map[values.InternedKey]int)
 		n.children = make([]Node, 0)
-		n.value = s.PutNull()
+		if !n.putValue(ctx, s.PutNull()) {
+			return
+		}
 		n.kind = nodes.KindObject
 		n.ctx.offset = l.Offset()
 
@@ -357,7 +376,9 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 	case tok.IsStartArray():
 		n.keysIndex = nil
 		n.children = make([]Node, 0)
-		n.value = s.PutNull()
+		if !n.putValue(ctx, s.PutNull()) {
+			return
+		}
 		n.kind = nodes.KindArray
 		n.ctx.offset = l.Offset()
 
@@ -375,7 +396,9 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 		n.keysIndex = nil
 		n.children = nil
 		n.kind = nodes.KindNull
-		n.value = s.PutNull()
+		if !n.putValue(ctx, s.PutNull()) {
+			return
+		}
 		n.ctx.offset = l.Offset()
 
 		return
@@ -384,7 +407,9 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 		n.keysIndex = nil
 		n.children = nil
 		n.kind = nodes.KindScalar
-		n.value = s.PutBool(tok.Bool())
+		if !n.putValue(ctx, s.PutBool(tok.Bool())) {
+			return
+		}
 		n.ctx.offset = l.Offset()
 
 		return
@@ -393,7 +418,9 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 		n.keysIndex = nil
 		n.children = nil
 		n.kind = nodes.KindScalar
-		n.value = s.PutToken(tok)
+		if !n.putValue(ctx, s.PutToken(tok)) {
+			return
+		}
 		n.ctx.offset = l.Offset()
 
 		return

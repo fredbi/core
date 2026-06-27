@@ -182,6 +182,17 @@
 - ℹ️ **E6 — `encode` now uses a pointer receiver + index-based loops** (Fred: "slightly faster"),
   avoiding the per-recursive-call Node copy and the per-child range copy. No behaviour change (encode
   never mutates).
+- ✅ **E7 — caller-side zero-handle guards on the `Put` path (added).** The counterpart to the E5
+  revert: since the store reports a rejection as a zero `Handle` (not an error), the *callers* must
+  guard. Both store-writing paths now do. **Decode** (`node.go`): new `Node.putValue(ctx, h)` — a zero
+  handle routes `nodecodes.ErrNode` through the lexer's `SetErr` and the caller `return`s (stops). All
+  five `decodeToken` sites (`PutNull` for object/array containers, `PutNull`/`PutBool`/`PutToken` for
+  scalars) go through it. **Build** (`builder.go`): new `Builder.setValue(h)` — a zero handle records
+  `nodecodes.ErrBuilder` so the chain short-circuits on the next `Ok()`. All eight builder sites
+  (`StringValue`/`BytesValue`/`BoolValue`/`NumberValue` + the `buildFrom{Float,Integer,Uinteger,TextAppender}`
+  helpers) go through it. Tests: `TestBuilderZeroHandleGuard` / `TestDecodeZeroHandleGuard` drive a
+  `zeroStore` fake that rejects every value; previously a rejection left a node silently bound to
+  `HandleZero`.
 - ℹ️ **Cross-ref (default-writer, out of scope here):** the *buffered* writer is not sticky on error —
   `buffered.writeSingleByte`/`flush` don't check `w.err`, and `flush` reassigns `w.err` unconditionally,
   so a later successful flush can clear an earlier error. File as a default-writer finding.

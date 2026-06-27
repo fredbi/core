@@ -51,6 +51,21 @@ func (b *Builder) SetErr(err error) {
 	b.err = err
 }
 
+// setValue assigns the store handle h to the node being built.
+//
+// The store presents an error-free interface: on failure it returns the zero [stores.Handle] rather
+// than an error. This guards against that — a zero handle means the store rejected the value, which is
+// recorded as a builder error so the chain short-circuits on the next [Builder.Ok] check.
+func (b *Builder) setValue(h stores.Handle) {
+	if h.IsZero() {
+		b.err = fmt.Errorf("store returned a zero handle for a stored value: %w", nodecodes.ErrBuilder)
+
+		return
+	}
+
+	b.n.value = h
+}
+
 func (b *Builder) Reset() {
 	b.err = nil
 	b.n = nullNode
@@ -394,7 +409,7 @@ func (b *Builder) StringValue(value string) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutValue(values.MakeStringValue(value))
+	b.setValue(b.s.PutValue(values.MakeStringValue(value)))
 
 	return b
 }
@@ -407,7 +422,7 @@ func (b *Builder) BytesValue(value []byte) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutValue(values.MakeScalarValue(token.MakeWithValue(token.String, value)))
+	b.setValue(b.s.PutValue(values.MakeScalarValue(token.MakeWithValue(token.String, value))))
 
 	return b
 }
@@ -420,7 +435,7 @@ func (b *Builder) BoolValue(value bool) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutBool(value)
+	b.setValue(b.s.PutBool(value))
 
 	return b
 }
@@ -433,7 +448,7 @@ func (b *Builder) NumberValue(value types.Number) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
 
-	b.n.value = b.s.PutValue(values.MakeNumberValue(value))
+	b.setValue(b.s.PutValue(values.MakeNumberValue(value)))
 
 	return b
 }
@@ -688,7 +703,7 @@ func (b *Builder) rejectDuplicateKey(key string, ik values.InternedKey) bool {
 func buildFromFloat[T conv.Float](b *Builder, value T) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(values.MakeFloatValue(value))
+	b.setValue(b.s.PutValue(values.MakeFloatValue(value)))
 
 	return b
 }
@@ -696,7 +711,7 @@ func buildFromFloat[T conv.Float](b *Builder, value T) *Builder {
 func buildFromInteger[T conv.Signed](b *Builder, value T) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(values.MakeIntegerValue(value))
+	b.setValue(b.s.PutValue(values.MakeIntegerValue(value)))
 
 	return b
 }
@@ -704,7 +719,7 @@ func buildFromInteger[T conv.Signed](b *Builder, value T) *Builder {
 func buildFromUinteger[T conv.Unsigned](b *Builder, value T) *Builder {
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(values.MakeUintegerValue(value))
+	b.setValue(b.s.PutValue(values.MakeUintegerValue(value)))
 
 	return b
 }
@@ -724,7 +739,7 @@ func buildFromTextAppender(b *Builder, v interface{ AppendText([]byte) ([]byte, 
 
 	b.n.kind = nodes.KindScalar
 	b.resetNode()
-	b.n.value = b.s.PutValue(values.MakeNumberValue(types.Number{Value: value}))
+	b.setValue(b.s.PutValue(values.MakeNumberValue(types.Number{Value: value})))
 
 	return b
 }
