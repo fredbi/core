@@ -168,7 +168,8 @@ func (d Document) Elem(i int) (Document, bool) {
 func (d Document) Pairs() iter.Seq2[string, Document] {
 	return func(yield func(string, Document) bool) {
 		for _, pair := range d.root.Pairs() {
-			if !yield(pair.Key(), d.fromNode(pair)) {
+			key, _ := pair.Key() // pairs are object members, so the key is always present
+			if !yield(key, d.fromNode(pair)) {
 				return
 			}
 		}

@@ -599,6 +599,9 @@ func (b *Builder) Null() *Builder {
 
 	b.n = nullNode
 	b.aliased = false
+	// a JSON null is a defined value: store the dedicated (non-zero) null handle so the node never
+	// carries the zero handle, consistent with a decoded null (see [Node.Value] / [Node.Handle]).
+	b.setValue(b.s.PutNull())
 
 	return b
 }

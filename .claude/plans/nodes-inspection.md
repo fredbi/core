@@ -318,6 +318,34 @@ worktree, so its line numbers/function list reflect master — use it for the di
   (`InsertElem`/`RemoveElem` bounds, `requireObject`/`requireArray`) which belong to the C/M/D builder
   track and its `builder_index_test`. Not worth contriving tests for defensive/unreachable code.
 
+### Node API design pass (API-series)
+
+Theme (Fred): null is a *first-class value* with its own non-zero null handle; the **zero Handle means
+absence and must never surface from a correctly-built Node** (guards live in Builder + decode).
+
+- ✅ **API-1 — `IsNull` dropped its dead store param.** It was `IsNull(_ stores.Store)` for false symmetry
+  with the scalar-subtype predicates, yet `IsObject`/`IsArray` (equally kind-only) took none. Now
+  `IsNull() bool`. The `Is*` family is consistent: store-free {`IsObject`,`IsArray`,`IsNull`}, store-taking
+  {`IsString`,`IsNumber`,`IsBool`}. No external callers (the `tok.IsNull()` hits are lexer tokens).
+- ✅ **API-2 — null is now a defined value; root cause was `Builder.Null()`.** `Builder.Null()` set
+  `b.n = nullNode` (a zero `Node`) → value = **zero handle**, while decode used `s.PutNull()` (a real null
+  handle). Encode hid it (writes null by `kind`), but `Value`/`Handle` would expose the zero handle.
+  Fixed: `Builder.Null()` now stores `s.PutNull()` (consistent with decode). `Value` and `Handle` treat
+  `KindScalar`+`KindNull` as value-bearing leaves — null → `(values.NullValue, true)` / the non-zero null
+  handle — with a **zero-handle guard** so the not-found sentinel (KindNull + zero handle from a missed
+  `AtKey`/`Elem`) correctly reports `(UndefinedValue, false)` rather than masquerading as a null. Containers
+  → `(UndefinedValue, false)`. Tests: `TestNullNodeIsAValue` (builder vs decoded consistency + sentinel).
+- ✅ **API-4 — `Key()` → `(string, bool)`.** Was `string`-only (couldn't tell a missing key from an
+  empty-string key). Now returns false for array elements / root / sentinels; an empty-string object key
+  is `("", true)`. `InternedKey` zero value is comparable and distinct from interned `""`. Updated the
+  one caller (`Document.Pairs`). Test: `TestNodeKey`.
+- ⏳ **API-3 — sync the `Document` API (lagging).** `json.Document` exposes none of
+  `IsObject/IsArray/IsString/IsNumber/IsBool/IsNull`, nor `IndexedElems`/`Handle`/`Key`/`AtInternedKey`.
+  Fred: should be synced. (json-package scope; next.)
+- ℹ️ **API-5 — a Node does not know its own path** (only the live decode walk via `ctx.P`). Fred: making
+  nodes persist their path would break cheap clone/chain building; deliberately a node is unaware of where
+  it sits. No change.
+
 ### Pools (`pools.go`) — combed before the decode path
 
 Per Fred: standardize on the `pools.PoolRedeemable` variant (cached, alloc-free, built-in redeemer that

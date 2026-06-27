@@ -44,26 +44,38 @@ type Node struct {
 	ctx       Context
 }
 
-// Value of a node of kind nodes.KindScalar.
+// Value of a leaf node — a scalar or a null.
+//
+// A JSON null is a defined value: it returns [values.NullValue] with true. The boolean is false for
+// container nodes (object, array), which have no leaf value, and for the zero handle — which a
+// correctly-built node never carries (guards live in the [Builder] and the decoder), so this only
+// trips on a not-found sentinel from a failed [Node.AtKey]/[Node.Elem] lookup.
 func (n Node) Value(s stores.Store) (values.Value, bool) {
 	switch n.kind {
-	case nodes.KindScalar:
+	case nodes.KindScalar, nodes.KindNull:
+		if n.value.IsZero() {
+			return values.UndefinedValue, false
+		}
+
 		return s.Get(n.value), true
-	case nodes.KindObject, nodes.KindArray:
-		fallthrough
-	default:
-		return values.NullValue, false
+	default: // object, array
+		return values.UndefinedValue, false
 	}
 }
 
-// Handle of the value of a node of kind nodes.KindScalar.
+// Handle of a leaf node's value — a scalar or a null.
+//
+// As with [Node.Value], the boolean is false for container nodes and for the zero handle (a not-found
+// sentinel). A null node returns its dedicated, non-zero null handle.
 func (n Node) Handle() (stores.Handle, bool) {
 	switch n.kind {
-	case nodes.KindScalar:
+	case nodes.KindScalar, nodes.KindNull:
+		if n.value.IsZero() {
+			return stores.HandleZero, false
+		}
+
 		return n.value, true
-	case nodes.KindObject, nodes.KindArray:
-		fallthrough
-	default:
+	default: // object, array
 		return stores.HandleZero, false
 	}
 }
@@ -111,9 +123,12 @@ func (n Node) IsBool(s stores.Store) bool {
 	return v.Kind() == token.Boolean
 }
 
-func (n Node) IsNull(_ stores.Store) bool {
-	// JSON null is represented by a dedicated KindNull node (holding a proper, non-zero null handle).
-	// HandleZero is "no value"/absence, not null, so it must not be conflated here.
+// IsNull reports whether the node is a JSON null.
+//
+// Unlike the scalar-subtype predicates it needs no store: null is a dedicated [nodes.KindNull] node
+// holding a proper, non-zero null handle. The zero handle is "no value"/absence, never a null, so the
+// two are not conflated.
+func (n Node) IsNull() bool {
 	return n.kind == nodes.KindNull
 }
 
@@ -163,9 +178,16 @@ func (n Node) Elem(i int) (Node, bool) {
 	return n.children[i], true
 }
 
-// Key of the current node, if part of an object
-func (n Node) Key() string {
-	return n.key.String()
+// Key of the node, and whether it has one (i.e. the node is an object member).
+//
+// Array elements, the document root, and not-found sentinel nodes have no key and return ("", false).
+// This distinguishes a missing key from a legitimately empty-string key.
+func (n Node) Key() (string, bool) {
+	if n.key == (values.InternedKey{}) {
+		return "", false
+	}
+
+	return n.key.String(), true
 }
 
 // Pairs return all (key,Node) pairs inside an object.

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fredbi/core/json/nodes"
+	"github.com/fredbi/core/json/stores/values"
 )
 
 // decodeNode decodes a single JSON value and returns the node plus its store.
@@ -142,7 +143,7 @@ func TestAccessorScalarKindGuards(t *testing.T) {
 		assert.True(t, n.IsString(ctx.S))
 		assert.False(t, n.IsNumber(ctx.S))
 		assert.False(t, n.IsBool(ctx.S))
-		assert.False(t, n.IsNull(ctx.S))
+		assert.False(t, n.IsNull())
 
 		_, ok := n.Value(ctx.S)
 		assert.True(t, ok)
@@ -150,17 +151,19 @@ func TestAccessorScalarKindGuards(t *testing.T) {
 		assert.True(t, ok)
 	})
 
-	t.Run("null is not a scalar", func(t *testing.T) {
+	t.Run("null is a defined value, not a scalar subtype", func(t *testing.T) {
 		n, ctx := decodeNode(t, `null`)
 		assert.Equal(t, nodes.KindNull, n.Kind())
-		assert.True(t, n.IsNull(ctx.S))
+		assert.True(t, n.IsNull())
 		assert.False(t, n.IsString(ctx.S))
 
-		// Value/Handle are scalar-only: a null node reports false (use IsNull instead).
-		_, ok := n.Value(ctx.S)
-		assert.False(t, ok)
-		_, ok = n.Handle()
-		assert.False(t, ok)
+		// null is a defined value: Value yields NullValue, Handle yields the non-zero null handle.
+		v, ok := n.Value(ctx.S)
+		assert.True(t, ok)
+		assert.Equal(t, values.NullValue, v)
+		h, ok := n.Handle()
+		assert.True(t, ok)
+		assert.False(t, h.IsZero())
 	})
 
 	t.Run("Value/Handle false on containers", func(t *testing.T) {

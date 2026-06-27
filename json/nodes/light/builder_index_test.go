@@ -63,7 +63,9 @@ func TestBuilderObjectIndex(t *testing.T) {
 		for _, k := range []string{"a", "b", "c"} {
 			got, ok := n.AtKey(k)
 			require.Truef(t, ok, "AtKey(%q)", k)
-			assert.Equal(t, k, got.Key())
+			gotKey, hasKey := got.Key()
+			require.Truef(t, hasKey, "Key() for %q", k)
+			assert.Equal(t, k, gotKey)
 		}
 
 		idx, ok := n.KeyIndex("c")
@@ -257,13 +259,13 @@ func TestNodeIsNullAndEncodeHandles(t *testing.T) {
 
 	t.Run("IsNull is true only for a null node (C4)", func(t *testing.T) {
 		nullN := NewBuilder(s).Null().Node()
-		assert.True(t, nullN.IsNull(s), "a null node must report IsNull")
+		assert.True(t, nullN.IsNull(), "a null node must report IsNull")
 
 		strN := NewBuilder(s).StringValue("x").Node()
-		assert.False(t, strN.IsNull(s), "a string scalar must not report IsNull")
+		assert.False(t, strN.IsNull(), "a string scalar must not report IsNull")
 
 		objN := NewBuilder(s).Object().Node()
-		assert.False(t, objN.IsNull(s), "an object must not report IsNull")
+		assert.False(t, objN.IsNull(), "an object must not report IsNull")
 	})
 
 	t.Run("a null node encodes to JSON null", func(t *testing.T) {
