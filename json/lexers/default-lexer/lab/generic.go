@@ -431,15 +431,53 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				}
 
 				leadingZero := firstDigit == '0' && n > runFrom
+				end := n
 				var term byte
-				if uint(n) < uint(len(data)) {
-					term = data[n]
+				if uint(end) < uint(len(data)) {
+					term = data[end]
+				}
+				// extend the fast path over a fractional part ('.' 1*DIGIT). A
+				// trailing dot (no fraction digit) leaves term==decimalPoint, which the
+				// final guard routes to consumeNumberWhole for the right error.
+				if !leadingZero && term == decimalPoint {
+					m := end + 1
+					for uint(m) < uint(len(data)) && '0' <= data[m] && data[m] <= '9' {
+						m++
+					}
+					if m > end+1 { // at least one fractional digit
+						end = m
+						term = 0
+						if uint(end) < uint(len(data)) {
+							term = data[end]
+						}
+					}
+				}
+				// extend over an exponent ((e|E) [+|-] 1*DIGIT). Completing it inline
+				// is cheaper than bailing to consumeNumberWhole, which would re-scan
+				// the int+frac we already consumed. A malformed exponent leaves
+				// term=='e'/'E' and routes to the slow path for the right error.
+				if !leadingZero && (term == 'e' || term == 'E') {
+					m := end + 1
+					if uint(m) < uint(len(data)) && (data[m] == '+' || data[m] == '-') {
+						m++
+					}
+					expStart := m
+					for uint(m) < uint(len(data)) && '0' <= data[m] && data[m] <= '9' {
+						m++
+					}
+					if m > expStart { // at least one exponent digit
+						end = m
+						term = 0
+						if uint(end) < uint(len(data)) {
+							term = data[end]
+						}
+					}
 				}
 
 				if !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
-					l.current = token.MakeWithValue(token.Number, data[numStart:n:n])
-					i = n
-					writeback(n)
+					l.current = token.MakeWithValue(token.Number, data[numStart:end:end])
+					i = end
+					writeback(end)
 					blankStart = i // this path continues, bypassing the loop-bottom update
 					if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 						return
@@ -832,15 +870,51 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 						}
 
 						leadingZero := firstDigit == '0' && n > runFrom
+						end := n
 						var term byte
-						if uint(n) < uint(len(buf)) {
-							term = buf[n]
+						if uint(end) < uint(len(buf)) {
+							term = buf[end]
+						}
+						// extend over a fractional part ('.' 1*DIGIT); a trailing dot
+						// leaves term==decimalPoint for the slow-path error.
+						if !leadingZero && term == decimalPoint {
+							m := end + 1
+							for uint(m) < uint(len(buf)) && '0' <= buf[m] && buf[m] <= '9' {
+								m++
+							}
+							if m > end+1 { // at least one fractional digit
+								end = m
+								term = 0
+								if uint(end) < uint(len(buf)) {
+									term = buf[end]
+								}
+							}
+						}
+						// extend over an exponent ((e|E) [+|-] 1*DIGIT); cheaper than
+						// bailing to consumeNumberWhole and re-scanning. A malformed
+						// exponent leaves term=='e'/'E' for the slow-path error.
+						if !leadingZero && (term == 'e' || term == 'E') {
+							m := end + 1
+							if uint(m) < uint(len(buf)) && (buf[m] == '+' || buf[m] == '-') {
+								m++
+							}
+							expStart := m
+							for uint(m) < uint(len(buf)) && '0' <= buf[m] && buf[m] <= '9' {
+								m++
+							}
+							if m > expStart { // at least one exponent digit
+								end = m
+								term = 0
+								if uint(end) < uint(len(buf)) {
+									term = buf[end]
+								}
+							}
 						}
 
 						if !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
-							l.offset += uint64(n - l.consumed)
-							l.consumed = n
-							l.current = token.MakeWithValue(token.Number, l.buffer[numStart:n:n])
+							l.offset += uint64(end - l.consumed)
+							l.consumed = end
+							l.current = token.MakeWithValue(token.Number, l.buffer[numStart:end:end])
 
 							return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
 						}

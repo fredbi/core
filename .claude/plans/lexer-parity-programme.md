@@ -176,17 +176,28 @@ Identify shorter paths gated by a cheap SWAR probe; implement as separate
 functions; pit against baseline on the targeted micro-bench, then on a mix, then
 on real corpora.
 
-### 4.1 Numbers ⬜
-Current `number.go` validates the full grammar with scalar digit scans. Candidate
-fast paths, cheapest probe first:
-- all-digits → already short-circuited ✅
-- `digit + (digits | '.')`, reject trailing `.` (a lone-trailing `.` is invalid) ⬜
-- `'-'` + any of the above ⬜
-- general scientific notation → slow path ⬜
+### 4.1 Numbers ✅ (full-grammar inline fast path)
+The whole-buffer fast path already covered `[-] int` (positive *and* negative — the
+`minusSign` arm). Extended it to the **whole grammar inline** — `[-] int [frac]
+[exp]` — so `consumeNumberWhole` (the slow full-grammar validator) is now reached
+**only for malformed numbers** (error reporting). Done in both generic cores
+(scanTokenG + scanPushG), regenerated, validated against the full **JSONTestSuite
+conformance corpus** (lab ≡ reference on every number edge case).
 
-Open question to settle *with the micro-bench*, not by intuition: most JSON
-numbers are short (< 8 bytes), so a SWAR digit scan may not pay versus the scalar
-loop. `decimals`/`exponential`/`ints_neg` micro-benches decide it.
+Wins (lab vs frozen reference, `ramblings/2026-06-number-fastpath.txt`):
+- decimals **+18% pull / +36% push**, exponential **+13.6% pull / +38% push**.
+- ints flat pull (already fast), +11% push (devirt). pull = pure fast path; push =
+  fast path × devirt compounding.
+
+Lesson banked: a first cut fast-pathed decimals but *bailed to slow on exponent*,
+which re-scanned int+frac → exponential −10%. **Never partial-scan then bail to a
+re-scanner** — complete inline. Minor side-effect: `strings_escaped_long` pull
+−3.8% (within the ~6% alignment-noise floor; the larger number block perturbs the
+shared `scanTokenG` codegen — same fragility as the FirstByte finding).
+
+SWAR digit scan (`swar.NonDigitMask` is ready) **not applied**: numbers are short
+(< 8 bytes), the scalar run already wins big, SWAR setup likely costs more than it
+saves. Deferred unless a long-number corpus says otherwise.
 
 ### 4.2 Strings ⬜ — minimize the eager-unescape tax
 **Decided: keep eager unescape** (the "ready-to-use value" is the feature). The

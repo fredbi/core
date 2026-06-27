@@ -1,0 +1,28 @@
+# Number fast path: extend zero-copy fast path to full grammar (int [frac] [exp])
+# go1.26.4, Ryzen 7 5800X, count=8 medians, BenchmarkMicro lab vs frozen reference (MB/s)
+#
+# Before: fast path covered [-]int only; decimals + exponentials fell to
+# consumeNumberWhole (full-grammar slow path). Now the fast path scans the whole
+# grammar inline; consumeNumberWhole is reached ONLY for malformed numbers (errors).
+# Validated against the full JSONTestSuite conformance corpus (lab==reference).
+#
+# Note: a first cut fast-pathed decimals but BAILED to slow on exponent, which
+# re-scanned the int+frac => exponential -10%. Completing the exponent inline fixed
+# it (exponential +13.6%/+38%). Lesson: never partial-scan then bail to a re-scanner.
+
+                 pull(bytes)         push(tokens)
+workload     lab   ref   gap     lab   ref   gap
+decimals     556   471  +18.0%   754   554  +36.1%
+exponential  384   338  +13.6%   547   395  +38.4%
+ints_pos     513   512   flat    718   647  +11.0%   (pull already fast; push=devirt)
+ints_neg     545   543   flat    743   666  +11.6%   (pull already fast; push=devirt)
+
+# pull gains = pure number fast path (no devirt in pull).
+# push gains = number fast path AND devirt-push compounding.
+# canary (non-number): separators/plain/bools devirt-push gains intact; bytes flat.
+#   strings_escaped_long pull -3.8% (1293 vs 1344) — within ~6% alignment noise
+#   floor, push flat; minor codegen side-effect of the larger number block in the
+#   shared scanTokenG (same fragility as the FirstByte/consumeStringWhole finding).
+#
+# SWAR digit scan (swar.NonDigitMask) NOT applied: numbers are short (<8 bytes), the
+# scalar run already wins big; SWAR setup likely costs more than it saves. Deferred.
