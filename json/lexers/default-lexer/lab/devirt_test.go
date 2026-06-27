@@ -1,12 +1,54 @@
 package lab
 
 import (
+	"iter"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/fredbi/core/json/lexers/token"
 )
+
+// tokensGeneric / VL.tokensGeneric mirror the pre-adoption Tokens() (the generic
+// push shim). Retained as the A/B baseline now that Tokens() routes through the
+// devirtualized core; used by the push equivalence test and BenchmarkDevirt.
+func (l *L) tokensGeneric() iter.Seq[token.T] {
+	return func(yield func(token.T) bool) {
+		if l.wholeBuffer && l.maxValueBytes == 0 {
+			l.scanPushSemantic(yield)
+
+			return
+		}
+		for {
+			tok := l.NextToken()
+			if l.err != nil || tok.Kind() == token.EOF {
+				return
+			}
+			if !yield(tok) {
+				return
+			}
+		}
+	}
+}
+
+func (l *VL) tokensGeneric() iter.Seq[token.VT] {
+	return func(yield func(token.VT) bool) {
+		if l.wholeBuffer && l.maxValueBytes == 0 {
+			l.scanPushVerbatim(yield)
+
+			return
+		}
+		for {
+			tok := l.NextToken()
+			if l.err != nil || tok.Kind() == token.EOF {
+				return
+			}
+			if !yield(tok) {
+				return
+			}
+		}
+	}
+}
 
 // devirtInputs exercise every dispatch arm and value path, plus malformed inputs
 // so the error/none path is compared too.
@@ -91,13 +133,13 @@ func TestDevirtEquivalencePush(t *testing.T) {
 
 		var gen []token.T
 		lg := NewWithBytes(data)
-		for tok := range lg.Tokens() {
+		for tok := range lg.tokensGeneric() {
 			gen = append(gen, tok)
 		}
 
 		var dev []token.T
 		ld := NewWithBytes(data)
-		for tok := range ld.tokensDevirt() {
+		for tok := range ld.Tokens() { // Tokens() is the devirt path post-adoption
 			dev = append(dev, tok)
 		}
 
@@ -145,12 +187,12 @@ func TestDevirtEquivalenceVerbatim(t *testing.T) {
 		// push
 		var genPush []token.VT
 		vgp := NewVerbatimWithBytes(data)
-		for tok := range vgp.Tokens() {
+		for tok := range vgp.tokensGeneric() {
 			genPush = append(genPush, tok)
 		}
 		var devPush []token.VT
 		vdp := NewVerbatimWithBytes(data)
-		for tok := range vdp.tokensDevirt() {
+		for tok := range vdp.Tokens() { // devirt path post-adoption
 			devPush = append(devPush, tok)
 		}
 		if !reflect.DeepEqual(genPush, devPush) {

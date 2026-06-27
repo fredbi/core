@@ -1,17 +1,20 @@
 package lab
 
 import (
-	"iter"
-
 	"github.com/fredbi/core/json/lexers/token"
 )
 
-// Devirtualized entry points. These mirror NextToken / Tokens exactly but call
-// the generated, monomorphized scan cores (scan_gen.go) instead of the generic
-// ones, so the per-token policy calls are direct and inline rather than routed
-// through the generics dictionary. Both paths coexist (no build tags, no dispatch
-// layer) so the devirt gap can be measured in one binary — see devirt_bench_test.
-// They are unexported: only the lab's own A/B test and benchmark use them.
+// Devirtualized entry points calling the generated, monomorphized scan cores
+// (scan_gen.go) instead of the generic ones, so the per-token policy calls are
+// direct and inline rather than routed through the generics dictionary.
+//
+// The push shims are ADOPTED: Tokens() (L and VL) routes through them (see
+// iterator.go) — measured +7..+18% over the generic core. The generic push shims
+// (scanPushSemantic/scanPushVerbatim in generic.go) are retained as the A/B
+// baseline, exercised by devirt_bench_test via the tokensGeneric test helpers.
+//
+// Pull (nextTokenDevirt) is NOT adopted: NextToken stays generic pending the ints
+// pull regression (plan §5.1). It is kept here for the pull A/B measurement.
 
 // nextTokenDevirt is the devirtualized counterpart of [L.NextToken].
 func (l *L) nextTokenDevirt() token.T { return scanTokenSemantic(l, semanticPolicy{}) }
@@ -33,52 +36,3 @@ func (l *L) scanPushVerbatimDevirt(yield func(token.VT) bool) {
 	scanPushVerbatimCore(l, verbatimPolicy{}, yield)
 }
 
-// tokensDevirt mirrors [L.Tokens] but routes the whole-buffer push path through
-// the devirtualized core.
-func (l *L) tokensDevirt() iter.Seq[token.T] {
-	return func(yield func(token.T) bool) {
-		if l.wholeBuffer && l.maxValueBytes == 0 {
-			l.scanPushSemanticDevirt(yield)
-
-			return
-		}
-
-		for {
-			tok := l.nextTokenDevirt()
-			if l.err != nil {
-				return
-			}
-			if tok.Kind() == token.EOF {
-				return
-			}
-			if !yield(tok) {
-				return
-			}
-		}
-	}
-}
-
-// tokensDevirt mirrors [VL.Tokens] but routes the whole-buffer push path through
-// the devirtualized verbatim core.
-func (l *VL) tokensDevirt() iter.Seq[token.VT] {
-	return func(yield func(token.VT) bool) {
-		if l.wholeBuffer && l.maxValueBytes == 0 {
-			l.scanPushVerbatimDevirt(yield)
-
-			return
-		}
-
-		for {
-			tok := l.nextTokenDevirt()
-			if l.err != nil {
-				return
-			}
-			if tok.Kind() == token.EOF {
-				return
-			}
-			if !yield(tok) {
-				return
-			}
-		}
-	}
-}

@@ -234,11 +234,13 @@ streaming, valid + malformed) by `TestDevirtEquivalence*`.
   ints_pos/ints_neg** (number fast-path codegen shifts unfavourably when
   monomorphized; escaped_long flat). 
 
-**Adoption call (for Fred):** wire `Tokens()` (push) → devirt now — unambiguous win
-on the preferred high-throughput path. Hold `NextToken()` (pull) on generic until
-the ints regression is understood (likely the inlined number fast-path; may want
-that path factored out). The generator stays the single source of truth: re-run
-`go generate ./...` in `lab/` after any core change.
+**ADOPTED (2026-06-27):** `Tokens()` (L and VL) now routes through the devirt push
+shims; lab push beats reference at the corpus level too (separators +20%, ints
++14.5%, plain +8.7%). `NextToken()` (pull) **stays generic** pending the ints
+regression (likely the inlined number fast-path; may want it factored out — see
+§4.1). The generic push shims are retained as the A/B baseline (`tokensGeneric`
+test helpers). Generator is the single source of truth: re-run `go generate ./...`
+in `lab/` after any core change.
 
 Design — port the writer's `writegen` (`json/writers/default-writer/internal/writegen/main.go`),
 which lifts `commonWriter[T]` method bodies onto concrete receivers verbatim so

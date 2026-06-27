@@ -58,17 +58,17 @@ func BenchmarkDevirt(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
-					for tok := range NewWithBytes(data).Tokens() {
+					for tok := range NewWithBytes(data).tokensGeneric() {
 						benchSink += int(tok.Kind())
 					}
 				}
 			})
-			b.Run("devirt/push", func(b *testing.B) {
+			b.Run("devirt/push", func(b *testing.B) { // Tokens() is the devirt path post-adoption
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
-					for tok := range NewWithBytes(data).tokensDevirt() {
+					for tok := range NewWithBytes(data).Tokens() {
 						benchSink += int(tok.Kind())
 					}
 				}
