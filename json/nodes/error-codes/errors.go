@@ -16,4 +16,7 @@ const (
 
 	// ErrBuilder is the sentinel error for node-builder errors
 	ErrBuilder NodeError = "node builder error"
+
+	// ErrDuplicateKey is raised when an object has a duplicate key and duplicate keys are not tolerated.
+	ErrDuplicateKey NodeError = "duplicate object key"
 )

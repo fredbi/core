@@ -244,6 +244,29 @@ slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `
   per goroutine per document), annotates the terse single-letter fields, and notes `ctx.P` is only valid
   during a callback. Fields remain in flux (kept light per Fred).
 
+### Decode path — container assembly (`decodeObject` / `decodeArray` / `decodeToken`)
+
+- ✅ **DEC-1 — duplicate-key default mode lost data and reported the wrong error (BUG, fixed).**
+  `{"a":1,"a":2,"b":3}` with the default (`tolerateDuplKey=false`) used to `return false` on the
+  duplicate **without setting an error**: the object iterator stopped, leaving the rest unconsumed, the
+  result was silently truncated to `{"a":1}` (both `a:2` *and* `b:3` dropped), and the leftover tokens
+  reparsed at top level surfaced a misleading "invalid JSON token". Now it sets a clean
+  `nodecodes.ErrDuplicateKey` naming the key; CTX-1 attaches the JSON Pointer (the iterator is suspended
+  at the offending key's `yield` and skips its truncation on error, so `ctx.P` pinpoints it). Tolerate
+  mode is unchanged (last-wins, all siblings kept). Tests: `TestDecodeDuplicateKey` (default error +
+  path, nested path `/x/a`, tolerate last-wins incl. trailing duplicate).
+- ✅ **DEC-2 — `decodeObject`/`decodeArray` returned a nil iterator on the `!l.Ok()` short-circuit
+  (latent panic, hardened).** Ranging a nil `iter.Seq`/`iter.Seq2` panics. The path is unreachable today
+  (the only caller checks `l.Ok()` first), but it's a footgun; both now return an empty iterator.
+- ✅ **DEC-3 — empty containers** (`{}`, `[]`, nested/array-of empties) confirmed correct and pinned by
+  `TestDecodeEmptyContainers`.
+- ℹ️ **DEC-4 — `n.ctx.offset` is captured *after* the node's opening token** (`l.Offset()` runs once the
+  `{`/`[`/scalar has been read), so it marks just past the start, not the node's first byte. Minor and
+  consistent across kinds; left as-is (the JSON-Pointer/offset feature is in flux, slated to move into
+  the lexer — see CTX-3). Noted, not changed.
+- ✅ **DEC-5 — the missing-key guard** (`!tok.IsKey()` → `ErrMissingKey`) and the `IsEndObject`/
+  `IsEndArray` empty-exit checks reviewed: correct given the semantic lexer elides separators.
+
 ### Pools (`pools.go`) — combed before the decode path
 
 Per Fred: standardize on the `pools.PoolRedeemable` variant (cached, alloc-free, built-in redeemer that

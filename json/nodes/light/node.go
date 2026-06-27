@@ -402,12 +402,14 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 				return false
 			}
 
-			// check unique key: if the key exists, replace the previous value
-			// option: enforce unique keys
+			// duplicate key: by default this is an error; when tolerated, the last value wins.
 			index, keyExists := n.keysIndex[key]
 			if keyExists {
-				// by default, duplicate keys
 				if !ctx.DO.tolerateDuplKey {
+					// ctx.P still points at the duplicate key (the iterator is suspended at its yield
+					// and skips its truncation on error), so the reported path pinpoints the offender.
+					l.SetErr(fmt.Errorf("%q: %w", key.String(), nodecodes.ErrDuplicateKey))
+
 					return false
 				}
 
@@ -492,8 +494,8 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 	l := ctx.L
 
 	if !l.Ok() {
-		// short-circuit
-		return nil
+		// short-circuit with an empty (non-nil) iterator: ranging a nil iter.Seq2 panics.
+		return func(func(values.InternedKey, Node) bool) {}
 	}
 
 	pth := ctx.P
@@ -589,8 +591,8 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 	l := ctx.L
 
 	if !l.Ok() {
-		// short-circuit
-		return nil
+		// short-circuit with an empty (non-nil) iterator: ranging a nil iter.Seq panics.
+		return func(func(Node) bool) {}
 	}
 
 	pth := ctx.P
