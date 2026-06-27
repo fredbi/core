@@ -284,19 +284,27 @@ but busts budget, run the "is it worth it?" experiment by raising the budget via
 PGO profile; if it pays, mark it **needs-advanced-codegen** and **park** it — don't
 build the advanced generator speculatively.
 
-### 5.2 Dispatch: classification table vs binary-search switch ⬜
+### 5.2 Dispatch: classification table vs binary-search switch ❌ REJECTED
 **Verified (asm probe):** our switch on the lead byte does **not** become a jump
 table — the JSON byte set is sparse (`"`=34 … `}`=125), so the compiler emits a
-**binary search of ~4 `CMPB`** (one `JMP` for the contiguous digit range). So real
-dispatch headroom exists.
+**binary search of ~4 `CMPB`** (one `JMP` for the contiguous digit range). That
+looked like dispatch headroom, but the binary search turns out to be *already
+near-optimal*.
 - ❌ `[]func(*L) T` table — O(1) index but an **indirect call per token**: blocks
-  inlining and re-adds the exact tax §5.1 removes. Don't.
-- ⬜ **classification table** `class [256]uint8`: one indexed load → a *compact
-  dense* switch on the contiguous class enum (this the compiler *can* jump-table)
-  → direct, inlinable arms. Gives Fred's "compact + inlinable" goal without
-  indirection, and composes with §5.1 (arms call the devirt funcs).
-- Probe both on `separators`/`nulls`/`bools` (dispatch-dominated micro-benches);
-  adopt the classification table only if it beats the binary-search switch.
+  inlining and re-adds the exact tax §5.1 removes. Never built.
+- ❌ **classification table** `[256]tokClass` → dense `switch tokenClass[b]` (a
+  compiler jump table) → direct arms. Built and measured (clean lab before/after,
+  same package, count=10, benchstat, `ramblings/2026-06-classification-table.txt`):
+  **−5.16% geomean B/s, slower on every workload** — separators −6.6%, nulls
+  −5.4%, bools −5.1%, ints −10/−11%. Why it loses: the ~4 `CMPB` are cheap and
+  **branch-predict extremely well** (e.g. separators alternating `{}[]`), while
+  the table forces an **L1 load on every token's critical path + a computed jump
+  that predicts worse**; and the larger dispatch perturbed the shared core's
+  codegen (number arm −10%, the recurring fragility theme).
+- **Conclusion:** the binary-search switch stays. Combined with §5.3, both
+  per-token-*structure* levers (token size, dispatch shape) fail measurement — the
+  switch and the 32 B token are already near-optimal. The real per-token win was
+  **§5.1 devirt** (removing the indirect dictionary call), not restructuring it.
 
 ### 5.3 Token size ❌ REJECTED with measurement
 - `T` today = **32 B** = 24 (`[]byte` header) + `valueDelimiter`+`kind`+`valueBool`
@@ -372,10 +380,14 @@ with the measurement, so we don't relitigate them.
 - ✅ Push-devirt adopted (§5.1) — Tokens() L+VL; lab beats reference +7-20% push.
 - ✅ Numbers fast path (§4.1) — full-grammar inline; decimals +18/+36%, exp +13.6/+38%.
 - ✅ Strings fast/slow split + FirstByte (§4.2) — unicode +15%, uescaped +14.7%, plain +5.6%; no escaped_long regression.
-- ❌ Token 16-byte `*[]byte` (§5.3) — REJECTED with measurement (−10…−20%; memory round-trip > by-value copy).
-- ⬜ Dispatch: classification table vs binary-search switch (§5.2) — next; attacks the separators/nulls/bools floor.
+- ❌ Token 16-byte `*[]byte` / `unsafe.Pointer` (§5.3) — REJECTED with measurement (tie-to-−20%; memory round-trip / slice rebuild > by-value copy).
+- ❌ Dispatch classification table (§5.2) — REJECTED with measurement (−5.16% geomean; binary-search switch predicts better, L1 load on critical path).
 - ⏸️ Strings in-place no-grow unescape (§4.2) — blocked on buffer ownership.
 - ⏸️ pull/ints devirt regression — open; NextToken stays generic.
+
+**Takeaway:** per-token *structure* levers (token size, dispatch shape) both fail
+measurement — the 32 B token + binary-search switch are near-optimal. The wins
+came from doing *less work* (devirt, number/string fast paths), not restructuring.
 
 **Later:**
 - ⏸️ Streams (§6).
