@@ -171,14 +171,14 @@
 - ⏳ **E4 — object encode trusts child keys (TODO, upstream).** Per Fred, key validity is guaranteed
   upstream by the builder/decoder, not re-checked by the consuming encoder; documented as a comment on
   the object branch, no encoder-side guard.
-- ✅ **E5 — corrupted handle now errors instead of panicking on the writer-driven path (fixed).**
-  `Store.WriteTo` routed corruption (out-of-range offset, invalid header) through panicking asserts;
-  panics also block compiler inlining. New non-panicking `writeToOffsetInArena` / `writeToInvalidHeader`
-  route the fault through the writer's `SetErr`, so a corrupt handle surfaces as an error to the
-  encoder. The value-returning `Get`/`AppendValueBytes` (no error sink) **keep** the panic-on-corruption
-  contract — converting those is a separate store-wide decision (store-hardening track). `Store`'s
-  existing `Get`/`PutToken` panic tests are unaffected; new `TestWriteToCorruptHandle` covers the
-  WriteTo error path.
+- ↩️ **E5 — REVERTED (Fred's call). `WriteTo` keeps the panic-on-corruption contract.** We briefly
+  routed `WriteTo` corruption (out-of-range offset, invalid header) through the writer's `SetErr` instead
+  of panicking. Fred rejected it: the `Store` presents a *closed, error-free* interface by design — store
+  methods never return errors; on failure they yield a zero `Handle` and the caller guards against it.
+  Singling out `WriteTo` for error-routing doesn't fit that contract (and corrupted handles are a
+  hand-crafted/internal-corruption fault, which is exactly what panics are for). Reverted `WriteTo` to
+  `assertOffsetInArena` / `assertValidHeader`, removed `writeToOffsetInArena` / `writeToInvalidHeader`
+  and `TestWriteToCorruptHandle`. The store-wide panic contract stands for all paths.
 - ℹ️ **E6 — `encode` now uses a pointer receiver + index-based loops** (Fred: "slightly faster"),
   avoiding the per-recursive-call Node copy and the per-child range copy. No behaviour change (encode
   never mutates).
