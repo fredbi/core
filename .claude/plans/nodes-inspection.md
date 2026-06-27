@@ -339,9 +339,11 @@ absence and must never surface from a correctly-built Node** (guards live in Bui
   empty-string key). Now returns false for array elements / root / sentinels; an empty-string object key
   is `("", true)`. `InternedKey` zero value is comparable and distinct from interned `""`. Updated the
   one caller (`Document.Pairs`). Test: `TestNodeKey`.
-- ⏳ **API-3 — sync the `Document` API (lagging).** `json.Document` exposes none of
-  `IsObject/IsArray/IsString/IsNumber/IsBool/IsNull`, nor `IndexedElems`/`Handle`/`Key`/`AtInternedKey`.
-  Fred: should be synced. (json-package scope; next.)
+- ✅ **API-3 — synced the `Document` API.** Added `IsObject`/`IsArray`/`IsString`/`IsNumber`/`IsBool`/
+  `IsNull` (store-free at this layer — `Document` carries the store), `Handle`, `Key`, `AtInternedKey`
+  (interned fast path), and `IndexedElems` — all thin wrappers over `light.Node`. `IsNull` coincides with
+  the existing `IsEmpty` for a null root (kept both; different intent). Tests: `document_api_test.go`
+  (kind predicates, null Value/Handle carries the API-2 contract up, Key + AtInternedKey, IndexedElems).
 - ℹ️ **API-5 — a Node does not know its own path** (only the live decode walk via `ctx.P`). Fred: making
   nodes persist their path would break cheap clone/chain building; deliberately a node is unaware of where
   it sits. No change.

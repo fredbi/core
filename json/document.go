@@ -134,12 +134,29 @@ func (d Document) Value() (values.Value, bool) {
 	return d.root.Value(d.store)
 }
 
+// Handle of a scalar or null document's value, or false for a container or empty document.
+//
+// This is low-level access to the [stores.Store] handle, for zero-copy use; most users want [Document.Value].
+func (d Document) Handle() (stores.Handle, bool) {
+	return d.root.Handle()
+}
+
 // AtKey returns the value held under a key in an object, or false if not found.
 //
 // Key lookup is constant-time (map index).
 func (d Document) AtKey(k string) (Document, bool) {
 	n, b := d.root.AtKey(k)
 	if !b {
+		return EmptyDocument, false
+	}
+
+	return d.fromNode(n), true
+}
+
+// AtInternedKey is [Document.AtKey] using an already-interned key, which avoids re-interning on hot lookups.
+func (d Document) AtInternedKey(k values.InternedKey) (Document, bool) {
+	n, ok := d.root.AtInternedKey(k)
+	if !ok {
 		return EmptyDocument, false
 	}
 
@@ -190,6 +207,19 @@ func (d Document) Elems() iter.Seq[Document] {
 	}
 }
 
+// IndexedElems returns all elements in an array together with their index.
+//
+// Iteration order is stable and honors the original ordering in which elements were declared.
+func (d Document) IndexedElems() iter.Seq2[int, Document] {
+	return func(yield func(int, Document) bool) {
+		for i, node := range d.root.IndexedElems() {
+			if !yield(i, d.fromNode(node)) {
+				return
+			}
+		}
+	}
+}
+
 func (d Document) Kind() nodes.Kind {
 	return d.root.Kind()
 }
@@ -197,6 +227,29 @@ func (d Document) Kind() nodes.Kind {
 func (d Document) Len() int {
 	return d.root.Len()
 }
+
+// Key of the document node, and whether it has one (i.e. the node is an object member).
+func (d Document) Key() (string, bool) {
+	return d.root.Key()
+}
+
+// IsObject reports whether the document root is a JSON object.
+func (d Document) IsObject() bool { return d.root.IsObject() }
+
+// IsArray reports whether the document root is a JSON array.
+func (d Document) IsArray() bool { return d.root.IsArray() }
+
+// IsNull reports whether the document root is a JSON null. (See also [Document.IsEmpty].)
+func (d Document) IsNull() bool { return d.root.IsNull() }
+
+// IsString reports whether the document root is a JSON string.
+func (d Document) IsString() bool { return d.root.IsString(d.store) }
+
+// IsNumber reports whether the document root is a JSON number.
+func (d Document) IsNumber() bool { return d.root.IsNumber(d.store) }
+
+// IsBool reports whether the document root is a JSON boolean.
+func (d Document) IsBool() bool { return d.root.IsBool(d.store) }
 
 // Decode builds a [Document] from a stream of JSON bytes.
 //
