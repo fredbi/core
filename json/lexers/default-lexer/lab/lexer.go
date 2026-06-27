@@ -127,16 +127,13 @@ func (l *L) Offset() uint64 {
 	return l.offset
 }
 
-// Line and Column are STUBBED for the no-position-accounting experiment: the
-// semantic lexer no longer tracks line/column during scanning (only the verbatim
-// lexer does — see emitPolicy.tracksPosition). They currently return 0. Pending
-// the experiment's outcome we will either drop these methods from the semantic
-// lexer or compute line/column on demand from the byte offset (deferred). Use the
-// verbatim lexer (VL/token.VT) when per-token position is required.
-func (l *L) Line() int { return 0 }
-
-// Column: see [L.Line] — stubbed during the no-position-accounting experiment.
-func (l *L) Column() int { return 0 }
+// The semantic lexer deliberately does NOT expose line/column. Tracking them is
+// costly on whitespace-heavy input (it forces newline counting in the whitespace
+// skip — measured ~-28% on citm; see ramblings/2026-06-linecol-cost-decomposition),
+// and it cannot be computed lazily either, because a streaming buffer discards past
+// bytes. Position is a verbatim-lexer concern: use [VL] / [token.VT] (VL.Line /
+// VL.Column, or VT.Line / VT.Col), which carry it. The byte position is always
+// available via [L.Offset].
 
 // NextToken returns the next JSON token consumed from the stream or slice of bytes.
 //

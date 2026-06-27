@@ -66,6 +66,16 @@ func (l *VL) NextToken() token.VT {
 	return scanTokenVerbatim(l.L, verbatimPolicy{})
 }
 
+// Line yields the 1-based line number at which the most recently returned token
+// starts (0 before the first token). The verbatim lexer maintains line/column
+// accounting (the semantic lexer does not — see lexer.go); the cost is already
+// paid, so these accessors are free. Per-token position is also on [token.VT].
+func (l *VL) Line() int { return l.tokLine }
+
+// Column yields the 1-based column at which the most recently returned token
+// starts (0 before the first token). See [VL.Line].
+func (l *VL) Column() int { return l.tokCol }
+
 // Reset returns the verbatim lexer to a clean, source-less state for reuse,
 // scrubbing the embedded L (which drops references to caller-supplied memory)
 // and re-arming the verbatim-specific blanks tracking. See [L.Reset].

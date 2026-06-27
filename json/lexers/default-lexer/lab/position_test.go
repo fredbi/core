@@ -45,6 +45,9 @@ func TestLabVerbatimPositionEquivalence(t *testing.T) {
 			if !lv.Ok() || tok.IsEOF() {
 				break
 			}
+			// the lexer-level VL.Line()/Column() must agree with the token's position
+			assert.Equalf(t, tok.Line(), lv.Line(), "VL.Line() vs token on %q", in)
+			assert.Equalf(t, tok.Col(), lv.Column(), "VL.Column() vs token on %q", in)
 			got = append(got, pos{tok.Line(), tok.Col()})
 		}
 		require.NoErrorf(t, lv.Err(), "lab verbatim error on %q", in)
@@ -53,17 +56,6 @@ func TestLabVerbatimPositionEquivalence(t *testing.T) {
 	}
 }
 
-// TestLabSemanticDropsPosition documents the experiment's contract: the semantic
-// lexer no longer accounts for line/column (the methods are stubbed to 0).
-func TestLabSemanticDropsPosition(t *testing.T) {
-	l := NewWithBytes([]byte("{\n  \"a\": 1\n}"))
-	for {
-		tok := l.NextToken()
-		if !l.Ok() || tok.IsEOF() {
-			break
-		}
-		assert.Zerof(t, l.Line(), "semantic Line() must be stubbed to 0")
-		assert.Zerof(t, l.Column(), "semantic Column() must be stubbed to 0")
-	}
-	require.NoError(t, l.Err())
-}
+// Note: the semantic lexer L intentionally has NO Line()/Column() methods — the
+// no-position-accounting contract is enforced by their absence (the package would
+// not compile if anything called them). Position is verbatim-only; see [VL.Line].
