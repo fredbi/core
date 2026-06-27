@@ -321,13 +321,54 @@ func (n *Node) putValue(ctx *ParentContext, h stores.Handle) bool {
 	return true
 }
 
-func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
+// drainValue consumes the remaining tokens of a value whose opening token tok has already been read,
+// leaving the lexer positioned just after that value.
+//
+// It is how a hook "skip" discards a value without materializing it as a [Node]: a skipped scalar is
+// already fully read (no-op), while a skipped object or array must have its body drained so the parse
+// stays in sync. Separators are elided by the semantic lexer, so balancing the start/end container
+// tokens is enough. No hooks fire for the drained tokens — a skip is silent.
+func drainValue(ctx *ParentContext, tok token.T) {
+	if !tok.IsStartObject() && !tok.IsStartArray() {
+		// scalar (or a stray end token handled by the caller): the token is the whole value.
+		return
+	}
+
+	l := ctx.L
+	for depth := 1; depth > 0; {
+		t := l.NextToken()
+		if !l.Ok() {
+			return
+		}
+
+		switch {
+		case t.IsStartObject(), t.IsStartArray():
+			depth++
+		case t.IsEndObject(), t.IsEndArray():
+			depth--
+		case t.IsEOF():
+			// the value is unterminated: the lexer's grammar check normally catches this first,
+			// but guard against an early EOF while draining.
+			l.SetErr(codes.ErrInvalidToken)
+
+			return
+		}
+	}
+}
+
+// decodeToken decodes the value whose opening token is tok into n.
+//
+// It reports whether a node was produced. It returns false when the value was skipped by the
+// [decodeHooks.NodeHook] (the value is drained, n is left empty) or when decoding failed (check the
+// lexer's error state). Callers in an object/array context use this to drop a skipped node from the
+// result while staying in sync with the lexer.
+func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 	l := ctx.L
 	s := ctx.S
 
 	if !l.Ok() {
 		// short-circuit
-		return
+		return false
 	}
 
 	if ctx.DO.NodeHook != nil {
@@ -335,11 +376,13 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 		skip, err := ctx.DO.NodeHook(ctx, l, tok)
 		if err != nil {
 			l.SetErr(err)
-			return
+			return false
 		}
 
 		if skip {
-			return
+			// discard the node without materializing it; a composite must be drained to stay in sync.
+			drainValue(ctx, tok)
+			return false
 		}
 	}
 
@@ -349,14 +392,14 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 		n.keysIndex = make(map[values.InternedKey]int)
 		n.children = make([]Node, 0)
 		if !n.putValue(ctx, s.PutNull()) {
-			return
+			return false
 		}
 		n.kind = nodes.KindObject
 		n.ctx.offset = l.Offset()
 
 		for key, value := range n.decodeObject(ctx) {
 			if !l.Ok() {
-				return
+				return false
 			}
 
 			// check unique key: if the key exists, replace the previous value
@@ -365,7 +408,7 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 			if keyExists {
 				// by default, duplicate keys
 				if !ctx.DO.tolerateDuplKey {
-					return
+					return false
 				}
 
 				n.children[index] = value
@@ -377,68 +420,71 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) {
 			n.keysIndex[key] = len(n.children) - 1
 		}
 
-		return
+		return l.Ok()
 
 	case tok.IsStartArray():
 		n.keysIndex = nil
 		n.children = make([]Node, 0)
 		if !n.putValue(ctx, s.PutNull()) {
-			return
+			return false
 		}
 		n.kind = nodes.KindArray
 		n.ctx.offset = l.Offset()
 
 		for elem := range n.decodeArray(ctx) {
 			if !l.Ok() {
-				return
+				return false
 			}
 
 			n.children = append(n.children, elem)
 		}
 
-		return
+		return l.Ok()
 
 	case tok.IsNull():
 		n.keysIndex = nil
 		n.children = nil
 		n.kind = nodes.KindNull
 		if !n.putValue(ctx, s.PutNull()) {
-			return
+			return false
 		}
 		n.ctx.offset = l.Offset()
 
-		return
+		return true
 
 	case tok.IsBool():
 		n.keysIndex = nil
 		n.children = nil
 		n.kind = nodes.KindScalar
 		if !n.putValue(ctx, s.PutBool(tok.Bool())) {
-			return
+			return false
 		}
 		n.ctx.offset = l.Offset()
 
-		return
+		return true
 
 	case tok.IsScalar():
 		n.keysIndex = nil
 		n.children = nil
 		n.kind = nodes.KindScalar
 		if !n.putValue(ctx, s.PutToken(tok)) {
-			return
+			return false
 		}
 		n.ctx.offset = l.Offset()
 
-		return
+		return true
 
 	case tok.IsEOF():
-		// TODO: for VerbatimNode, remember that we may have trailing blanks before EOF
-		return
+		// EOF where a value is expected: top-level decode() filters EOF before calling decodeToken, so
+		// reaching here means an unterminated container. The lexer's grammar check normally flags this;
+		// guard so a value position never silently yields an empty node.
+		l.SetErr(codes.ErrInvalidToken)
+		return false
 
 	default:
 		// wrong token
 		l.SetErr(codes.ErrInvalidToken)
-		return
+		return false
 	}
 }
 
@@ -490,6 +536,13 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 					return
 				}
 				if skip {
+					// drop the whole pair: the value token has not been read yet, so read it and
+					// (for a composite) drain its body before moving on to the next key.
+					vtok := l.NextToken()
+					if !l.Ok() {
+						return
+					}
+					drainValue(ctx, vtok)
 					continue
 				}
 			}
@@ -500,9 +553,13 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 			}
 
 			var value Node
-			value.decodeToken(ctx, tok)
+			produced := value.decodeToken(ctx, tok)
 			if !l.Ok() {
 				return
+			}
+			if !produced {
+				// the value was skipped by NodeHook: drop the whole member.
+				continue
 			}
 
 			value.key = key
@@ -567,6 +624,9 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 					return
 				}
 				if skip {
+					// drop the element without materializing it; the opening token is already read,
+					// so a composite must be drained. A skipped element consumes no index.
+					drainValue(ctx, tok)
 					continue
 				}
 			}
@@ -575,9 +635,13 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 			idx++
 
 			var elem Node
-			elem.decodeToken(ctx, tok) // decode next value
+			produced := elem.decodeToken(ctx, tok) // decode next value
 			if !l.Ok() {
 				return
+			}
+			if !produced {
+				// the element was skipped by NodeHook: drop it.
+				continue
 			}
 
 			if ctx.DO.AfterElem != nil {

@@ -219,10 +219,25 @@ slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `
   a lexer option. The `stringOrInt` struct may be simplified (stringify the int eagerly), and the bare
   `panic("assert")` in the path helpers is a known unpolished edge. Left as-is for now; revisit when the
   feature moves. Possibly extend path tracking to the encode side too.
-- ⏳ **CTX-4 (decode-path pass) — `Before*` hook `skip` desyncs the lexer.** `AfterKey`/`AfterElem` skip
-  are safe (value already consumed); `BeforeKey` skip leaves the value token unconsumed (next read
-  misparses it as a key → `ErrMissingKey`); `BeforeElem` skip is safe only for scalar elements (a
-  composite's body is never drained). Fred: valid — handle when dissecting the decode path.
+- ✅ **CTX-4 — fixed the hook `skip` lexer desync + made `skip` semantics uniform.** Decided semantic:
+  **skip = discard this value from the result but still consume its tokens** (drain a composite),
+  staying in sync; a skip is silent (no nested hook fires for drained tokens). Implementation:
+  - new `drainValue(ctx, tok)` consumes the rest of a value whose opening token is already read
+    (balances start/end container tokens — separators are elided; scalar = no-op).
+  - `BeforeKey` skip now reads the pending value token and drains it before continuing (was: left it
+    unconsumed → next read misparsed it as a key → `ErrMissingKey`).
+  - `BeforeElem` skip now drains the element (was: composite bodies leaked into the next read).
+  - `NodeHook` skip now drops the node *consistently*: `decodeToken` returns `produced bool`, and the
+    object/array loops `continue` (drop) when a value was skipped — previously a `NodeHook` skip left an
+    empty placeholder node because the parent still yielded it. (`NodeHook` skip was unused in practice —
+    the constrained validators only ever return `err` — but the asymmetry is now closed.)
+  - `AfterKey`/`AfterElem` skip were already correct (value fully consumed; just not yielded).
+  - hardening bonus: `decodeToken`'s EOF-as-value case now sets an error instead of returning silently
+    (top-level `decode()` already filters EOF, so reaching it means an unterminated container).
+  - hook `skip`/`err` contract documented on the hook types in `hooks.go`.
+  - Tests: `TestDecodeSkip` (Before/After Key/Elem + NodeHook, scalar + composite + deeply nested
+    drains) and `TestDecodeSkipDoesNotMaskErrors`; unterminated input verified to error, not hang. Green
+    under `-race`.
 - ✅ **CTX-5 — documented `ParentContext`'s single-goroutine contract.** Fred: the node machinery is
   single-goroutine *by design* (decode pulls from a stateful lexer, encode pushes into a stateful
   writer; the whole logic is not thread-safe). Godoc now states it's not safe for concurrent use (one
