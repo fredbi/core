@@ -207,13 +207,19 @@ the zero-copy alias path (unaltered string) ✅. Split:
   no unescape (already done) ✅
 - dense escapes + clean tail → clean-run batching shipped ✅
 - general randomly-positioned escapes / surrogates → slow path ✅
-- **widen zero-copy to "alter but do not grow"** ⬜ — an unescaped string is always
-  ≤ source length (every escape shrinks), so we could unescape *in place* over the
-  aliased region instead of into `currentValue`, dodging the scratch copy. Needs
-  care: the input buffer must be writable — **verify buffer ownership first**
-  (whole-buffer mode aliases the *caller's* data per `lexer.go:221`, so in-place
-  mutation of the alias is NOT safe without an opt-in/own-the-buffer mode). This
-  caveat likely demotes the idea unless we own the buffer.
+- **fast/slow split + FirstByte exact-locate** ✅ — fast path uses `swar.FirstByte`
+  to jump straight to the stop lane, and the unescape slow path is extracted into
+  `consumeStringEscaped` so the two no longer share a frame. Banks the fast-path
+  win **without** the earlier −12.5% `escaped_long` regression (which was codegen
+  perturbation of the shared function): unicode +15.1%, uescaped +14.7%, plain
+  +5.6% (pull); escaped/escaped_long flat. Push stacks devirt on top. Validated by
+  full JSONTestSuite conformance + equivalence, race-clean. **Lesson: split fragile
+  shared cores so a hot-path tweak can't regress a cold path** (same as the number
+  block / consumeNumberWhole theme).
+- **widen zero-copy to "alter but do not grow"** ⏸️ — an unescaped string is always
+  ≤ source length, so we could unescape *in place* over the aliased region. Blocked:
+  whole-buffer mode aliases the *caller's* data (`lexer.go:221`), so in-place
+  mutation is unsafe without an opt-in own-the-buffer mode. Deferred.
 
 Lazy/raw-token deferral is **out of scope** — it would shed the eager tax by
 pushing work onto every consumer, which contradicts the contract we keep.

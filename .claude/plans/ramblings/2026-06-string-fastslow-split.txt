@@ -1,0 +1,18 @@
+# String fast/slow split + FirstByte exact-locate (§4.2)
+# go1.26.4, Ryzen 7 5800X, count=10 medians, BenchmarkMicro lab vs frozen reference, PULL (bytes)
+#
+# Change: (1) fast path uses swar.FirstByte to jump to the exact stop lane;
+# (2) the unescape slow path is extracted into consumeStringEscaped, so the
+# fast-path change no longer perturbs the slow path's codegen (the earlier
+# FirstByte attempt regressed escaped_long -12.5% because both shared one frame).
+#
+# workload              lab     ref     gap
+# strings_unicode      1013     880   +15.1%
+# strings_uescaped      985     859   +14.7%
+# strings_plain        1021     967    +5.6%
+# strings_escaped       568     569    flat
+# strings_escaped_long 1345    1352    flat   <- regression gone (was -12.5%)
+#
+# pull isolates this change (no devirt in pull). push (Tokens) stacks devirt on top.
+# Correctness: full JSONTestSuite conformance + lab-vs-reference + devirt equivalence, race-clean.
+# Lesson banked: split fragile shared cores so a hot-path tweak can't regress a cold path.

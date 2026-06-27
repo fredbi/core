@@ -41,17 +41,17 @@ func (l *L) consumeStringWhole() token.T {
 	// overwhelmingly common case (no escapes, no control chars) aliases the input
 	// with zero copy.
 	i := start
-	{
-		for i+8 <= n {
-			if swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])) != 0 {
-				break
-			}
-			i += 8
+	for i+8 <= n {
+		if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])); m != 0 {
+			i += swar.FirstByte(m) // exact stop lane; skips the scalar re-scan
+
+			break
 		}
-		for ; i < n; i++ {
-			if c := data[i]; c == doubleQuote || c == escape || c < 0x20 {
-				break
-			}
+		i += 8
+	}
+	for ; i < n; i++ {
+		if c := data[i]; c == doubleQuote || c == escape || c < 0x20 {
+			break
 		}
 	}
 	if i >= n {
@@ -81,12 +81,24 @@ func (l *L) consumeStringWhole() token.T {
 
 		return token.None
 	}
-	// otherwise c == escape: fall through to the unescape slow path
 
-	// slow path: an escape was found at i; copy the clean prefix then unescape the
-	// rest. The loop invariant is that data[i] is the next "stop" byte (quote,
-	// escape, or control) — clean runs between stops are copied in bulk rather
-	// than byte-by-byte.
+	// an escape was found at i: hand off to the unescape slow path. It is a
+	// separate function on purpose — keeping the byte-by-byte escape machinery out
+	// of this frame insulates the fast path's codegen from it (and vice versa);
+	// they were previously one function, where a fast-path change could regress
+	// the slow path by ~12% and vice versa (plan §4.2).
+	return l.consumeStringEscaped(start, i)
+}
+
+// consumeStringEscaped is the unescape slow path, split out of consumeStringWhole.
+// It is entered with data[i] == escape and start..i the clean prefix already
+// scanned. It copies that prefix then unescapes the rest; the loop invariant is
+// that data[i] is the next "stop" byte (quote, escape, or control) — clean runs
+// between stops are copied in bulk rather than byte-by-byte.
+func (l *L) consumeStringEscaped(start, i int) token.T {
+	data := l.buffer
+	n := l.bufferized
+
 	l.currentValue = append(l.currentValue[:0], data[start:i]...)
 
 	for i < n {
