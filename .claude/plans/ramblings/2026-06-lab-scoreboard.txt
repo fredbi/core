@@ -1,0 +1,21 @@
+# Lab scoreboard — cumulative lab vs frozen reference (default-lexer), the sum of all
+# adopted experiments. go1.26.4, Ryzen 7 5800X, count=10 medians, BenchmarkMicro.
+# (Lab began as a pristine copy of the reference, so Δ = the net of the experiments.)
+
+workload                ref.byt  lab.byt       Δ% |  ref.tok  lab.tok       Δ%
+bools                       225      242    +7.5% |      274      299    +9.0%
+decimals                    468      592   +26.4% |      546      721   +32.1%
+exponential                 344      422   +22.7% |      403      525   +30.5%
+ints_neg                    548      599    +9.3% |      661      713    +7.8%
+ints_pos                    508      570   +12.2% |      662      682    +2.9%
+nulls                       186      223   +19.9% |      260      280    +7.8%
+separators                  114      126   +10.2% |      156      188   +20.5%
+strings_escaped             566      582    +2.8% |      588      609    +3.7%
+strings_escaped_long       1329     1326    -0.2% |     1350     1356    +0.4%
+strings_plain               940     1056   +12.4% |     1029     1190   +15.6%
+strings_uescaped            852     1023   +20.0% |      949     1178   +24.2%
+strings_unicode             853     1040   +21.8% |      958     1172   +22.3%
+GEOMEAN                                    +13.5% |                     +14.3%
+
+# bytes = pull (NextToken); tokens = push (Tokens iterator). escaped/escaped_long are
+# slow-path-dominated (the eager-unescape work dwarfs dispatch/emit), so ~flat — expected.

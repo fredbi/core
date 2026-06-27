@@ -48,6 +48,41 @@ Status legend: ✅ done · 🚧 in progress · ⬜ todo · ⏸️ parked · ❌ 
 
 ---
 
+## 0.5 Scoreboard — tentatives & outcomes (2026-06-27)
+
+One line per tentative. "Gain" = measured B/s vs the frozen reference (cumulative)
+or vs the in-binary generic baseline (devirt), count=10 unless noted.
+
+**Prep (tooling — no direct perf):**
+- ✅ Micro-benchmark suite — 12 single-path workloads + harness + jsontext oracle guard.
+- ✅ Lab re-synced from reference (option A, pristine copy) — establishes a clean baseline.
+- ✅ In-tree SWAR module (`internal/swar`) — inlinable exact masks; string-stop consolidated **perf-neutral**.
+- ✅ `lexgen` devirt generator — monomorphizes the cores; idempotent; lexgen = source-of-truth.
+
+**Adopted (shipped to the lab):**
+- ✅ **push-devirt** — `Tokens()` via generated cores — **push +7…+18%** (in-binary).
+- ✅ **number fast path → full grammar** (`[-]int[frac][exp]` inline) — **decimals +18/+36%, exponential +13.6/+38%** (pull/push).
+- ✅ **string fast/slow split + FirstByte** — **unicode +15%, uescaped +14.7%, plain +5.6%** (pull); no escaped_long regression.
+- ✅ **pull-devirt** — `NextToken()` via generated cores — **pull +4.23% geomean** (after the regression resolved itself via the string split).
+- ✅ cleanups (`consumeNumberWhole` doc, uint/BCE) — no perf change, clarity; BCE verified preserved.
+
+**Rejected with measurement (recorded so we don't relitigate):**
+- ❌ **16-byte token, `*[]byte`** — **−17…−26%** (header materialized to memory to take its address).
+- ❌ **16-byte token, `unsafe.Pointer`+len** — **tie kind-only / −6-7% read-value** (slice rebuild + GC/unsafe burden).
+- ❌ **classification-table dispatch** — **−5.16% geomean** (binary-search switch predicts better; L1 load + computed jump cost more).
+
+**Cumulative (lab vs frozen reference, geomean):** **pull +13.5% · push +14.3%**
+(`ramblings/2026-06-lab-scoreboard.txt`). Biggest movers: decimals/exponential
+(+22…+32%), unicode/uescaped (+20…+24%), plain (+12…+16%); escaped/escaped_long
+flat (slow-path-dominated, as expected).
+
+**Lesson banked:** the wins all came from **doing less work** (devirt, number/string
+fast paths) and **splitting fragile shared cores** (which even cured the pull-devirt
+regression). Per-token *structure* levers (token size, dispatch shape) both failed
+measurement — the 32 B token + binary-search switch are already near-optimal.
+
+---
+
 ## 1. Where we stand vs json/v2 (the parity map)
 
 Source-grounded against the local clone at
