@@ -440,3 +440,71 @@ came from doing *less work* (devirt, number/string fast paths), not restructurin
 **Later:**
 - ⏸️ Streams (§6).
 - ⬜ Gate review + retrofit to master (§7).
+
+---
+
+## 9. Resume plan (next session) — 2026-06-28
+
+Today's gate review (§7, `ramblings/2026-06-gate-review.txt`) is a good stopping
+point: WIN/parity on 4/5 real corpora + content-rich data; trails are understood
+(tiny-token dispatch floor; eager-unescape by design). The methodology is settled —
+**size the prize, measure in isolation, reject with data (Occam's razor)**.
+
+Ordered by priority for the resume:
+
+### 9.1 The unstable main loop ⚠️ (top concern)
+Symptom seen ALL session: adding one line/MV to `scanTokenG` perturbs *unrelated*
+arms (notably numbers) by several % — fragile, non-local. Theories: register
+pressure (the giant function spills; amd64 has 16 GP regs), or inlining flipping on
+an arm. **It doesn't feel right and it caps every other optimization.** Plan:
+1. **Diagnose the mechanism** on a known-perturbing change (e.g. re-add a line to the
+   number arm): diff `-gcflags=-m` (did an inline decision flip?), diff the STEXT
+   `locals=` frame size (did it spill?), and diff the number arm's asm
+   (`-gcflags=-S`) counting spill/reload (`MOVQ ...(SP)`). Pin spill-vs-inline-flip.
+2. **Structural fix hypothesis: split the core.** Extract per-token-type handlers
+   (number fast path, string, delimiter/structure) out of `scanTokenG` into
+   functions so each arm's codegen is independent. We have strong precedent that
+   splitting stabilizes (the string fast/slow split fixed BOTH the FirstByte
+   regression AND, as a side effect, the devirt-pull regression). Success metric:
+   after the split, adding a line to one arm no longer moves the others.
+3. Keep the lexgen generator working through the split (cores stay the source of
+   truth; helpers are shared methods, not monomorphized).
+
+### 9.2 Push-core whitespace skip ⬜ (clear, small win)
+The gate showed push trails pull on whitespace-heavy (citm push 74% vs pull 91%;
+whitespace_heavy too) because `consumeWhitespace` is **pull-only**. Apply the same
+batch skip to `scanPushG`'s semantic path (`i += consumeWhitespace(data[i:])`).
+Expect citm push → pull-level. Low risk; do early.
+
+### 9.3 AVX-512 SIMD via avo (refinement, test-and-see) ⬜
+Idea (Fred): replace the 64-bit (8-byte) SWAR string-stop scan with avo-generated
+AVX-512 asm — a 512-bit (64-byte) register gobbles long strings faster. Targets
+LONG strings (already good: plain/escaped_long), so upside is uncertain — apply
+Occam: ship only if it earns its keep. Notes:
+- The asm call won't inline → only worth it where the per-call cost amortizes
+  (long runs), NOT short strings. Likely a length-gated dispatch: SWAR for short,
+  AVX-512 for long.
+- Try the same for `consumeWhitespace` (long indent runs), though the compiler's
+  tight scalar loop is already near-optimal — lower expected payoff.
+- Reference: Fred has an example repo (AVX-512-from-avo, a SIMD-accelerated grep).
+- Measure on `strings_plain`, `strings_escaped_long`, `whitespace_heavy`, citm;
+  needs CPU AVX-512 support check + a scalar fallback build tag.
+
+### 9.4 Retrofit lab → master (§7) ⬜
+Once 9.1 (and maybe 9.2) land, cherry-pick the proven lab gains onto the reference
+`default-lexer`: devirt (push+pull) via lexgen, number full-grammar fast path,
+string fast/slow split + FirstByte, adaptive-SWAR slow path, jsontext-style
+whitespace skip, drop semantic line/col (position → verbatim only). Re-run the gate
+on master to confirm parity holds post-retrofit.
+
+### 9.5 Publish the benchmark chart ⬜
+Produce barcharts (lab vs jsontext vs reference vs easyjson) from the gate
+benchmark JSON, using Fred's `benchviz` tool (as done for the default-writer). Wire
+the gate run to emit benchviz-consumable output.
+
+### Parked / not chasing
+- Tiny-token dispatch floor (bools_nulls 36%): jsontext is leaner per token; the
+  per-token structure levers (token size, classification table) already failed
+  measurement. Pull's gap is per-NextToken-call overhead (push is near-parity).
+  Revisit only if 9.1 (the split) opens new room.
+- Dense escaped strings (63%): structural (eager unescape is the feature). Not chasing.
