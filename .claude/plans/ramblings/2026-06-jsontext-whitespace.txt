@@ -1,0 +1,38 @@
+# How jsontext handles whitespace (inspected from the local clone) — and why it's
+# faster than our pull, which is NOT what we assumed.
+
+# Their whitespace skip (internal/jsonwire/decode.go:33):
+#   func ConsumeWhitespace(b []byte) (n int) {
+#       // kept simple to keep this inlinable
+#       for len(b) > n && (b[n]==' '||b[n]=='\t'||b[n]=='\r'||b[n]=='\n') { n++ }
+#       return n
+#   }
+# Called as: pos += ConsumeWhitespace(buf[pos:])  (LOCAL cursor, write back once).
+
+# SURPRISES:
+# 1. It is SCALAR, byte-by-byte. NO SWAR, no table, no bitset. Our SWAR instinct was
+#    a red herring for whitespace — their speed is NOT from vectorization.
+# 2. NO line/column tracking AT ALL. Errors carry only a byte offset. So the loop does
+#    ZERO per-newline bookkeeping — every whitespace byte is treated identically.
+# 3. It is a TINY INLINABLE function returning a count, separate from the token
+#    dispatch; the I/O-refill wrapper is a separate non-inlined method. The main
+#    ReadToken stays small (string/number scanning are separate functions too).
+
+# WHY OUR PULL TRAILED (the real reasons, none of them "no SWAR"):
+#  a. We track line/col eagerly (L.Line()/Column() are public) -> per-newline work in
+#     the skip.
+#  b. Our pull advances the cursor in STRUCT FIELDS (l.offset++/l.consumed++) per byte.
+#  c. Our number fast path is INLINE in the giant scanTokenG, so putting whitespace
+#     code in the same function perturbs its codegen (-6% on numbers). jsontext's
+#     small functions avoid this.
+
+# CLEAN FIX (mirror jsontext, apply our "split fragile cores" lesson):
+#  1. whitespace skip = a tiny inlinable scalar consumeWhitespace(buf) int, LOCAL cursor.
+#  2. make SEMANTIC L.Line()/Column() LAZY: track only byte offset eagerly; compute
+#     line/col on demand from the buffer (cache last (offset,line,lineStart), scan
+#     forward -> amortized O(1) per token). VERBATIM keeps eager line/col (it's baked
+#     into the VT token; verbatim already uses the per-byte path).
+#  3. extract the number fast path out of scanTokenG so the core is small and stops
+#     perturbing on every edit.
+# Expected: citm's whitespace win WITHOUT the -6% number regression, because the skip
+# is a separate tiny function and the semantic hot path does no per-newline work.
