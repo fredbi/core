@@ -1,0 +1,38 @@
+# §7 GATE REVIEW — lab vs jsontext (+ reference), full Suite, count=10, go1.26.4.
+# MB/s. pull%=lab.pull/jsontext; push%=lab.push/jsontext. verdict by best of the two.
+# (27-min run; absolute MB/s carries thermal drift on late/corpus rows, but the
+#  lab-vs-jsontext RATIO per workload is fair — both measured back-to-back per group.)
+
+workload               ref.pull lab.pull jsontext lab.push |  pull%  push% verdict
+bools_nulls                 197      229      623      289 |    36%    46% trail
+canada_geometry             482      568      575      741 |    98%   128% WIN
+citm_catalog                623     1013     1109      829 |    91%    74% trail
+citm_catalog_min            357      421      414      540 |   101%   130% WIN
+floats                      478      597      563      756 |   105%   134% WIN
+golang_source               444      549      512      680 |   107%   132% WIN
+ints                        516      549      771      727 |    71%    94% trail
+mixed                       281      329      358      423 |    92%   118% WIN
+nested_arrays                88      105        -      169 |      -      - (no jsontext)
+nested_objects              146      171        -      233 |      -      - (no jsontext)
+object_keys                 554      692      113      858 |   613%   761% WIN
+strings_escaped             554      512      806      588 |    63%    73% trail
+strings_escaped_long       1337     2363     1750     2419 |   134%   138% WIN
+strings_plain               932     1063     1385     1238 |    76%    89% trail
+strings_uescaped            851     1033      589     1206 |   175%   204% WIN
+strings_unicode             842     1050      619     1230 |   169%   198% WIN
+twitter_status              641      789      604      896 |   130%   148% WIN
+whitespace_heavy            461      609      879      576 |    69%    65% trail
+
+## VERDICT
+# REAL CORPORA: WIN canada(128%) citm_min(130%) golang(132%) twitter(148%);
+#   citm 91% pull (near parity) but 74% push — push core LACKS the whitespace batch
+#   skip (it's pull-only). => 4/5 corpora win, citm pull near-parity.
+# CONTENT-RICH SYNTHETICS: big WIN unicode/uescaped 1.7-2x, escaped_long 1.3x,
+#   floats, mixed, object_keys 6-7x (jsontext pays heavy per-key canonicalization).
+# TRAILS (understood): bools_nulls 36% + ints 71%pull/94%push + strings_plain 76/89%
+#   = per-token dispatch floor on tiny tokens (jsontext leaner per token; our pull
+#   pays per-NextToken-call overhead — push is much closer). strings_escaped 63% =
+#   structural (we eager-unescape, they defer; by design). whitespace_heavy 69/65%.
+# PUSH<PULL on ws-heavy (citm, whitespace_heavy): the consumeWhitespace batch skip
+#   is only in the PULL core => clearest remaining lever: add it to scanPushG too.
+# NEXT: (1) push-core whitespace skip (closes citm push); (2) retrofit lab->master (§7).
