@@ -122,6 +122,10 @@ type ParentContext struct {
 	C  *codes.ErrContext   // error context, populated when decoding or encoding fails
 	X  any                 // caller scratch space, opaque to the machinery
 	P  Path                // JSON Pointer to the current node; valid only during a callback (overwritten on the next sibling, truncated on level exit)
+
+	// stopped is set when a decode [Hook] returns [Stop]; it unwinds the recursion, keeping what was
+	// built, without raising an error. Internal to the decode machinery.
+	stopped bool
 }
 
 func (p *ParentContext) Reset() {
@@ -132,6 +136,7 @@ func (p *ParentContext) Reset() {
 	p.EO = EncodeOptions{}
 	p.C = nil
 	p.X = nil
+	p.stopped = false
 	if len(p.P) > 0 {
 		p.P = p.P[:0]
 	}

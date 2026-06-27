@@ -57,7 +57,7 @@ func (d *Object) Hooks() light.DecodeOptions {
 
 func (d *Object) hooks() light.DecodeOptions {
 	decodeOptions := d.DecodeOptions
-	decodeOptions.NodeHook = d.mustBeObject
+	decodeOptions.OnEnter = d.mustBeObject
 
 	return decodeOptions
 }
@@ -65,26 +65,26 @@ func (d *Object) hooks() light.DecodeOptions {
 func (d *Object) mustBeObject(
 	ctx *light.ParentContext,
 	l lexers.Lexer,
-	tok token.T,
-) (skip bool, err error) {
+	ev light.HookEvent,
+) (light.Action, error) {
 	octx, ok := ctx.X.(*objectContext)
 	if !ok {
-		return false, nil
+		return light.Continue, nil
 	}
 
 	if octx.isObject {
-		return false, nil
+		return light.Continue, nil
 	}
 
 	level := l.IndentLevel() - octx.initialLevel
 
-	if level == 1 && tok.IsStartObject() {
+	if level == 1 && ev.Token.IsStartObject() {
 		octx.isObject = true
 
-		return false, nil
+		return light.Continue, nil
 	}
 
-	return false, fmt.Errorf("a JSON object is expected. Got: %v: %w", tok, codes.ErrNode)
+	return light.Continue, fmt.Errorf("a JSON object is expected. Got: %v: %w", ev.Token, codes.ErrNode)
 }
 
 func (d *Object) decode(lex lexers.Lexer) error {
@@ -146,7 +146,7 @@ func (d *Array) Hooks() light.DecodeOptions {
 
 func (d *Array) hooks() light.DecodeOptions {
 	decodeOptions := d.DecodeOptions
-	decodeOptions.NodeHook = d.mustBeArray
+	decodeOptions.OnEnter = d.mustBeArray
 
 	return decodeOptions
 }
@@ -154,25 +154,25 @@ func (d *Array) hooks() light.DecodeOptions {
 func (d *Array) mustBeArray(
 	ctx *light.ParentContext,
 	l lexers.Lexer,
-	tok token.T,
-) (skip bool, err error) {
+	ev light.HookEvent,
+) (light.Action, error) {
 	octx, ok := ctx.X.(*arrayContext)
 	if !ok {
-		return false, nil
+		return light.Continue, nil
 	}
 
 	if octx.isArray {
-		return false, nil
+		return light.Continue, nil
 	}
 
 	level := l.IndentLevel() - octx.initialLevel
-	if level == 1 && tok.IsStartArray() {
+	if level == 1 && ev.Token.IsStartArray() {
 		octx.isArray = true
 
-		return false, nil
+		return light.Continue, nil
 	}
 
-	return false, fmt.Errorf("a JSON array is expected. Got: %v: %w", tok, codes.ErrNode)
+	return light.Continue, fmt.Errorf("a JSON array is expected. Got: %v: %w", ev.Token, codes.ErrNode)
 }
 
 func (d *Array) decode(lex lexers.Lexer) error {
@@ -233,7 +233,7 @@ func (d *StringOrArrayOfStrings) Hooks() light.DecodeOptions {
 
 func (d *StringOrArrayOfStrings) hooks() light.DecodeOptions {
 	decodeOptions := d.DecodeOptions
-	decodeOptions.NodeHook = d.mustBeStringOrArrayOfStrings
+	decodeOptions.OnEnter = d.mustBeStringOrArrayOfStrings
 
 	return decodeOptions
 }
@@ -241,32 +241,32 @@ func (d *StringOrArrayOfStrings) hooks() light.DecodeOptions {
 func (d *StringOrArrayOfStrings) mustBeStringOrArrayOfStrings(
 	ctx *light.ParentContext,
 	l lexers.Lexer,
-	tok token.T,
-) (skip bool, err error) {
+	ev light.HookEvent,
+) (light.Action, error) {
 	octx, ok := ctx.X.(*stringOfArrayContext)
 	if !ok {
-		return false, nil
+		return light.Continue, nil
 	}
 	if octx.isStringOrArrayOfStrings {
-		return false, nil
+		return light.Continue, nil
 	}
 
 	level := l.IndentLevel() - octx.initialLevel
 	switch {
-	case level == 0 && tok.Kind() == token.String:
+	case level == 0 && ev.Token.Kind() == token.String:
 		fallthrough
-	case level == 0 && tok.IsEndArray():
+	case level == 0 && ev.Token.IsEndArray():
 		octx.isStringOrArrayOfStrings = true
 
-		return false, nil
-	case level == 1 && tok.IsStartArray():
+		return light.Continue, nil
+	case level == 1 && ev.Token.IsStartArray():
 		fallthrough
-	case level == 1 && (tok.Kind() == token.String || tok.IsComma()):
-		return false, nil
+	case level == 1 && (ev.Token.Kind() == token.String || ev.Token.IsComma()):
+		return light.Continue, nil
 	default:
-		return false, fmt.Errorf(
+		return light.Continue, fmt.Errorf(
 			"a string or an array of strings is expected. Got: %v: %w",
-			tok,
+			ev.Token,
 			codes.ErrNode,
 		)
 	}
@@ -330,7 +330,7 @@ func (d *BoolOrObject) Hooks() light.DecodeOptions {
 
 func (d *BoolOrObject) hooks() light.DecodeOptions {
 	decodeOptions := d.DecodeOptions
-	decodeOptions.NodeHook = d.mustBeBoolOrObject
+	decodeOptions.OnEnter = d.mustBeBoolOrObject
 
 	return decodeOptions
 }
@@ -338,29 +338,29 @@ func (d *BoolOrObject) hooks() light.DecodeOptions {
 func (d *BoolOrObject) mustBeBoolOrObject(
 	ctx *light.ParentContext,
 	l lexers.Lexer,
-	tok token.T,
-) (skip bool, err error) {
+	ev light.HookEvent,
+) (light.Action, error) {
 	boolOrObjectContext, ok := ctx.X.(*boolOrObjectContext)
 	if !ok {
-		return false, nil
+		return light.Continue, nil
 	}
 
 	if boolOrObjectContext.isBoolOrObject {
-		return false, nil
+		return light.Continue, nil
 	}
 	level := l.IndentLevel() - boolOrObjectContext.initialLevel
 
 	switch {
-	case level == 0 && tok.Kind() == token.Boolean:
+	case level == 0 && ev.Token.Kind() == token.Boolean:
 		fallthrough
-	case level == 1 && tok.IsStartObject():
+	case level == 1 && ev.Token.IsStartObject():
 		boolOrObjectContext.isBoolOrObject = true
 
-		return false, nil
+		return light.Continue, nil
 	default:
-		return false, fmt.Errorf(
+		return light.Continue, fmt.Errorf(
 			"a boolean or an object is expected. Got: %v: %w",
-			tok,
+			ev.Token,
 			codes.ErrNode,
 		)
 	}
@@ -426,8 +426,8 @@ func (d *ObjectOrArrayOfObjects) Hooks() light.DecodeOptions {
 
 func (d *ObjectOrArrayOfObjects) hooks() light.DecodeOptions {
 	decodeOptions := d.DecodeOptions
-	decodeOptions.NodeHook = d.mustBeObjectOrArrayOfObjects
-	decodeOptions.AfterElem = d.elementMustBeObject
+	decodeOptions.OnEnter = d.mustBeObjectOrArrayOfObjects
+	decodeOptions.OnExit = d.elementMustBeObject
 
 	return decodeOptions
 }
@@ -435,58 +435,56 @@ func (d *ObjectOrArrayOfObjects) hooks() light.DecodeOptions {
 func (d *ObjectOrArrayOfObjects) mustBeObjectOrArrayOfObjects(
 	ctx *light.ParentContext,
 	l lexers.Lexer,
-	tok token.T,
-) (skip bool, err error) {
+	ev light.HookEvent,
+) (light.Action, error) {
 	octx, ok := ctx.X.(*objectOrArrayOfObjectsContext)
 	if !ok {
-		return false, nil
+		return light.Continue, nil
 	}
 	if octx.isObject || octx.isArray {
-		return false, nil
+		return light.Continue, nil
 	}
 
 	level := l.IndentLevel() - octx.initialLevel
 	switch {
-	case level == 0 && tok.IsEndArray():
+	case level == 0 && ev.Token.IsEndArray():
 		fallthrough
-	case level == 1 && tok.IsStartArray():
+	case level == 1 && ev.Token.IsStartArray():
 		octx.isArray = true
-	case level == 0 && tok.IsEndObject():
+	case level == 0 && ev.Token.IsEndObject():
 		fallthrough
-	case level == 1 && tok.IsStartObject():
+	case level == 1 && ev.Token.IsStartObject():
 		octx.isObject = true
 	case level == 0:
-		return false, fmt.Errorf(
+		return light.Continue, fmt.Errorf(
 			"an object or an array of objects is expected. Got: %v: %w",
-			tok,
+			ev.Token,
 			codes.ErrNode,
 		)
 	default:
 	}
 
-	return false, nil
+	return light.Continue, nil
 }
 
 func (d *ObjectOrArrayOfObjects) elementMustBeObject(
-	ctx *light.ParentContext,
-	l lexers.Lexer,
-	elem light.Node,
-) (skip bool, err error) {
-	octx, ok := ctx.X.(*objectOrArrayOfObjectsContext)
-	if !ok {
-		return false, nil
-	}
-	if octx.isObject || l.IndentLevel()-octx.initialLevel > 2 {
-		return false, nil
+	_ *light.ParentContext,
+	_ lexers.Lexer,
+	ev light.HookEvent,
+) (light.Action, error) {
+	// OnExit fires for every value; restrict to the top array's direct elements (depth 1, no key).
+	// When the top is an object its members carry keys and are skipped here; deeper values too.
+	if ev.Depth != 1 || ev.HasKey() {
+		return light.Continue, nil
 	}
 
-	if octx.isArray && elem.Kind() == nodes.KindObject {
-		return false, nil
+	if ev.Node.Kind() == nodes.KindObject {
+		return light.Continue, nil
 	}
 
-	return false, fmt.Errorf(
+	return light.Continue, fmt.Errorf(
 		"an object or an array of objects is expected. Got array element: %v: %w",
-		elem.Kind(),
+		ev.Node.Kind(),
 		codes.ErrNode,
 	)
 }

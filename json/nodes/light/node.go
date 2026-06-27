@@ -346,7 +346,15 @@ func (n *Node) decode(ctx *ParentContext) {
 			return
 		}
 
-		n.decodeToken(ctx, tok)
+		// the root value has no key and sits at depth 0.
+		if !n.decodeToken(ctx, values.InternedKey{}, tok) {
+			// the root was skipped (a hook returned Skip): leave an empty document.
+			*n = nullNode
+		}
+
+		if ctx.stopped {
+			return
+		}
 	}
 }
 
@@ -404,33 +412,37 @@ func drainValue(ctx *ParentContext, tok token.T) {
 
 // decodeToken decodes the value whose opening token is tok into n.
 //
-// It reports whether a node was produced. It returns false when the value was skipped by the
-// [decodeHooks.NodeHook] (the value is drained, n is left empty) or when decoding failed (check the
-// lexer's error state). Callers in an object/array context use this to drop a skipped node from the
-// result while staying in sync with the lexer.
-func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
+// key is the value's object key when it is a member (the zero key otherwise). It fires the OnEnter hook
+// before decoding and the OnExit hook once the value is fully decoded, and reports whether a node was
+// produced: false when a hook skipped the value (drained on enter, dropped on exit) or when decoding
+// failed (check the lexer's error state). On [Stop] it sets ctx.stopped and unwinds without an error.
+func (n *Node) decodeToken(ctx *ParentContext, key values.InternedKey, tok token.T) (produced bool) {
 	l := ctx.L
 	s := ctx.S
 
-	if !l.Ok() {
+	if !l.Ok() || ctx.stopped {
 		// short-circuit
 		return false
 	}
 
-	if ctx.DO.NodeHook != nil {
-		// hook: callback before a node is processed
-		skip, err := ctx.DO.NodeHook(ctx, l, tok)
-		if err != nil {
+	// OnEnter: fires before the value is decoded, with its opening token.
+	if hook := ctx.DO.OnEnter; hook != nil {
+		action, err := hook(ctx, l, HookEvent{Kind: kindOfToken(tok), Key: key, Token: tok, Depth: len(ctx.P)})
+		switch {
+		case err != nil:
 			l.SetErr(err)
 			return false
-		}
-
-		if skip {
-			// discard the node without materializing it; a composite must be drained to stay in sync.
+		case action == Skip:
+			// discard without materializing; a composite must be drained to stay in sync.
 			drainValue(ctx, tok)
+			return false
+		case action == Stop:
+			ctx.stopped = true
 			return false
 		}
 	}
+
+	n.key = key
 
 	// we want an object, an array or a scalar value
 	switch {
@@ -443,18 +455,18 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 		n.kind = nodes.KindObject
 		n.ctx.offset = l.Offset()
 
-		for key, value := range n.decodeObject(ctx) {
+		for k, value := range n.decodeObject(ctx) {
 			if !l.Ok() {
 				return false
 			}
 
 			// duplicate key: by default this is an error; when tolerated, the last value wins.
-			index, keyExists := n.keysIndex[key]
+			index, keyExists := n.keysIndex[k]
 			if keyExists {
 				if !ctx.DO.tolerateDuplKey {
 					// ctx.P still points at the duplicate key (the iterator is suspended at its yield
 					// and skips its truncation on error), so the reported path pinpoints the offender.
-					l.SetErr(fmt.Errorf("%q: %w", key.String(), nodecodes.ErrDuplicateKey))
+					l.SetErr(fmt.Errorf("%q: %w", k.String(), nodecodes.ErrDuplicateKey))
 
 					return false
 				}
@@ -465,10 +477,12 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 			}
 
 			n.children = append(n.children, value)
-			n.keysIndex[key] = len(n.children) - 1
+			n.keysIndex[k] = len(n.children) - 1
 		}
 
-		return l.Ok()
+		if !l.Ok() {
+			return false
+		}
 
 	case tok.IsStartArray():
 		n.keysIndex = nil
@@ -487,7 +501,9 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 			n.children = append(n.children, elem)
 		}
 
-		return l.Ok()
+		if !l.Ok() {
+			return false
+		}
 
 	case tok.IsNull():
 		n.keysIndex = nil
@@ -498,8 +514,6 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 		}
 		n.ctx.offset = l.Offset()
 
-		return true
-
 	case tok.IsBool():
 		n.keysIndex = nil
 		n.children = nil
@@ -509,8 +523,6 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 		}
 		n.ctx.offset = l.Offset()
 
-		return true
-
 	case tok.IsScalar():
 		n.keysIndex = nil
 		n.children = nil
@@ -519,8 +531,6 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 			return false
 		}
 		n.ctx.offset = l.Offset()
-
-		return true
 
 	case tok.IsEOF():
 		// EOF where a value is expected: top-level decode() filters EOF before calling decodeToken, so
@@ -534,6 +544,29 @@ func (n *Node) decodeToken(ctx *ParentContext, tok token.T) (produced bool) {
 		l.SetErr(codes.ErrInvalidToken)
 		return false
 	}
+
+	// a descendant requested Stop during the build: keep this partial node, do not fire OnExit.
+	if ctx.stopped {
+		return true
+	}
+
+	// OnExit: fires once the value is fully decoded, with the assembled node. For a container this is
+	// the "finished" event.
+	if hook := ctx.DO.OnExit; hook != nil {
+		action, err := hook(ctx, l, HookEvent{Kind: n.kind, Key: key, Node: *n, Depth: len(ctx.P)})
+		switch {
+		case err != nil:
+			l.SetErr(err)
+			return false
+		case action == Skip:
+			return false
+		case action == Stop:
+			ctx.stopped = true
+			return true
+		}
+	}
+
+	return true
 }
 
 func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, Node] {
@@ -575,56 +608,23 @@ func (n *Node) decodeObject(ctx *ParentContext) iter.Seq2[values.InternedKey, No
 
 			// note: the key/value ":" separator is elided by the semantic lexer (it validates the
 			// grammar but does not emit "," and ":"), so the next token is the value itself.
-
-			if ctx.DO.BeforeKey != nil {
-				// hook: callback before key is processed
-				skip, err := ctx.DO.BeforeKey(ctx, l, key)
-				if err != nil {
-					l.SetErr(err)
-					return
-				}
-				if skip {
-					// drop the whole pair: the value token has not been read yet, so read it and
-					// (for a composite) drain its body before moving on to the next key.
-					vtok := l.NextToken()
-					if !l.Ok() {
-						return
-					}
-					drainValue(ctx, vtok)
-					continue
-				}
-			}
-
-			tok = l.NextToken() // decode the next value
+			vtok := l.NextToken()
 			if !l.Ok() {
 				return
 			}
 
+			// decodeToken fires OnEnter/OnExit for the member value (carrying the key) and sets value.key.
 			var value Node
-			produced := value.decodeToken(ctx, tok)
+			produced := value.decodeToken(ctx, key, vtok)
 			if !l.Ok() {
 				return
 			}
-			if !produced {
-				// the value was skipped by NodeHook: drop the whole member.
-				continue
+
+			if produced && !yield(key, value) {
+				return
 			}
 
-			value.key = key
-
-			if ctx.DO.AfterKey != nil {
-				// hook: callback after array element
-				skip, err := ctx.DO.AfterKey(ctx, l, key, value)
-				if err != nil {
-					l.SetErr(err)
-					return
-				}
-				if skip {
-					continue
-				}
-			}
-
-			if !yield(key, value) {
+			if ctx.stopped {
 				return
 			}
 
@@ -664,47 +664,21 @@ func (n *Node) decodeArray(ctx *ParentContext) iter.Seq[Node] {
 				return
 			}
 
-			if ctx.DO.BeforeElem != nil {
-				// hook: callback before array element
-				skip, err := ctx.DO.BeforeElem(ctx, l, tok)
-				if err != nil {
-					l.SetErr(err)
-					return
-				}
-				if skip {
-					// drop the element without materializing it; the opening token is already read,
-					// so a composite must be drained. A skipped element consumes no index.
-					drainValue(ctx, tok)
-					continue
-				}
-			}
-
 			ctx.P = addElemToPath(pth, ctx.P, idx)
 			idx++
 
+			// decodeToken fires OnEnter/OnExit for the element value (array elements have no key).
 			var elem Node
-			produced := elem.decodeToken(ctx, tok) // decode next value
+			produced := elem.decodeToken(ctx, values.InternedKey{}, tok)
 			if !l.Ok() {
 				return
 			}
-			if !produced {
-				// the element was skipped by NodeHook: drop it.
-				continue
+
+			if produced && !yield(elem) {
+				return
 			}
 
-			if ctx.DO.AfterElem != nil {
-				// hook: callback after array element
-				skip, err := ctx.DO.AfterElem(ctx, l, elem)
-				if err != nil {
-					l.SetErr(err)
-					return
-				}
-				if skip {
-					continue
-				}
-			}
-
-			if !yield(elem) {
+			if ctx.stopped {
 				return
 			}
 

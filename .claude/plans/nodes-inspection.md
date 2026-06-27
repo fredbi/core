@@ -348,6 +348,40 @@ absence and must never surface from a correctly-built Node** (guards live in Bui
   nodes persist their path would break cheap clone/chain building; deliberately a node is unaware of where
   it sits. No change.
 
+### Decode hook redesign (HOOK-series)
+
+Fred: the old 5-hook / 4-signature surface was over-built (the only consumer, the *pilot* `constrained`,
+used 2 of 5) **and** under-covered — no container-finished event (can't validate required keys / detect
+`$ref` on a fully-assembled object, and the root never got an "after" event). Real consumers (on-the-fly
+JSON Schema well-formedness validation) are yet to be built; do NOT trim capability for lack of consumers.
+
+- ✅ **HOOK-1 — collapsed to one signature + one payload.** Replaced `{NodeHook, BeforeKey, AfterKey,
+  BeforeElem, AfterElem}` (4 sigs) with `OnEnter`/`OnExit`, both `Hook = func(ctx, l, HookEvent)
+  (Action, error)`. `HookEvent{Kind, Key, Token, Node, Depth}` + `HasKey()` — the single payload keeps
+  one signature and is extensible (new fields/events never add signatures). Answers Fred's "why key vs
+  key+node": that was just before/after timing; now `OnEnter` carries Token(+Key), `OnExit` carries
+  Node(+Key), Key always present for members.
+- ✅ **HOOK-2 — the structural insight: two moments per value, at every depth incl. the root.** OnEnter
+  fires before a value (opening token known), OnExit after (node assembled). Everything derives: object/
+  array-finished = OnExit where Kind is a container (now fires for the **root** too — the key gap); `$ref`
+  = OnEnter key=="$ref" or scan at OnExit; document-done = OnExit depth 0. Fired centrally in
+  `decodeToken(ctx, key, tok)` (key threaded from the 3 call sites; Depth = `len(ctx.P)`).
+- ✅ **HOOK-3 — `Action{Continue, Skip, Stop}` for interrupting the flow.** Skip = drain+drop (enter) /
+  drop built node (exit), CTX-4 semantics. Stop = halt now, keep what's built, no error (new `ctx.stopped`
+  flag unwinds the recursion; OnExit-Stop keeps the triggering value, OnEnter-Stop drops it). Error return
+  still aborts and carries the JSON-Pointer path (CTX-1).
+- ✅ **HOOK-4 — migrated the pilot `constrained`** to the new hooks: the 5 `mustBe*` → `OnEnter` (same
+  firing as old NodeHook, mechanical), `elementMustBeObject` → `OnExit` rescoped to direct array elements
+  (`ev.Depth==1 && !ev.HasKey()`) since OnExit now fires for every value incl. the container. Green.
+- ⛔ **HOOK-5 — `jsonschema` NOT migrated (deliberate).** Separate module, doesn't compile on its own
+  (pre-existing `meta.Data` / `octx` WIP), and its `beforeKey` does *sub-decoding inside the hook*
+  (`core.decode(ctx,key)`, `n.Decode(ctx)`) — a complex WIP pattern that doesn't map mechanically and is
+  unverifiable while the module is broken. Left for its owner's rework (consistent with "consumers will
+  adapt / reimplement").
+- Tests: `node_decode_skip_test.go` (Skip/Stop at enter/exit, drains, nesting), `node_path_test.go`
+  (error path via OnExit), `node_hooks_test.go` (root required-keys, `$ref` detection, bottom-up OnExit
+  order, OnEnter key+token). Green under `-race`.
+
 ### Pools (`pools.go`) — combed before the decode path
 
 Per Fred: standardize on the `pools.PoolRedeemable` variant (cached, alloc-free, built-in redeemer that

@@ -12,7 +12,6 @@ import (
 	lexer "github.com/fredbi/core/json/lexers/default-lexer"
 	nodecodes "github.com/fredbi/core/json/nodes/error-codes"
 	store "github.com/fredbi/core/json/stores/default-store"
-	"github.com/fredbi/core/json/stores/values"
 	writer "github.com/fredbi/core/json/writers/default-writer"
 )
 
@@ -29,17 +28,17 @@ func newDecodeCtx(jazon string, do DecodeOptions) (*ParentContext, *Node) {
 	return ctx, &Node{}
 }
 
-// TestDecodeErrorPath checks that an error caught while processing a node carries the JSON Pointer
-// (RFC 6901) path of the failing node in its [codes.ErrContext].
+// TestDecodeErrorPath checks that an error returned from a hook carries the JSON Pointer (RFC 6901)
+// path of the offending value in its [codes.ErrContext] (CTX-1).
 func TestDecodeErrorPath(t *testing.T) {
 	t.Run("nested object key error reports the full pointer", func(t *testing.T) {
 		var do DecodeOptions
-		do.AfterKey = func(_ *ParentContext, _ lexers.Lexer, key values.InternedKey, _ Node) (bool, error) {
-			if key.String() == "c" {
-				return false, errHookStop
+		do.OnExit = func(_ *ParentContext, _ lexers.Lexer, ev HookEvent) (Action, error) {
+			if ev.HasKey() && ev.Key.String() == "c" {
+				return Continue, errHookStop
 			}
 
-			return false, nil
+			return Continue, nil
 		}
 
 		ctx, n := newDecodeCtx(`{"a":{"b":1,"c":2}}`, do)
@@ -55,13 +54,15 @@ func TestDecodeErrorPath(t *testing.T) {
 	t.Run("array element error reports the index pointer", func(t *testing.T) {
 		var count int
 		var do DecodeOptions
-		do.AfterElem = func(_ *ParentContext, _ lexers.Lexer, _ Node) (bool, error) {
-			count++
-			if count == 3 {
-				return false, errHookStop
+		do.OnExit = func(_ *ParentContext, _ lexers.Lexer, ev HookEvent) (Action, error) {
+			if ev.Depth == 1 && !ev.HasKey() { // a direct array element
+				count++
+				if count == 3 {
+					return Continue, errHookStop
+				}
 			}
 
-			return false, nil
+			return Continue, nil
 		}
 
 		ctx, n := newDecodeCtx(`[10,20,30]`, do)
@@ -74,8 +75,12 @@ func TestDecodeErrorPath(t *testing.T) {
 
 	t.Run("key needing JSON Pointer escaping is escaped", func(t *testing.T) {
 		var do DecodeOptions
-		do.AfterKey = func(_ *ParentContext, _ lexers.Lexer, _ values.InternedKey, _ Node) (bool, error) {
-			return false, errHookStop
+		do.OnExit = func(_ *ParentContext, _ lexers.Lexer, ev HookEvent) (Action, error) {
+			if ev.HasKey() {
+				return Continue, errHookStop
+			}
+
+			return Continue, nil
 		}
 
 		ctx, n := newDecodeCtx(`{"a/b~c":1}`, do)
