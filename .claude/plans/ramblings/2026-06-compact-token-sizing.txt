@@ -1,0 +1,19 @@
+# Compact token sizing — does shrinking token.T (32B) help? go1.26.4, count=8 medians, MB/s
+# tok32 = current []byte header (32B); tok16 = *[]byte + stable-field (16B);
+# tokU  = unsafe.Pointer-into-buffer + uint32 len (16B, no backing field, no header store).
+# consumer: kind-only (our throughput benches, never derefs value) vs readval (reads value[0]).
+
+shape                  consumer     tok32    tok16     tokU
+separators             kind-only      512      416      506
+separators             readval        418      311      387
+numbers                kind-only     3004     2490     3018
+numbers                readval       2472     1860     2323
+strings                kind-only    10209     8363    10182
+strings                readval       8182     6205     7647
+
+# Verdict: tokU TIES tok32 on kind-only (-1..+0.5%) and LOSES ~6-7% on readval;
+# tok16 loses 17-26% everywhere. The 32B by-value token is the sweet spot: its copy
+# is already cheap (NOT the bottleneck) AND the value is ready without reconstruction.
+# unsafe.Pointer removes the *[]byte memory round-trip (ties instead of -19%) but
+# rebuilding the slice on read still costs more than the copy it saves, plus GC/unsafe
+# burden. REJECTED across both representations: per-token cost is dispatch, not token size.

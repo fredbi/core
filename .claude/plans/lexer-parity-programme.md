@@ -21,15 +21,15 @@ Status legend: ✅ done · 🚧 in progress · ⬜ todo · ⏸️ parked · ❌ 
    The whole string game (§4.2) is using SWAR to *avoid the eager work* when there
    is none to do (no escapes → zero-copy, done) or little (long clean trail →
    batch, done; in-place no-grow → candidate). No lazy-token detour.
-2. **16-byte token is a live candidate (un-rejected).** `*[]byte`(8) + kind +
-   delim + bool (3) + 5 pad = **16 B** — and the union-`uint64` is *unnecessary*,
-   padding already absorbs the three small fields (Fred's doubt confirmed). The
-   pointer is consistent with the documented "valid only until next NextToken"
-   contract (`lexer.go:153-158`); the slice header lives in a stable lexer field
-   so `&l.value` costs **zero per-token alloc**, and the only price is one deref
-   per *consumed* value (invisible to throughput benches). Validate by micro-bench
-   (§5.3). One API wrinkle: `token.MakeWithValue` must bind a stable field, not a
-   param local (`&param` would escape → alloc).
+2. **16-byte token: REJECTED with measurement, both representations (§5.3).** Tested
+   `*[]byte`+stable-field AND `unsafe.Pointer`+`uint32` len vs the 32 B token. The
+   32 B by-value token is the sweet spot: its copy is already cheap (NOT the
+   bottleneck) and its value is ready without reconstruction. `*[]byte` loses
+   17-26% (forces the slice header into memory to take its address). `unsafe.Pointer`
+   removes that round-trip and **ties** kind-only but **loses ~6-7%** read-value
+   (rebuilding the slice via `unsafe.Slice` costs more than the copy saved) — plus
+   GC/unsafe burden. Net: no win in any consumer profile. Per-token cost is
+   **dispatch, not token size** → §5.1 devirt / §5.2 classification, not the struct.
 3. **Hand-rolled SWAR stays — but gets consolidated.** Stdlib gives us nothing
    for the fused `{0x22, 0x5c, <0x20}` test (`IndexByte` is single-needle SIMD;
    `IndexAny` is a scalar ASCII bitmap; `<0x20` has no primitive). We build one
@@ -298,28 +298,33 @@ dispatch headroom exists.
 - Probe both on `separators`/`nulls`/`bools` (dispatch-dominated micro-benches);
   adopt the classification table only if it beats the binary-search switch.
 
-### 5.3 Token size ⬜ (un-rejected — 16-byte candidate)
+### 5.3 Token size ❌ REJECTED with measurement
 - `T` today = **32 B** = 24 (`[]byte` header) + `valueDelimiter`+`kind`+`valueBool`
-  (3 B) + **5 B trailing padding**. `VT` = **72 B** → would become **56 B**.
-- **Union `uint64` idea: dropped as pointless** — the three small fields already
-  fit the 8-byte tail; padding is *after* them, so hiding them in a `uint64` frees
-  nothing. Keep plain fields.
-- **`*[]byte` idea: viable, 16 B.** `*[]byte`(8) + kind + delim + bool (3) + 5 pad
-  = 16. Earlier rejection was **wrong**: returning `[]byte(*t.value)` copies only
-  the header, never the bytes; and zero-alloc is preserved by pointing every token
-  at a **stable lexer field** (`&l.value`, a pointer into the heap `*L`), never at
-  a parameter local. Consistent with the documented short-lifespan contract
-  (`lexer.go:153-158`); `Clone` already deep-copies for callers who keep tokens.
-- Cost: one pointer deref per *consumed* value (strings/numbers only) — invisible
-  to throughput micro-benches (tokens discarded), paid by real consumers. Benefit:
-  halves the by-value token copy on every `NextToken` return and every push
-  `yield`, which *does* show in throughput benches.
-- One real wrinkle: `token.MakeWithValue([]byte)` must change to bind a stable
-  backing field, not `&param`. Audit callers that (against contract) rely on a
-  fast-path value surviving past the next token.
-- **Validate by micro-bench** (`strings_plain`, `ints`, `separators` — copy-heavy
-  paths) before retrofit. Tentatively the most promising single throughput lever
-  after devirt.
+  (3 B) + **5 B trailing padding**. `VT` = **72 B**.
+- **Union `uint64` idea: pointless** — the three small fields already fit the 8-byte
+  tail; padding is *after* them, so hiding them in a `uint64` frees nothing.
+- **Both 16 B representations REJECTED by a sizing microbench**
+  (`compact_token_bench_test.go`, `ramblings/2026-06-compact-token-sizing.txt`,
+  count=8). Three reps × {kind-only, read-value} consumer:
+
+  | rep | kind-only vs tok32 | read-value vs tok32 |
+  |---|---|---|
+  | `*[]byte` + stable field | −17…−19% | −24…−26% |
+  | `unsafe.Pointer` + `uint32` len | −1…+0.5% (**tie**) | **−6…−7%** |
+
+  - The 24 B slice header carried **by value** in the 32 B token is nearly free —
+    registers/stack, the copy is not the bottleneck.
+  - `*[]byte` must **materialize the header into memory** (`l.value`) to take its
+    address (24 B store/token) + deref per read — memory round-trip > the copy.
+  - `unsafe.Pointer`+len (Fred's suggestion) removes the round-trip (pointer
+    computed directly into the buffer, no backing field) → **ties** kind-only, but
+    a real consumer must **rebuild the slice** via `unsafe.Slice` → −6-7%, and it
+    adds GC/`unsafe` safety burden.
+- **Conclusion:** no representation beats the 32 B by-value token in any consumer
+  profile. Per-token cost is **dispatch, not token size**. Token stays 32 B; chase
+  the dispatch floor via §5.1 (devirt, done) and §5.2 (classification table). Blast
+  radius would also have been large (`token.T` in 14 pkgs, `MakeWithValue` 43 call
+  sites) — the microbench killed it for ~1h of work, before any refactor.
 
 ---
 
@@ -364,11 +369,14 @@ with the measurement, so we don't relitigate them.
    Adoption pending: wire push→devirt; hold pull pending ints investigation.
 
 **Experiments (each: win micro-bench → no regressions → hold on corpora):**
-4. ⬜ Token: 16-byte `*[]byte` candidate (§5.3) — likely top throughput lever after devirt.
-5. ⬜ Numbers fast paths (§4.1), decided on micro-benches.
-6. ⬜ Strings: in-place no-grow unescape (§4.2), gated on buffer ownership.
-7. ⬜ Dispatch: classification table vs binary-search switch (§5.2).
+- ✅ Push-devirt adopted (§5.1) — Tokens() L+VL; lab beats reference +7-20% push.
+- ✅ Numbers fast path (§4.1) — full-grammar inline; decimals +18/+36%, exp +13.6/+38%.
+- ✅ Strings fast/slow split + FirstByte (§4.2) — unicode +15%, uescaped +14.7%, plain +5.6%; no escaped_long regression.
+- ❌ Token 16-byte `*[]byte` (§5.3) — REJECTED with measurement (−10…−20%; memory round-trip > by-value copy).
+- ⬜ Dispatch: classification table vs binary-search switch (§5.2) — next; attacks the separators/nulls/bools floor.
+- ⏸️ Strings in-place no-grow unescape (§4.2) — blocked on buffer ownership.
+- ⏸️ pull/ints devirt regression — open; NextToken stays generic.
 
 **Later:**
-8. ⏸️ Streams (§6).
-9. ⬜ Gate review + retrofit to master (§7).
+- ⏸️ Streams (§6).
+- ⬜ Gate review + retrofit to master (§7).
