@@ -1,0 +1,25 @@
+# Pull whitespace batch-skip (citm) — a TRADE, not a clean win.
+# Rigorous in-session benchstat, baseline(840601d) -> full whitespace work(d6ded9d),
+# lab/bytes, count=12 (numbers) / count=10 (citm). All p=0.000.
+#
+#   citm_catalog (indented, 71% ws)   +38.1%   <- the win (57% -> 79% of jsontext)
+#   ints_pos                           -8.1%
+#   ints_neg                           -7.6%
+#   decimals                          -10.4%
+#   exponential                        -4.1%
+#   strings_plain                      -1.4%
+#   numbers geomean                    -6.35%   <- the cost (shared-core codegen perturbation)
+#
+# Root cause: adding the whitespace gate + skipWhitespaceWhole call to the giant
+# scanTokenG perturbs the number fast-path codegen (the recurring "fragile shared
+# core"). Confirmed present even at step 1 (scalar localize), worsened slightly by
+# step 2 (SWAR). The whitespace SKIP itself is correct + fast (citm +38%, push gets
+# 86% w/ a local cursor); the damage is collateral to the number arm sharing the
+# function.
+#
+# DECISION: reverted from the lab (not a clean lock-in). Options to revisit:
+#  (A) extract the number fast path into its own function (insulate its codegen, our
+#      proven "split cores" fix) THEN re-add whitespace skip — aim for +38% citm AND
+#      no number regression. More work, uncertain.
+#  (B) accept the trade if the target workload mix is indent-heavy.
+#  (C) leave pull as-is; note push already reaches 86% of jsontext on citm.
