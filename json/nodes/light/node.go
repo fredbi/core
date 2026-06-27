@@ -221,17 +221,23 @@ func (n *Node) Decode(ctx *ParentContext) {
 	defer func() {
 		// capture the full context of any error if the lexer supports that
 		if err := ctx.L.Err(); err != nil {
+			// On error the per-level path truncations in decodeObject/decodeArray are skipped
+			// (they only run while the lexer is Ok), so ctx.P still points at the failing node.
+			path := ctx.P.String()
+
 			if contextErrorer, ok := ctx.L.(interface{ ErrInContext() *codes.ErrContext }); ok {
 				ctx.C = contextErrorer.ErrInContext()
 				ctx.C.Err = errors.Join(err, nodecodes.ErrNode)
+				ctx.C.Path = path
 
 				return
 			}
 
-			// otherwise, keep minimal context: error and offset
+			// otherwise, keep minimal context: error, offset and path
 			ctx.C = &codes.ErrContext{
 				Err:    errors.Join(err, nodecodes.ErrNode),
 				Offset: ctx.L.Offset(),
+				Path:   path,
 			}
 		}
 	}()

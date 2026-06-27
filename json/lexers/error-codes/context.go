@@ -11,6 +11,7 @@ type ErrContext struct {
 	Buffer   string // text window around where the error was detected
 	Offset   uint64 // errors occurred after reading that many bytes from the stream
 	Position int    // Position of the error in the text window
+	Path     string // JSON Pointer (RFC 6901) to the node being processed; empty at the document root or for a pure lexing error
 }
 
 // Pretty print the error context with a vertical arrow pointed

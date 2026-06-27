@@ -33,9 +33,6 @@ type stringOrInt struct {
 
 type Path []stringOrInt
 
-//nolint:gochecknoglobals // immutable pre-allocated empty path value
-var EmptyPath = []stringOrInt{}
-
 //nolint:gochecknoglobals // private immutable replacer
 var pthEscaper = strings.NewReplacer(
 	"~",

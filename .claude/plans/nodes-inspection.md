@@ -197,6 +197,37 @@
   `buffered.writeSingleByte`/`flush` don't check `w.err`, and `flush` reassigns `w.err` unconditionally,
   so a later successful flush can clear an earlier error. File as a default-writer finding.
 
+### Context machinery (`context.go`) — combed before the decode path
+
+The `ctx.P` `Path` is a single shared, mutable, growable slice. Each decode level captures its base
+length, appends one slot for the first child, **overwrites** it for each sibling, and truncates back on
+exit. Verified correct: the helpers compare only **lengths** (`len(p) == len(original)`), never
+dereference `original`, so the logic is robust to slice reallocation; each depth exclusively owns its
+slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `Replacer`) is correct.
+
+- ✅ **CTX-1 — the JSON Pointer path is now attached to decode errors (Fred: "definitely").** The intent
+  of `ctx.P` is to pinpoint *where* an error occurred. It was built at per-token cost but **never
+  surfaced**: `ErrContext` had no path field and `Decode`'s defer ignored `ctx.P`. Added a `Path` field
+  to `codes.ErrContext` (forward-compatible with the planned move of JSON-Pointer tracking into the
+  lexer) and `Decode`'s defer now sets it from `ctx.P.String()` in both branches. The error-path
+  truncations in `decodeObject`/`decodeArray` are guarded by `if l.Ok()`, so on error `ctx.P` still
+  points at the failing node. Tests `TestDecodeErrorPath` (nested `/a/c`, array `/2`, escaped
+  `/a~1b~0c`, happy-path nil context). `Pretty()` left unchanged (golden tests).
+- ✅ **CTX-2 — removed the dead `EmptyPath`.** Exported but unused, and unusable externally anyway
+  (`stringOrInt` is unexported).
+- 🔮 **CTX-3 (future, Fred) — JSON-Pointer feature is unfinished and slated to move into the lexer** as
+  a lexer option. The `stringOrInt` struct may be simplified (stringify the int eagerly), and the bare
+  `panic("assert")` in the path helpers is a known unpolished edge. Left as-is for now; revisit when the
+  feature moves. Possibly extend path tracking to the encode side too.
+- ⏳ **CTX-4 (decode-path pass) — `Before*` hook `skip` desyncs the lexer.** `AfterKey`/`AfterElem` skip
+  are safe (value already consumed); `BeforeKey` skip leaves the value token unconsumed (next read
+  misparses it as a key → `ErrMissingKey`); `BeforeElem` skip is safe only for scalar elements (a
+  composite's body is never drained). Fred: valid — handle when dissecting the decode path.
+- 📝 **CTX-5 (doc debt, deferred) — `ParentContext` contract is undocumented:** not safe for concurrent
+  use (each goroutine/document needs its own — `P`/`C`/lexer/writer all mutate); `ctx.P` is only valid
+  *during* a callback (overwritten next sibling, truncated on level exit — a hook must not retain it);
+  `X any` is caller scratch space. Worth writing on the type before the multi-goroutine read phase.
+
 ---
 
 ## 3. Proposed sequencing (for review — not started)
