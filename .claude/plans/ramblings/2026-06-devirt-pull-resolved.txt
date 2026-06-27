@@ -1,0 +1,23 @@
+# Pull/ints devirt regression — RESOLVED (plan §5.1)
+# The original devirt measurement (count=8, commit 411133f) showed pull ints -4%/-1.8%.
+# Cause: devirt inlines policy methods (emit/none/eof) at ~30 return sites; in the then-
+# larger scanTokenG (still holding the inline string SLOW path + pre-extension number path)
+# that bloat worsened register allocation in the register-hungry NUMBER arm specifically.
+# Fix (side effect of later work): extracting consumeStringEscaped (string fast/slow split)
+# + restructuring the number fast path shrank scanTokenG. Frame size now: devirt 80B <
+# generic 88B (no spills). Devirt now HELPS pull everywhere.
+
+# Full pull sweep, in-binary, count=12, benchstat (B/s, + = devirt faster):
+Devirt/ints_pos-16                                                                                                                               510.0Mi ± 1%                                                                                           536.9Mi ± 1%   +5.26% (p=0.000 n=12)
+Devirt/ints_neg-16                                                                                                                               553.1Mi ± 1%                                                                                           573.1Mi ± 1%   +3.63% (p=0.000 n=12)
+Devirt/decimals-16                                                                                                                               563.3Mi ± 1%                                                                                           569.9Mi ± 1%   +1.18% (p=0.001 n=12)
+Devirt/exponential-16                                                                                                                            404.9Mi ± 1%                                                                                           414.8Mi ± 1%   +2.44% (p=0.000 n=12)
+Devirt/strings_plain-16                                                                                                                          1.005Gi ± 1%                                                                                           1.057Gi ± 1%   +5.15% (p=0.000 n=12)
+Devirt/strings_escaped-16                                                                                                                        563.2Mi ± 2%                                                                                           564.8Mi ± 2%        ~ (p=0.514 n=12)
+Devirt/strings_escaped_long-16                                                                                                                   1.276Gi ± 1%                                                                                           1.280Gi ± 1%        ~ (p=0.378 n=12)
+Devirt/strings_unicode-16                                                                                                                       1012.3Mi ± 2%                                                                                          1082.9Mi ± 2%   +6.97% (p=0.000 n=12)
+Devirt/strings_uescaped-16                                                                                                                      1004.9Mi ± 2%                                                                                          1061.0Mi ± 1%   +5.58% (p=0.000 n=12)
+Devirt/nulls-16                                                                                                                                  228.8Mi ± 1%                                                                                           238.7Mi ± 1%   +4.34% (p=0.000 n=12)
+Devirt/bools-16                                                                                                                                  236.5Mi ± 2%                                                                                           250.3Mi ± 1%   +5.87% (p=0.000 n=12)
+Devirt/separators-16                                                                                                                             127.5Mi ± 1%                                                                                           140.4Mi ± 1%  +10.17% (p=0.000 n=12)
+geomean                                                                                                                                          514.2Mi                                                                                                536.0Mi        +4.23%

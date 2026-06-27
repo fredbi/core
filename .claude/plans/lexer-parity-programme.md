@@ -251,13 +251,20 @@ streaming, valid + malformed) by `TestDevirtEquivalence*`.
   ints_pos/ints_neg** (number fast-path codegen shifts unfavourably when
   monomorphized; escaped_long flat). 
 
-**ADOPTED (2026-06-27):** `Tokens()` (L and VL) now routes through the devirt push
-shims; lab push beats reference at the corpus level too (separators +20%, ints
-+14.5%, plain +8.7%). `NextToken()` (pull) **stays generic** pending the ints
-regression (likely the inlined number fast-path; may want it factored out — see
-§4.1). The generic push shims are retained as the A/B baseline (`tokensGeneric`
-test helpers). Generator is the single source of truth: re-run `go generate ./...`
-in `lab/` after any core change.
+**ADOPTED — push (2026-06-27):** `Tokens()` (L and VL) routes through the devirt
+push shims; lab push beats reference at the corpus level (separators +20%, ints
++14.5%, plain +8.7%).
+
+**Pull regression RESOLVED (2026-06-27):** the original −4%/−1.8% on pull-ints was
+real at the time (the inlined policy methods bloated the then-larger `scanTokenG`,
+hurting the register-hungry number arm). The later "split fragile shared cores"
+work (extracting `consumeStringEscaped` + restructuring the number fast path)
+shrank `scanTokenG` and **cured it as a side effect** — devirt's frame is now 80 B
+< generic's 88 B (no spills). Full pull sweep (in-binary, count=12, benchstat):
+**+4.23% geomean, no regression** (ints +5.3%, separators +10.2%, strings +5-7%;
+escaped/escaped_long flat). `ramblings/2026-06-devirt-pull-resolved.txt`. → **pull
+is ready to adopt** (`NextToken` → `scanTokenSemantic`). Generic cores stay as
+lexgen source-of-truth + A/B baseline (`*Generic` test helpers).
 
 Design — port the writer's `writegen` (`json/writers/default-writer/internal/writegen/main.go`),
 which lifts `commonWriter[T]` method bodies onto concrete receivers verbatim so
