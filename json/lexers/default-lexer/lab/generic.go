@@ -571,42 +571,6 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 	return p.none()
 }
 
-// skipWhitespaceWhole batch-skips a run of insignificant whitespace in whole-buffer
-// mode, starting at l.consumed (already past the run's first whitespace byte). It
-// keeps the cursor and line state in locals and writes them back ONCE, instead of
-// the per-byte l.offset++/l.consumed++ the main loop does — that per-byte struct
-// write is the citm bottleneck (citm is 71% whitespace; profiling put ~34% of pull
-// time on those two increments + the whitespace branch). Line/lineStart are still
-// tracked so L.Line()/L.Column() stay correct. Used only on the semantic whole-
-// buffer path: the verbatim lexer must capture the blank run, and streaming needs
-// per-byte refill handling, so both keep the main loop's per-byte path.
-func (l *L) skipWhitespaceWhole() {
-	buf := l.buffer
-	n := l.bufferized
-	i := l.consumed
-	line := l.line
-	lineStart := l.lineStart
-
-	for i < n {
-		switch buf[i] {
-		case lineFeed:
-			i++
-			line++
-			lineStart = uint64(i)
-		case blank, tab, carriageReturn:
-			i++
-		default:
-			l.consumed, l.offset = i, uint64(i)
-			l.line, l.lineStart = line, lineStart
-
-			return
-		}
-	}
-
-	l.consumed, l.offset = i, uint64(i)
-	l.line, l.lineStart = line, lineStart
-}
-
 // scanTokenG is the generic, policy-parameterized pull core: it scans and
 // returns exactly one token, shared by L.NextToken and VL.NextToken. The cursor
 // lives in the struct (per-byte advance, readMore for streaming, deferred-error
@@ -639,15 +603,6 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 			case lineFeed:
 				l.line++
 				l.lineStart = l.offset
-				// whole-buffer semantic fast path: batch-skip the rest of the
-				// whitespace run with a local cursor (no per-byte struct writes — the
-				// citm bottleneck; see skipWhitespaceWhole). Streaming and verbatim
-				// keep the per-byte path (refill correctness / blank capture).
-				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
-
-					continue
-				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -661,11 +616,6 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 				continue
 
 			case blank, tab, carriageReturn:
-				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
-
-					continue
-				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {

@@ -43,15 +43,6 @@ func scanTokenSemantic(l *L, p semanticPolicy) token.T {
 			case lineFeed:
 				l.line++
 				l.lineStart = l.offset
-				// whole-buffer semantic fast path: batch-skip the rest of the
-				// whitespace run with a local cursor (no per-byte struct writes — the
-				// citm bottleneck; see skipWhitespaceWhole). Streaming and verbatim
-				// keep the per-byte path (refill correctness / blank capture).
-				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
-
-					continue
-				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -65,11 +56,6 @@ func scanTokenSemantic(l *L, p semanticPolicy) token.T {
 				continue
 
 			case blank, tab, carriageReturn:
-				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
-
-					continue
-				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -925,15 +911,6 @@ func scanTokenVerbatim(l *L, p verbatimPolicy) token.VT {
 			case lineFeed:
 				l.line++
 				l.lineStart = l.offset
-				// whole-buffer semantic fast path: batch-skip the rest of the
-				// whitespace run with a local cursor (no per-byte struct writes — the
-				// citm bottleneck; see skipWhitespaceWhole). Streaming and verbatim
-				// keep the per-byte path (refill correctness / blank capture).
-				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
-
-					continue
-				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -947,11 +924,6 @@ func scanTokenVerbatim(l *L, p verbatimPolicy) token.VT {
 				continue
 
 			case blank, tab, carriageReturn:
-				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
-
-					continue
-				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
