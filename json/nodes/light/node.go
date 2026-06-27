@@ -215,6 +215,12 @@ func (n Node) Len() int {
 // Decode the hierarchy of nodes from the input provider by a [lexers.Lexer].
 //
 // Decode stores scalar values in the [stores.Store] provided in the [ParentContext].
+// Decode reads a single JSON value from the lexer in ctx into n, replacing any previous content.
+//
+// It decodes exactly one top-level value and relies on the injected lexer to enforce JSON grammar:
+// trailing data or a second top-level value surfaces as a lexer error (the first value is not silently
+// overwritten), and empty or whitespace-only input is reported as an error. On any failure, ctx.C
+// carries the error context including the JSON Pointer path of the offending node (see [ParentContext]).
 func (n *Node) Decode(ctx *ParentContext) {
 	*n = nullNode
 

@@ -266,6 +266,14 @@ slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `
   the lexer — see CTX-3). Noted, not changed.
 - ✅ **DEC-5 — the missing-key guard** (`!tok.IsKey()` → `ErrMissingKey`) and the `IsEndObject`/
   `IsEndArray` empty-exit checks reviewed: correct given the semantic lexer elides separators.
+- ✅ **DEC-6 — top-level `decode()` loop reviewed: correct, contract documented + pinned.** The loop
+  re-invokes `decodeToken` on the same `n`, so multiple top-level values would last-win — but the
+  injected lexer rejects a second top-level value *at tokenization* (`1 2` → "value should follow a
+  delimiter"; `{} {}` → "missing comma"; trailing garbage → "invalid JSON token"), so the overwrite is
+  unreachable and the first value is never silently replaced. Empty/whitespace-only input →
+  `lexcodes.ErrNoData`. The node layer correctly leans on the lexer for grammar rather than
+  re-implementing it. Documented on `Decode`; pinned by `TestDecodeTopLevel` (single value accepted;
+  trailing/multiple and empty inputs error; trailing whitespace tolerated).
 
 ### Pools (`pools.go`) — combed before the decode path
 
