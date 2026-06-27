@@ -127,19 +127,16 @@ func (l *L) Offset() uint64 {
 	return l.offset
 }
 
-// Line yields the 1-based line number at which the most recently returned token
-// starts. It is 0 before the first token.
-//
-// Line tracking is always on; its cost is one increment per newline byte.
-func (l *L) Line() int {
-	return l.tokLine
-}
+// Line and Column are STUBBED for the no-position-accounting experiment: the
+// semantic lexer no longer tracks line/column during scanning (only the verbatim
+// lexer does — see emitPolicy.tracksPosition). They currently return 0. Pending
+// the experiment's outcome we will either drop these methods from the semantic
+// lexer or compute line/column on demand from the byte offset (deferred). Use the
+// verbatim lexer (VL/token.VT) when per-token position is required.
+func (l *L) Line() int { return 0 }
 
-// Column yields the 1-based column at which the most recently returned token
-// starts. It is 0 before the first token.
-func (l *L) Column() int {
-	return l.tokCol
-}
+// Column: see [L.Line] — stubbed during the no-position-accounting experiment.
+func (l *L) Column() int { return 0 }
 
 // NextToken returns the next JSON token consumed from the stream or slice of bytes.
 //

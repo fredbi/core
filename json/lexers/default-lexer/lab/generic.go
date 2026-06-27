@@ -43,6 +43,13 @@ type emitPolicy[T any] interface {
 	// eof is the end-of-input token; the verbatim policy attaches the trailing
 	// blanks, the semantic policy ignores them.
 	eof(blanks []byte) T
+	// tracksPosition reports whether the core must maintain line/column accounting.
+	// Only the verbatim lexer needs it (it bakes line/col into token.VT); the
+	// semantic lexer drops it. Returning a constant lets the devirtualized cores
+	// (scan_gen.go) constant-fold and dead-code-eliminate the accounting entirely
+	// in the semantic core, so its hot loop does no per-newline / per-token position
+	// bookkeeping — matching jsontext's offset-only model.
+	tracksPosition() bool
 }
 
 // semanticPolicy is the policy for the semantic lexer L: the emitted token IS
@@ -53,6 +60,7 @@ type semanticPolicy struct{}
 func (semanticPolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
 func (semanticPolicy) none() token.T                              { return token.None }
 func (semanticPolicy) eof(_ []byte) token.T                       { return token.EOFToken }
+func (semanticPolicy) tracksPosition() bool                       { return false }
 
 // verbatimPolicy is the policy for the verbatim lexer VL: it wraps the
 // grammar/value token.T into a token.VT, attaching the preceding blanks and the
@@ -62,8 +70,9 @@ type verbatimPolicy struct{}
 func (verbatimPolicy) emit(t token.T, blanks []byte, line, col int) token.VT {
 	return t.AsVerbatim(blanks).WithPosition(line, col)
 }
-func (verbatimPolicy) none() token.VT            { return token.VNone }
+func (verbatimPolicy) none() token.VT             { return token.VNone }
 func (verbatimPolicy) eof(blanks []byte) token.VT { return token.MakeVerbatimEOF(blanks) }
+func (verbatimPolicy) tracksPosition() bool       { return true }
 
 // scanPushG is the generic, policy-parameterized push core backing Tokens() for
 // both L and VL in whole-buffer mode. The per-byte hot loop keeps the cursor in
@@ -120,8 +129,10 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 		switch b {
 		case lineFeed:
 			i++
-			l.line++
-			l.lineStart = uint64(i)
+			if p.tracksPosition() {
+				l.line++
+				l.lineStart = uint64(i)
+			}
 
 			continue
 		case blank, tab, carriageReturn:
@@ -130,8 +141,10 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			continue
 		}
 
-		l.tokLine = l.line
-		l.tokCol = int(uint64(i+1) - l.lineStart)
+		if p.tracksPosition() {
+			l.tokLine = l.line
+			l.tokCol = int(uint64(i+1) - l.lineStart)
+		}
 		// the whitespace run since the previous token (zero-copy); i is the index
 		// of the first significant byte (the token start).
 		blanks := data[blankStart:i:i]
@@ -571,6 +584,22 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 	return p.none()
 }
 
+// consumeWhitespace returns the count of leading insignificant JSON whitespace in
+// b (space, tab, LF, CR). Kept tiny and scalar so it inlines — mirrors jsontext's
+// ConsumeWhitespace. Used by the semantic pull path to batch-skip a whitespace run
+// with a local cursor (one struct write-back) instead of the per-byte
+// l.offset++/l.consumed++ the main loop does; the semantic lexer tracks no
+// line/column, so the skip needs no per-newline bookkeeping. (Inline beats
+// //go:noinline here: noinline cost citm ~6% per-run-call overhead, more than the
+// ~3% number-arm perturbation inlining causes.)
+func consumeWhitespace(b []byte) (n int) {
+	for n < len(b) && (b[n] == blank || b[n] == tab || b[n] == lineFeed || b[n] == carriageReturn) {
+		n++
+	}
+
+	return n
+}
+
 // scanTokenG is the generic, policy-parameterized pull core: it scans and
 // returns exactly one token, shared by L.NextToken and VL.NextToken. The cursor
 // lives in the struct (per-byte advance, readMore for streaming, deferred-error
@@ -601,6 +630,18 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			switch b {
 			case lineFeed:
+				if !p.tracksPosition() {
+					// semantic: batch-skip the rest of the whitespace run with a local
+					// cursor (no line/col, no blanks) — folds to the only path in the
+					// devirtualized semantic core. This kills the per-byte struct-cursor
+					// cost over whitespace (the citm bottleneck).
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
+				// verbatim: track line + accumulate the blank run byte-by-byte
 				l.line++
 				l.lineStart = l.offset
 				if l.trackBlanks {
@@ -616,6 +657,13 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 				continue
 
 			case blank, tab, carriageReturn:
+				if !p.tracksPosition() {
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -629,9 +677,11 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 				continue
 			}
 
-			// a significant byte starts a token: snapshot its position
-			l.tokLine = l.line
-			l.tokCol = int(l.offset - l.lineStart)
+			// a significant byte starts a token: snapshot its position (verbatim only)
+			if p.tracksPosition() {
+				l.tokLine = l.line
+				l.tokCol = int(l.offset - l.lineStart)
+			}
 
 			if l.afterKey {
 				l.afterKey = false

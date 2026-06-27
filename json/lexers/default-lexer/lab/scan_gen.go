@@ -41,6 +41,18 @@ func scanTokenSemantic(l *L, p semanticPolicy) token.T {
 
 			switch b {
 			case lineFeed:
+				if !p.tracksPosition() {
+					// semantic: batch-skip the rest of the whitespace run with a local
+					// cursor (no line/col, no blanks) — folds to the only path in the
+					// devirtualized semantic core. This kills the per-byte struct-cursor
+					// cost over whitespace (the citm bottleneck).
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
+				// verbatim: track line + accumulate the blank run byte-by-byte
 				l.line++
 				l.lineStart = l.offset
 				if l.trackBlanks {
@@ -56,6 +68,13 @@ func scanTokenSemantic(l *L, p semanticPolicy) token.T {
 				continue
 
 			case blank, tab, carriageReturn:
+				if !p.tracksPosition() {
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -69,9 +88,11 @@ func scanTokenSemantic(l *L, p semanticPolicy) token.T {
 				continue
 			}
 
-			// a significant byte starts a token: snapshot its position
-			l.tokLine = l.line
-			l.tokCol = int(l.offset - l.lineStart)
+			// a significant byte starts a token: snapshot its position (verbatim only)
+			if p.tracksPosition() {
+				l.tokLine = l.line
+				l.tokCol = int(l.offset - l.lineStart)
+			}
 
 			if l.afterKey {
 				l.afterKey = false
@@ -432,8 +453,10 @@ func scanPushSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool) {
 		switch b {
 		case lineFeed:
 			i++
-			l.line++
-			l.lineStart = uint64(i)
+			if p.tracksPosition() {
+				l.line++
+				l.lineStart = uint64(i)
+			}
 
 			continue
 		case blank, tab, carriageReturn:
@@ -442,8 +465,10 @@ func scanPushSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool) {
 			continue
 		}
 
-		l.tokLine = l.line
-		l.tokCol = int(uint64(i+1) - l.lineStart)
+		if p.tracksPosition() {
+			l.tokLine = l.line
+			l.tokCol = int(uint64(i+1) - l.lineStart)
+		}
 		// the whitespace run since the previous token (zero-copy); i is the index
 		// of the first significant byte (the token start).
 		blanks := data[blankStart:i:i]
@@ -909,6 +934,18 @@ func scanTokenVerbatim(l *L, p verbatimPolicy) token.VT {
 
 			switch b {
 			case lineFeed:
+				if !p.tracksPosition() {
+					// semantic: batch-skip the rest of the whitespace run with a local
+					// cursor (no line/col, no blanks) — folds to the only path in the
+					// devirtualized semantic core. This kills the per-byte struct-cursor
+					// cost over whitespace (the citm bottleneck).
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
+				// verbatim: track line + accumulate the blank run byte-by-byte
 				l.line++
 				l.lineStart = l.offset
 				if l.trackBlanks {
@@ -924,6 +961,13 @@ func scanTokenVerbatim(l *L, p verbatimPolicy) token.VT {
 				continue
 
 			case blank, tab, carriageReturn:
+				if !p.tracksPosition() {
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -937,9 +981,11 @@ func scanTokenVerbatim(l *L, p verbatimPolicy) token.VT {
 				continue
 			}
 
-			// a significant byte starts a token: snapshot its position
-			l.tokLine = l.line
-			l.tokCol = int(l.offset - l.lineStart)
+			// a significant byte starts a token: snapshot its position (verbatim only)
+			if p.tracksPosition() {
+				l.tokLine = l.line
+				l.tokCol = int(l.offset - l.lineStart)
+			}
 
 			if l.afterKey {
 				l.afterKey = false
@@ -1300,8 +1346,10 @@ func scanPushVerbatimCore(l *L, p verbatimPolicy, yield func(token.VT) bool) {
 		switch b {
 		case lineFeed:
 			i++
-			l.line++
-			l.lineStart = uint64(i)
+			if p.tracksPosition() {
+				l.line++
+				l.lineStart = uint64(i)
+			}
 
 			continue
 		case blank, tab, carriageReturn:
@@ -1310,8 +1358,10 @@ func scanPushVerbatimCore(l *L, p verbatimPolicy, yield func(token.VT) bool) {
 			continue
 		}
 
-		l.tokLine = l.line
-		l.tokCol = int(uint64(i+1) - l.lineStart)
+		if p.tracksPosition() {
+			l.tokLine = l.line
+			l.tokCol = int(uint64(i+1) - l.lineStart)
+		}
 		// the whitespace run since the previous token (zero-copy); i is the index
 		// of the first significant byte (the token start).
 		blanks := data[blankStart:i:i]
