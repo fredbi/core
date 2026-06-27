@@ -1,0 +1,29 @@
+# citm_catalog profile — why pull trails jsontext (plan, rematch)
+# go1.26.4, lab/bytes (pull, scanTokenSemantic), CPU profile over citm_catalog.
+
+# citm is 71.1% WHITESPACE (1.23M of 1.73M bytes — pretty-printed, 4-space indent).
+
+# pprof: 74% flat in scanTokenSemantic; consumeString only ~12%. Hottest LINES:
+#   580ms  case blank,tab,carriageReturn   (whitespace skip)
+#   550ms  l.offset++                      (per-byte struct cursor)
+#   110ms  l.consumed++                    (per-byte struct cursor)
+#    40ms  b := l.buffer[l.consumed]
+# => ~1.3s of 3.87s flat (~34%) is the per-byte loop advancing the cursor in STRUCT
+#    FIELDS for every byte, dominated by whitespace.
+
+# Confirmation — same citm, by mode (MB/s, count=6):
+#   jsontext/bytes                 1123   (100%)
+#   lab/tokens  (push, LOCAL cursor) 969   ( 86%)  <- already near parity
+#   lab/bytes   (pull, STRUCT cursor) 642   ( 57%)  <- the deficit
+#   default-lexer/bytes (ref pull)    635
+#   default-lexer/tokens (ref push)   887
+
+# Diagnosis: citm is not a string/dispatch problem — it's the PULL core's per-byte
+# struct-field cursor (l.offset++/l.consumed++) walked over 71% whitespace. The PUSH
+# core keeps the cursor in a LOCAL and writes back at exit, so it reaches 86%.
+
+# Fix (proposed): localize the pull whole-buffer cursor — batch the whitespace skip in
+# a local loop (counting newlines + lineStart for L.Line()/Column(), which are PUBLIC
+# so line/col CANNOT be dropped) and write l.consumed/l.offset/l.line/l.lineStart once
+# per run instead of per byte. Expected: pull citm 642 -> ~900+ (toward push's 969).
+# Also helps every whitespace-bearing / token-dense pull workload (whitespace_heavy).
