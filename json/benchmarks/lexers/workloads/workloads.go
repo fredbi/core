@@ -41,6 +41,37 @@ func All() []Workload {
 	}
 }
 
+// Micro returns the laser-focused micro-benchmark suite: small, single-path
+// workloads that each exercise one code path of the lexer (a number shape, a
+// string shape, or a short-token/dispatch shape), so a unitary design choice can
+// be judged in isolation before it is validated on the real-world [Corpus]. Each
+// payload is still ~256KiB so per-byte throughput stays comparable across shapes.
+//
+// These deliberately overlap the string workloads in [All] (same generators) and
+// add the number splits (positive/negative ints, decimals, exponential) and the
+// short-token splits (nulls, bools, separators) that [All] only covers in
+// aggregate. Kept separate from [Suite] so the heavy corpus gauntlet does not
+// balloon; wire into [Suite] only at gate reviews if a full-matrix run is wanted.
+func Micro() []Workload {
+	return []Workload{
+		// numbers — one grammar shape each
+		{Name: "ints_pos", Data: arrayOf(intPosElem)},
+		{Name: "ints_neg", Data: arrayOf(intNegElem)},
+		{Name: "decimals", Data: arrayOf(decimalElem)},
+		{Name: "exponential", Data: arrayOf(expElem)},
+		// strings — same generators as All(), the path-specific shapes
+		{Name: "strings_plain", Data: arrayOf(plainStringElem)},
+		{Name: "strings_escaped", Data: arrayOf(escapedStringElem)},
+		{Name: "strings_escaped_long", Data: arrayOf(escapedLongStringElem)},
+		{Name: "strings_unicode", Data: arrayOf(unicodeStringElem)},
+		{Name: "strings_uescaped", Data: arrayOf(uEscapedStringElem)},
+		// short tokens — dispatch-dominated
+		{Name: "nulls", Data: arrayOf(nullElem)},
+		{Name: "bools", Data: arrayOf(boolElem)},
+		{Name: "separators", Data: arrayOf(separatorElem)},
+	}
+}
+
 // arrayOf builds a JSON array "[e0,e1,...]" by appending elements until the
 // target size is reached. elem renders element i.
 func arrayOf(elem func(i int) string) []byte {
@@ -69,6 +100,76 @@ func intElem(i int) string {
 func floatElem(i int) string {
 	// mantissa + fraction + exponent, kept as text (no rounding intent)
 	return fmt.Sprintf("%d.%04de%d", i%1000, (i*7)%10000, (i%18)-9)
+}
+
+// intPosElem renders pure non-negative integers (no sign, no leading zeros). The
+// uint64 cast keeps the wrapped product positive, unlike intElem which is signed.
+func intPosElem(i int) string {
+	n := uint64(i*2654435761) % 1_000_000_007
+
+	return strconv.FormatUint(n, 10)
+}
+
+// intNegElem renders pure negative integers ("-N", N >= 1). Exercises the leading
+// '-' fast-path branch distinct from the all-digits one.
+func intNegElem(i int) string {
+	n := int64(i*2654435761) % 1_000_000_007
+	if n < 0 {
+		n = -n
+	}
+
+	return strconv.FormatInt(-n-1, 10)
+}
+
+// decimalElem renders fixed-point decimals (no exponent), half of them negative:
+// "-1234.5678". Exercises the integer-part + '.' + fraction grammar without the
+// scientific-notation tail.
+func decimalElem(i int) string {
+	sign := ""
+	if i%2 == 0 {
+		sign = "-"
+	}
+
+	return fmt.Sprintf("%s%d.%04d", sign, i%100000, (i*7)%10000)
+}
+
+// expElem renders numbers in scientific notation, cycling the legal shapes: lower
+// and upper 'e'/'E', signed exponents, a negative mantissa, and the "-0.NNeNN"
+// form (a leading-zero integer part is legal — only multi-digit leading zeros are
+// not). This drives the full number slow path.
+func expElem(i int) string {
+	switch i % 4 {
+	case 0:
+		return fmt.Sprintf("%de%d", i%1000, (i%18)-9) // 123e-5
+	case 1:
+		return fmt.Sprintf("%dE%d", i%1000, (i%12)-6) // 123E4
+	case 2:
+		return fmt.Sprintf("-0.%02de%d", (i%99)+1, (i%10)+1) // -0.44e10 shape
+	default:
+		return fmt.Sprintf("%d.%04dE-%d", i%100, i%10000, (i%9)+1) // 12.3456E-3
+	}
+}
+
+func nullElem(int) string { return "null" }
+
+func boolElem(i int) string {
+	if i%2 == 0 {
+		return "true"
+	}
+
+	return "false"
+}
+
+// separatorElem alternates empty containers so the workload is almost entirely
+// structural delimiters separated by commas: "[{},[],{},[],...]". With separator
+// elision on (the default) the emitted tokens are the '{ } [ ]' delimiters — the
+// dispatch-dominated path, minimal value work.
+func separatorElem(i int) string {
+	if i%2 == 0 {
+		return "{}"
+	}
+
+	return "[]"
 }
 
 func plainStringElem(i int) string {

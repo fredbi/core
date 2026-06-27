@@ -1,12 +1,4 @@
-// Package lab is an experimentation sandbox: a verbatim copy of the
-// default-lexer package (package lexer), kept side by side with the reference so
-// the L/VL unification work (generics-with-policy-type vs a refactor/inline
-// generator) can be spiked and compared for behavior and performance without
-// touching the production lexer. It starts identical to package lexer and
-// diverges from there; equivalence vs the reference is asserted by tests. See
-// .claude/plans/default-lexer-roadmap.md (Phase 2.1).
-//
-// Package lab provides a JSON lexer.
+// Package lexer provides a JSON lexer.
 //
 // The lexer splits a JSON input stream or a slice of bytes into tokens [token.T] (or [token.VT] for verbatim support).
 //
