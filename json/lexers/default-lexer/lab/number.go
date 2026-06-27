@@ -15,13 +15,18 @@ import (
 // the bounds check is elided, and the value aliases the input buffer.
 //
 // In whole-buffer mode there are no refills, so l.offset == l.consumed
-// throughout; both are written back once from the local cursor n. Plain
-// integers are handled inline in scanToken and never reach this path; it scans
-// fractions, exponents and the leading-zero / malformed forms.
+// throughout; both are written back once from the local cursor n.
 //
-// Like the rest of the folded-look-ahead design, a malformed number may be
-// surfaced as a shorter valid value with the error deferred to the next token
-// (e.g. "1.2.3" -> "1.2" then a rejected ".3"); the document is still rejected.
+// This is the authoritative whole-buffer number scanner, but it is no longer on
+// the hot path: the inline fast path in scanToken/scanPush now consumes every
+// WELL-FORMED number — integer, fractional and exponent (see generic.go) — so it
+// reaches this fallback only when that fast path conservatively bails (a
+// leading-zero form, a trailing dot, a malformed exponent, or an ambiguous
+// prefix). It is kept complete — NOT reduced to an error reporter — precisely
+// because some bails still resolve to a VALID shorter value: like the rest of the
+// folded-look-ahead design, a malformed number may be surfaced as a shorter valid
+// value with the error deferred to the next token (e.g. "1.2.3" -> "1.2" then a
+// rejected ".3"); the document is still rejected.
 func (l *L) consumeNumberWhole(start byte) token.T {
 	buf := l.buffer[:l.bufferized]
 	numStart := l.consumed - 1
