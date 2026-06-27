@@ -126,7 +126,7 @@ when a lever is proven on micro + corpus.
 
 ---
 
-## 3. SWAR foundation ⬜
+## 3. SWAR foundation 🚧
 
 **Verdict from the landscape survey:** keep hand-rolled fused SWAR; stdlib does
 not make it moot (`IndexByte` = single-needle SIMD, great only for a lone needle;
@@ -135,23 +135,38 @@ not make it moot (`IndexByte` = single-needle SIMD, great only for a lone needle
 byte arithmetic) but **no JSON composites and no digit-class** — illustrative, not
 drop-in.
 
-**Plan:** build a small **in-tree** SWAR module (no external dep, so we control
-inlining and the go.mod surface), borrowing `fredbi/swar`'s primitive shapes,
-exposing JSON-tailored, **individually inline-verified** helpers:
+**Built:** `internal/swar` (in-tree, no external dep). All primitives exact,
+multibyte-safe, and **inline-gated** (`TestInlinable` execs `go build -gcflags=-m`
+and fails if any is not "can inline"). Exhaustive per-lane correctness vs a scalar
+oracle (`TestStringStopMask`, …):
 
-- `findStringStop(word) mask` — fused `{==0x22, ==0x5c, <0x20}` (the current
-  inline block in `string.go:44-65`, lifted and shared). ⬜
-- `findDigitRunEnd` / digit-class test `(b-0x30) < 10` lane-wise — new; numbers
-  scan scalar today (`number.go:54,67,81`). ⬜
-- `skipWhitespace` — lane-wise `{0x20,0x09,0x0a,0x0d}`; whitespace is scanned
-  scalar and **duplicated** across `generic.go:115-128,557-590` and `push.go:68`. ⬜
+- `StringStopMask(w)` ✅ — fused `{<0x20, ==0x22, ==0x5c}`, lean ASCII-needle form.
+- `MaskEqual` / `MaskLess` / `MaskGreater` ✅ — general exact comparators (the
+  `fredbi/swar` byte-isolating + `0x7f` forms).
+- `DigitMask` / `NonDigitMask` ✅ — exact "hasbetween" range test (self-contained
+  so it inlines; the `MaskLess|MaskGreater` composition busted budget 80).
+- `FirstByte(mask)` ✅ — `TrailingZeros>>3`, exact-locate the first flagged lane.
 
-**Inlining gate for every helper:** `go build -gcflags=-m` must show it inlined at
-the call site; if a helper busts budget (80), it does not ship as-is — we either
-shrink it or keep the scalar path (as the escape-tail scan already does
-deliberately, `string.go:170-191`). Consolidation is only a win if it stays
-inlinable; a shared-but-not-inlined helper would *regress* the fast path (we
-already learned this the hard way with `scanStringStop` cost 98).
+**Consolidation results (lab vs frozen reference, count=10):**
+- String-stop routed through `swar.StringStopMask` (minimal change, original
+  control flow): **perf-neutral** — escaped_long 1344 vs 1340, plain 951 vs 958,
+  unicode 879 vs 873. Proves the helper inlines with zero cost; the bit-twiddling
+  now has one tested home. ✅ shipped to lab.
+- **Lead for §4.2:** also using `FirstByte` to exact-locate in the fast path lifted
+  fast-path workloads **+7–14%** (plain +6.7%, unicode +13%, uescaped +14%) but
+  **regressed escaped_long −12.5%** — not the algorithm (escaped_long is
+  slow-path-dominated, fast path runs ~1 word) but codegen perturbation of the
+  shared `consumeStringWhole`. Real fast-path win *if* we split fast/slow into
+  separate funcs to insulate the slow-path codegen. Parked as a string experiment.
+
+**Still ⬜ (algorithm experiments, not pure consolidation):**
+- digit-run scan scalar→SWAR using `NonDigitMask` (`number.go:54,67,81`) → §4.1.
+- whitespace skip (duplicated `generic.go:115-128,557-590`, `push.go:68`) — needs a
+  whitespace mask `{0x20,0x09,0x0a,0x0d}`; niche, deferred.
+
+**Inlining gate (standing rule):** `go build -gcflags=-m` must show every helper
+inlined; a shared-but-not-inlined helper *regresses* the fast path (learned with
+`scanStringStop` cost 98). Enforced for the module by `TestInlinable`.
 
 ---
 
@@ -300,7 +315,9 @@ with the measurement, so we don't relitigate them.
    ~6% lab-vs-reference gap — cross-package code-alignment/ordering noise, not a
    real delta. So lab-vs-reference carries a ~6% floor on some workloads;
    use same-binary pure-function A/B (§2.1) for algorithm calls where possible.
-3. ⬜ In-tree SWAR module + inline gate (§3); consolidate string/number/whitespace scans.
+3. 🚧 In-tree SWAR module + inline gate (§3) — DONE: module built/tested/inline-gated,
+   string-stop consolidated (perf-neutral). Remaining: digit-run SWAR (→§4.1),
+   whitespace (deferred). FirstByte fast-path lead parked for §4.2.
 4. ⬜ `lexgen` devirt generator (§5.1) — body-agnostic, so build it now; re-gen cheaply after each core change.
 
 **Experiments (each: win micro-bench → no regressions → hold on corpora):**

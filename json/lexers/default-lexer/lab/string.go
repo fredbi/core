@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
+	"github.com/fredbi/core/json/lexers/default-lexer/internal/swar"
 	"github.com/fredbi/core/json/lexers/token"
 )
 
@@ -33,27 +34,16 @@ func (l *L) consumeStringWhole() token.T {
 	start := l.consumed // first content byte
 
 	// fast path: jump to the first byte that needs attention — the closing
-	// quote, an escape, or a control char — scanning 8 bytes at a time with a
-	// SWAR test (Sean Anderson's "has a byte less than / equal to n" bit tricks,
-	// inlined here to avoid a call per string). The SWAR word test is only a fast
-	// filter; a plain byte scan then locates the exact first match. The
+	// quote, an escape, or a control char — scanning 8 bytes at a time with the
+	// shared SWAR string-stop mask (swar.StringStopMask inlines, so there is no
+	// call per word; see internal/swar). FirstByte locates the exact stop within
+	// the matching word; the scalar tail handles the final < 8 bytes. The
 	// overwhelmingly common case (no escapes, no control chars) aliases the input
 	// with zero copy.
 	i := start
 	{
-		const (
-			ones = ^uint64(0) / 255 // 0x0101010101010101
-			high = ones * 128       // 0x8080808080808080
-		)
-
 		for i+8 <= n {
-			w := binary.LittleEndian.Uint64(data[i:])
-			m := (w - ones*0x20) & ^w & high // any byte < 0x20
-			q := w ^ (ones * 0x22)
-			m |= (q - ones) & ^q & high // any byte == '"'
-			s := w ^ (ones * 0x5C)
-			m |= (s - ones) & ^s & high // any byte == '\\'
-			if m != 0 {
+			if swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])) != 0 {
 				break
 			}
 			i += 8
