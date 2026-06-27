@@ -104,16 +104,24 @@ func (c Context) Offset() uint64 {
 
 // ParentContext injects all the dependencies needed to operate with a [Node].
 //
-// The [ParentContext] is typically held by the root document, and propagated down to the hierarchy of nodes.
+// The [ParentContext] is typically held by the root document and propagated down the hierarchy of
+// nodes as it is decoded or encoded.
+//
+// It is NOT safe for concurrent use. The node machinery is single-goroutine by design: decoding pulls
+// from a stateful [lexers.Lexer] and encoding pushes into a stateful [writers.StoreWriter], and the
+// context itself mutates as it descends. Decoding several documents in parallel requires one
+// [ParentContext] per goroutine.
+//
+// The set of fields is still in flux.
 type ParentContext struct {
-	S  stores.Store
-	L  lexers.Lexer
-	W  writers.StoreWriter
-	DO DecodeOptions
-	EO EncodeOptions
-	C  *codes.ErrContext
-	X  any
-	P  Path
+	S  stores.Store        // value store backing the decoded/encoded handles
+	L  lexers.Lexer        // token source (decode)
+	W  writers.StoreWriter // token sink (encode)
+	DO DecodeOptions       // decode hooks and options
+	EO EncodeOptions       // encode options
+	C  *codes.ErrContext   // error context, populated when decoding or encoding fails
+	X  any                 // caller scratch space, opaque to the machinery
+	P  Path                // JSON Pointer to the current node; valid only during a callback (overwritten on the next sibling, truncated on level exit)
 }
 
 func (p *ParentContext) Reset() {
