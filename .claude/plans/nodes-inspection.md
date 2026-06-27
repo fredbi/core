@@ -223,10 +223,11 @@ slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `
   are safe (value already consumed); `BeforeKey` skip leaves the value token unconsumed (next read
   misparses it as a key → `ErrMissingKey`); `BeforeElem` skip is safe only for scalar elements (a
   composite's body is never drained). Fred: valid — handle when dissecting the decode path.
-- 📝 **CTX-5 (doc debt, deferred) — `ParentContext` contract is undocumented:** not safe for concurrent
-  use (each goroutine/document needs its own — `P`/`C`/lexer/writer all mutate); `ctx.P` is only valid
-  *during* a callback (overwritten next sibling, truncated on level exit — a hook must not retain it);
-  `X any` is caller scratch space. Worth writing on the type before the multi-goroutine read phase.
+- ✅ **CTX-5 — documented `ParentContext`'s single-goroutine contract.** Fred: the node machinery is
+  single-goroutine *by design* (decode pulls from a stateful lexer, encode pushes into a stateful
+  writer; the whole logic is not thread-safe). Godoc now states it's not safe for concurrent use (one
+  per goroutine per document), annotates the terse single-letter fields, and notes `ctx.P` is only valid
+  during a callback. Fields remain in flux (kept light per Fred).
 
 ---
 
