@@ -92,3 +92,19 @@ func DigitMask(w uint64) uint64 {
 // NonDigitMask flags lanes whose byte is NOT an ASCII digit — i.e. the lanes that
 // end a digit run (including any byte >= 0x80, which is not a digit).
 func NonDigitMask(w uint64) uint64 { return DigitMask(w) ^ high }
+
+// NonWhitespaceMask flags lanes whose byte is NOT JSON insignificant whitespace
+// (space, tab, LF, CR) — i.e. the lanes that end a whitespace run. The match is
+// exact: a non-whitespace control char (e.g. 0x01) is flagged too, so a scan stops
+// there and the caller can reject it, rather than skipping it like whitespace.
+func NonWhitespaceMask(w uint64) uint64 {
+	// hand-fused haszero per needle ((v-lo)&^v&high is the exact zero-byte test),
+	// ORed and masked once — far cheaper than four MaskEqual calls, so it inlines.
+	s := w ^ (lo * ' ')
+	t := w ^ (lo * '\t')
+	n := w ^ (lo * '\n')
+	r := w ^ (lo * '\r')
+	ws := ((s-lo)&^s | (t-lo)&^t | (n-lo)&^n | (r-lo)&^r) & high
+
+	return ws ^ high
+}

@@ -23,9 +23,12 @@ package lab
 //     See roadmap 2.1 for the measurement and the rationale for accepting it.
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
+	"math/bits"
 
+	"github.com/fredbi/core/json/lexers/default-lexer/internal/swar"
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/token"
 )
@@ -587,6 +590,34 @@ func (l *L) skipWhitespaceWhole() {
 	line := l.line
 	lineStart := l.lineStart
 
+	// SWAR: skip whole whitespace words at a time (Fred's heuristic — once we are in
+	// a multi-byte whitespace run, the input is indented and the run is likely long).
+	// For each word, find the first non-whitespace lane; newlines in the skipped
+	// lanes are counted (and the last one fixes lineStart) so L.Line()/L.Column()
+	// stay exact. MaskEqual/NonWhitespaceMask/FirstByte all inline.
+	for i+8 <= n {
+		w := binary.LittleEndian.Uint64(buf[i:])
+		if nm := swar.NonWhitespaceMask(w); nm != 0 {
+			k := swar.FirstByte(nm)
+			if nl := swar.MaskEqual(w, lineFeed) & ((uint64(1) << (8 * uint(k))) - 1); nl != 0 {
+				line += bits.OnesCount64(nl)
+				lineStart = uint64(i + ((bits.Len64(nl) - 1) >> 3) + 1)
+			}
+			i += k
+			l.consumed, l.offset = i, uint64(i)
+			l.line, l.lineStart = line, lineStart
+
+			return
+		}
+		// the whole word is whitespace
+		if nl := swar.MaskEqual(w, lineFeed); nl != 0 {
+			line += bits.OnesCount64(nl)
+			lineStart = uint64(i + ((bits.Len64(nl) - 1) >> 3) + 1)
+		}
+		i += 8
+	}
+
+	// scalar tail (< 8 bytes remain)
 	for i < n {
 		switch buf[i] {
 		case lineFeed:
@@ -605,6 +636,11 @@ func (l *L) skipWhitespaceWhole() {
 
 	l.consumed, l.offset = i, uint64(i)
 	l.line, l.lineStart = line, lineStart
+}
+
+// isJSONSpace reports whether b is insignificant JSON whitespace.
+func isJSONSpace(b byte) bool {
+	return b == blank || b == tab || b == lineFeed || b == carriageReturn
 }
 
 // scanTokenG is the generic, policy-parameterized pull core: it scans and
@@ -639,12 +675,15 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 			case lineFeed:
 				l.line++
 				l.lineStart = l.offset
-				// whole-buffer semantic fast path: batch-skip the rest of the
-				// whitespace run with a local cursor (no per-byte struct writes — the
-				// citm bottleneck; see skipWhitespaceWhole). Streaming and verbatim
-				// keep the per-byte path (refill correctness / blank capture).
+				// whole-buffer semantic fast path: if the next byte is ALSO whitespace
+				// we are in an indentation run — batch-skip it with SWAR (no per-byte
+				// struct writes; the citm bottleneck — see skipWhitespaceWhole). A lone
+				// separator (next byte significant) stays on the cheap per-byte path.
+				// Streaming and verbatim keep per-byte (refill / blank capture).
 				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
+					if l.consumed < l.bufferized && isJSONSpace(l.buffer[l.consumed]) {
+						l.skipWhitespaceWhole()
+					}
 
 					continue
 				}
@@ -662,7 +701,9 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case blank, tab, carriageReturn:
 				if l.wholeBuffer && !l.trackBlanks {
-					l.skipWhitespaceWhole()
+					if l.consumed < l.bufferized && isJSONSpace(l.buffer[l.consumed]) {
+						l.skipWhitespaceWhole()
+					}
 
 					continue
 				}
