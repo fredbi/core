@@ -64,6 +64,7 @@ or vs the in-binary generic baseline (devirt), count=10 unless noted.
 - ✅ **number fast path → full grammar** (`[-]int[frac][exp]` inline) — **decimals +18/+36%, exponential +13.6/+38%** (pull/push).
 - ✅ **string fast/slow split + FirstByte** — **unicode +15%, uescaped +14.7%, plain +5.6%** (pull); no escaped_long regression.
 - ✅ **pull-devirt** — `NextToken()` via generated cores — **pull +4.23% geomean** (after the regression resolved itself via the string split).
+- ✅ **adaptive-SWAR slow path** (Fred's heuristic: escapes sparse → scalar-probe then SWAR the long tail) — **escaped_long +75% (2375, beats jsontext 1708), no dense regression**.
 - ✅ cleanups (`consumeNumberWhole` doc, uint/BCE) — no perf change, clarity; BCE verified preserved.
 
 **Rejected with measurement (recorded so we don't relitigate):**
@@ -73,8 +74,13 @@ or vs the in-binary generic baseline (devirt), count=10 unless noted.
 
 **Cumulative (lab vs frozen reference, geomean):** **pull +13.5% · push +14.3%**
 (`ramblings/2026-06-lab-scoreboard.txt`). Biggest movers: decimals/exponential
-(+22…+32%), unicode/uescaped (+20…+24%), plain (+12…+16%); escaped/escaped_long
-flat (slow-path-dominated, as expected).
+(+22…+32%), unicode/uescaped (+20…+24%), plain (+12…+16%).
+
+**Rematch vs jsontext (pull/bytes, after adaptive-SWAR):** **WIN** twitter +15%,
+golang_source +5.5%, escaped_long +39%; **parity** canada (99%); **trail** citm
+(55% — many-tiny-tokens regime) and dense escaped (68% — structural: we unescape,
+they don't). `ramblings/2026-06-adaptive-slowpath-swar.txt`. → **citm is the next
+target** (per-token throughput on small string keys + numbers).
 
 **Lesson banked:** the wins all came from **doing less work** (devirt, number/string
 fast paths) and **splitting fragile shared cores** (which even cured the pull-devirt
