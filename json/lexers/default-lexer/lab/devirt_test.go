@@ -20,7 +20,7 @@ func (l *L) tokensGeneric() iter.Seq[token.T] {
 			return
 		}
 		for {
-			tok := l.NextToken()
+			tok := l.nextTokenGeneric()
 			if l.err != nil || tok.Kind() == token.EOF {
 				return
 			}
@@ -39,7 +39,7 @@ func (l *VL) tokensGeneric() iter.Seq[token.VT] {
 			return
 		}
 		for {
-			tok := l.NextToken()
+			tok := l.nextTokenGeneric()
 			if l.err != nil || tok.Kind() == token.EOF {
 				return
 			}
@@ -48,6 +48,14 @@ func (l *VL) tokensGeneric() iter.Seq[token.VT] {
 			}
 		}
 	}
+}
+
+// nextTokenGeneric / VL.nextTokenGeneric drive the generic pull core directly.
+// Retained as the A/B baseline now that NextToken() routes through the devirt core.
+func (l *L) nextTokenGeneric() token.T { return scanTokenG[token.T, semanticPolicy](l, semanticPolicy{}) }
+
+func (l *VL) nextTokenGeneric() token.VT {
+	return scanTokenG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
 }
 
 // devirtInputs exercise every dispatch arm and value path, plus malformed inputs
@@ -83,10 +91,10 @@ func collectPull(l *L) ([]token.T, error) {
 	}
 }
 
-func collectPullDevirt(l *L) ([]token.T, error) {
+func collectPullGeneric(l *L) ([]token.T, error) {
 	var toks []token.T
 	for {
-		t := l.nextTokenDevirt()
+		t := l.nextTokenGeneric()
 		if !l.Ok() {
 			return toks, l.Err()
 		}
@@ -104,8 +112,8 @@ func TestDevirtEquivalencePull(t *testing.T) {
 	for _, in := range devirtInputs {
 		data := []byte(in)
 
-		gen, genErr := collectPull(NewWithBytes(data))
-		dev, devErr := collectPullDevirt(NewWithBytes(data))
+		gen, genErr := collectPullGeneric(NewWithBytes(data))
+		dev, devErr := collectPull(NewWithBytes(data)) // collectPull uses NextToken = devirt
 		if !sameErr(genErr, devErr) {
 			t.Errorf("pull whole-buffer %q: err mismatch: generic=%v devirt=%v", in, genErr, devErr)
 		}
@@ -114,8 +122,8 @@ func TestDevirtEquivalencePull(t *testing.T) {
 		}
 
 		// streaming mode (tiny buffer to force refills)
-		genS, genSErr := collectPull(New(strings.NewReader(in), WithBufferSize(4)))
-		devS, devSErr := collectPullDevirt(New(strings.NewReader(in), WithBufferSize(4)))
+		genS, genSErr := collectPullGeneric(New(strings.NewReader(in), WithBufferSize(4)))
+		devS, devSErr := collectPull(New(strings.NewReader(in), WithBufferSize(4)))
 		if !sameErr(genSErr, devSErr) {
 			t.Errorf("pull streaming %q: err mismatch: generic=%v devirt=%v", in, genSErr, devSErr)
 		}
@@ -162,7 +170,7 @@ func TestDevirtEquivalenceVerbatim(t *testing.T) {
 		var genP []token.VT
 		vg := NewVerbatimWithBytes(data)
 		for {
-			tok := vg.NextToken()
+			tok := vg.nextTokenGeneric()
 			if !vg.Ok() || tok.Kind() == token.EOF {
 				break
 			}
@@ -171,7 +179,7 @@ func TestDevirtEquivalenceVerbatim(t *testing.T) {
 		var devP []token.VT
 		vd := NewVerbatimWithBytes(data)
 		for {
-			tok := vd.nextTokenDevirt()
+			tok := vd.NextToken() // NextToken = devirt post-adoption
 			if !vd.Ok() || tok.Kind() == token.EOF {
 				break
 			}

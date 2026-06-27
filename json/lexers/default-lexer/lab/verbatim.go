@@ -62,7 +62,8 @@ func NewVerbatimWithBytes(data []byte, opts ...Option) *VL {
 // the memory backing the previous token's value is reused. To keep a token, use
 // its Clone() method.
 func (l *VL) NextToken() token.VT {
-	return scanTokenG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
+	// devirtualized pull core (adopted 2026-06-27); see [L.NextToken].
+	return scanTokenVerbatim(l.L, verbatimPolicy{})
 }
 
 // Reset returns the verbatim lexer to a clean, source-less state for reuse,

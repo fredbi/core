@@ -4,23 +4,16 @@ import (
 	"github.com/fredbi/core/json/lexers/token"
 )
 
-// Devirtualized entry points calling the generated, monomorphized scan cores
-// (scan_gen.go) instead of the generic ones, so the per-token policy calls are
-// direct and inline rather than routed through the generics dictionary.
+// Devirtualized push shims. Both pull and push are now ADOPTED:
+//   - pull: NextToken (L and VL) calls scanTokenSemantic/scanTokenVerbatim directly
+//     (see lexer.go / verbatim.go) — a plain return, no shim needed.
+//   - push: Tokens (L and VL) routes through the //go:noinline shims below (the
+//     range-over-func yield closure must not escape across the package boundary).
 //
-// The push shims are ADOPTED: Tokens() (L and VL) routes through them (see
-// iterator.go) — measured +7..+18% over the generic core. The generic push shims
-// (scanPushSemantic/scanPushVerbatim in generic.go) are retained as the A/B
-// baseline, exercised by devirt_bench_test via the tokensGeneric test helpers.
-//
-// Pull (nextTokenDevirt) is NOT adopted: NextToken stays generic pending the ints
-// pull regression (plan §5.1). It is kept here for the pull A/B measurement.
-
-// nextTokenDevirt is the devirtualized counterpart of [L.NextToken].
-func (l *L) nextTokenDevirt() token.T { return scanTokenSemantic(l, semanticPolicy{}) }
-
-// nextTokenDevirt is the devirtualized counterpart of [VL.NextToken].
-func (l *VL) nextTokenDevirt() token.VT { return scanTokenVerbatim(l.L, verbatimPolicy{}) }
+// The generated concrete cores (scan_gen.go) replace the generics-dictionary calls
+// with direct, inlined policy calls. The generic cores in generic.go are retained
+// as lexgen's source-of-truth and the A/B baseline (the *Generic test helpers in
+// devirt_test.go drive them).
 
 // scanPushSemanticDevirt is the devirt counterpart of scanPushSemantic: same
 // //go:noinline shim discipline (so the range-over-func yield closure stays on

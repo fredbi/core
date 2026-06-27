@@ -157,8 +157,10 @@ func (l *L) Column() int {
 // If you want to keep tokens for later reuse, you may clone a token
 // using its [T.Clone] method.
 func (l *L) NextToken() token.T {
-	// unified pull core (semantic policy); see generic.go.
-	return scanTokenG[token.T, semanticPolicy](l, semanticPolicy{})
+	// devirtualized pull core (adopted 2026-06-27: +4.23% geomean over the generic
+	// core, no regressions; see plan §5.1 + devirt_bench_test). The generic
+	// scanTokenG is retained as lexgen's source-of-truth and the A/B baseline.
+	return scanTokenSemantic(l, semanticPolicy{})
 }
 
 // readMore provides more input from the internal buffer or

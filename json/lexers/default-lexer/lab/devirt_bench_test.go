@@ -28,7 +28,7 @@ func BenchmarkDevirt(b *testing.B) {
 				for range b.N {
 					lex.ResetWithBytes(data)
 					for {
-						t := lex.NextToken()
+						t := lex.nextTokenGeneric()
 						if !lex.Ok() || t.Kind() == token.EOF {
 							break
 						}
@@ -36,7 +36,7 @@ func BenchmarkDevirt(b *testing.B) {
 					}
 				}
 			})
-			b.Run("devirt/pull", func(b *testing.B) {
+			b.Run("devirt/pull", func(b *testing.B) { // NextToken = devirt post-adoption
 				lex := NewWithBytes(nil)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
@@ -44,7 +44,7 @@ func BenchmarkDevirt(b *testing.B) {
 				for range b.N {
 					lex.ResetWithBytes(data)
 					for {
-						t := lex.nextTokenDevirt()
+						t := lex.NextToken()
 						if !lex.Ok() || t.Kind() == token.EOF {
 							break
 						}
