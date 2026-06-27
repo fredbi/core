@@ -476,19 +476,33 @@ whitespace_heavy too) because `consumeWhitespace` is **pull-only**. Apply the sa
 batch skip to `scanPushG`'s semantic path (`i += consumeWhitespace(data[i:])`).
 Expect citm push → pull-level. Low risk; do early.
 
-### 9.3 AVX-512 SIMD via avo (refinement, test-and-see) ⬜
+### 9.3 AVX-512 SIMD via avo (refinement AND a relief valve for 9.1) ⬜
 Idea (Fred): replace the 64-bit (8-byte) SWAR string-stop scan with avo-generated
-AVX-512 asm — a 512-bit (64-byte) register gobbles long strings faster. Targets
-LONG strings (already good: plain/escaped_long), so upside is uncertain — apply
-Occam: ship only if it earns its keep. Notes:
-- The asm call won't inline → only worth it where the per-call cost amortizes
-  (long runs), NOT short strings. Likely a length-gated dispatch: SWAR for short,
-  AVX-512 for long.
-- Try the same for `consumeWhitespace` (long indent runs), though the compiler's
-  tight scalar loop is already near-optimal — lower expected payoff.
-- Reference: Fred has an example repo (AVX-512-from-avo, a SIMD-accelerated grep).
+AVX-512 asm — 512-bit (64-byte) registers gobble long strings faster. TWO payoffs,
+and they connect to the unstable loop (9.1):
+1. **Speed (long inputs):** 64 bytes/iter vs 8. Targets LONG strings (already good:
+   plain/escaped_long) → upside uncertain; Occam: ship only if it earns its keep.
+2. **Register / loop relief (the 9.1 angle, per Fred):** the asm uses the ZMM vector
+   registers (zmm0–zmm31), SEPARATE from the 16 GP registers the main loop contends
+   for; and Go does NOT inline assembly, so the scan moves OUT of `scanTokenG`,
+   shrinking it. Both directly attack the clogged-registers / fragile-loop itch.
+
+**Occam guard (do during 9.1):** the *shrink-the-loop* effect does NOT require
+AVX-512 — a plain `//go:noinline` Go extraction of the scan also shrinks the core.
+So test a noinline-Go extraction as the CONTROL: if that alone stabilizes the loop
+(adding a line stops perturbing other arms), the stability win is "smaller core",
+not "AVX-512", and asm becomes a *pure speed* add-on for long strings. (Caveat from
+this session: noinline `consumeWhitespace` cost citm ~6% per-call overhead — so
+extraction trades inline-perturbation for call cost; asm must beat that with faster
+scanning to win.)
+
+Notes:
+- Won't inline → length-gated dispatch: SWAR for short, AVX-512 for long.
+- Same idea for `consumeWhitespace` (long indent runs); lower expected payoff (the
+  compiler's tight scalar loop is already near-optimal).
+- Reference: Fred has an avo AVX-512 example repo (SIMD-accelerated grep).
 - Measure on `strings_plain`, `strings_escaped_long`, `whitespace_heavy`, citm;
-  needs CPU AVX-512 support check + a scalar fallback build tag.
+  needs an AVX-512 CPU-feature check + a scalar fallback (build tag / runtime guard).
 
 ### 9.4 Retrofit lab → master (§7) ⬜
 Once 9.1 (and maybe 9.2) land, cherry-pick the proven lab gains onto the reference
