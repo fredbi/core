@@ -43,15 +43,12 @@ func scanTokenSemantic(l *L, p semanticPolicy) token.T {
 			case lineFeed:
 				l.line++
 				l.lineStart = l.offset
-				// whole-buffer semantic fast path: if the next byte is ALSO whitespace
-				// we are in an indentation run — batch-skip it with SWAR (no per-byte
-				// struct writes; the citm bottleneck — see skipWhitespaceWhole). A lone
-				// separator (next byte significant) stays on the cheap per-byte path.
-				// Streaming and verbatim keep per-byte (refill / blank capture).
+				// whole-buffer semantic fast path: batch-skip the rest of the
+				// whitespace run with a local cursor (no per-byte struct writes — the
+				// citm bottleneck; see skipWhitespaceWhole). Streaming and verbatim
+				// keep the per-byte path (refill correctness / blank capture).
 				if l.wholeBuffer && !l.trackBlanks {
-					if l.consumed < l.bufferized && isJSONSpace(l.buffer[l.consumed]) {
-						l.skipWhitespaceWhole()
-					}
+					l.skipWhitespaceWhole()
 
 					continue
 				}
@@ -69,9 +66,7 @@ func scanTokenSemantic(l *L, p semanticPolicy) token.T {
 
 			case blank, tab, carriageReturn:
 				if l.wholeBuffer && !l.trackBlanks {
-					if l.consumed < l.bufferized && isJSONSpace(l.buffer[l.consumed]) {
-						l.skipWhitespaceWhole()
-					}
+					l.skipWhitespaceWhole()
 
 					continue
 				}
@@ -930,15 +925,12 @@ func scanTokenVerbatim(l *L, p verbatimPolicy) token.VT {
 			case lineFeed:
 				l.line++
 				l.lineStart = l.offset
-				// whole-buffer semantic fast path: if the next byte is ALSO whitespace
-				// we are in an indentation run — batch-skip it with SWAR (no per-byte
-				// struct writes; the citm bottleneck — see skipWhitespaceWhole). A lone
-				// separator (next byte significant) stays on the cheap per-byte path.
-				// Streaming and verbatim keep per-byte (refill / blank capture).
+				// whole-buffer semantic fast path: batch-skip the rest of the
+				// whitespace run with a local cursor (no per-byte struct writes — the
+				// citm bottleneck; see skipWhitespaceWhole). Streaming and verbatim
+				// keep the per-byte path (refill correctness / blank capture).
 				if l.wholeBuffer && !l.trackBlanks {
-					if l.consumed < l.bufferized && isJSONSpace(l.buffer[l.consumed]) {
-						l.skipWhitespaceWhole()
-					}
+					l.skipWhitespaceWhole()
 
 					continue
 				}
@@ -956,9 +948,7 @@ func scanTokenVerbatim(l *L, p verbatimPolicy) token.VT {
 
 			case blank, tab, carriageReturn:
 				if l.wholeBuffer && !l.trackBlanks {
-					if l.consumed < l.bufferized && isJSONSpace(l.buffer[l.consumed]) {
-						l.skipWhitespaceWhole()
-					}
+					l.skipWhitespaceWhole()
 
 					continue
 				}

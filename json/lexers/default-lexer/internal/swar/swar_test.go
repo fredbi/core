@@ -94,12 +94,6 @@ func TestNonDigitMask(t *testing.T) {
 	})
 }
 
-func TestNonWhitespaceMask(t *testing.T) {
-	checkMask(t, "NonWhitespaceMask", NonWhitespaceMask, func(b byte) bool {
-		return b != ' ' && b != '\t' && b != '\n' && b != '\r'
-	})
-}
-
 func TestFirstByte(t *testing.T) {
 	// a stop byte placed at each lane (with clean bytes before it) must be located
 	for lane := range 8 {
@@ -138,7 +132,6 @@ func TestInlinable(t *testing.T) {
 	must := []string{
 		"FirstByte", "Broadcast", "StringStopMask",
 		"MaskEqual", "MaskLess", "MaskGreater", "DigitMask", "NonDigitMask",
-		"NonWhitespaceMask",
 	}
 	text := string(out)
 	for _, fn := range must {
