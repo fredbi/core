@@ -118,6 +118,10 @@ func (n Node) IsNull(_ stores.Store) bool {
 }
 
 // AtKey returns the [Node] held under a key in an object, or false if not found.
+//
+// When the second result is false (key absent, or n is not an object) the returned [Node] is the zero
+// node, which is indistinguishable from a JSON null (KindNull is the zero kind). Always test the bool —
+// do not infer presence from the node's kind.
 func (n Node) AtKey(k string) (Node, bool) {
 	return n.AtInternedKey(values.MakeInternedKey(k))
 }
@@ -138,6 +142,10 @@ func (n Node) AtInternedKey(k values.InternedKey) (Node, bool) {
 
 // KeyIndex returns the index of a key, or false if not found.
 func (n Node) KeyIndex(k string) (int, bool) {
+	if n.kind != nodes.KindObject {
+		return 0, false
+	}
+
 	index, found := n.keysIndex[values.MakeInternedKey(k)]
 
 	return index, found
@@ -161,9 +169,12 @@ func (n Node) Key() string {
 }
 
 // Pairs return all (key,Node) pairs inside an object.
+//
+// On a node that is not an object it yields nothing (ranging it is safe, never panics).
 func (n Node) Pairs() iter.Seq2[values.InternedKey, Node] {
 	if n.kind != nodes.KindObject {
-		return nil
+		// empty (non-nil) iterator: ranging a nil iter.Seq2 panics.
+		return func(func(values.InternedKey, Node) bool) {}
 	}
 
 	return func(yield func(values.InternedKey, Node) bool) {
@@ -176,9 +187,12 @@ func (n Node) Pairs() iter.Seq2[values.InternedKey, Node] {
 }
 
 // Elems returns all elements in an array.
+//
+// On a node that is not an array it yields nothing (ranging it is safe, never panics).
 func (n Node) Elems() iter.Seq[Node] {
 	if n.kind != nodes.KindArray {
-		return nil
+		// empty (non-nil) iterator: ranging a nil iter.Seq panics.
+		return func(func(Node) bool) {}
 	}
 
 	return func(yield func(Node) bool) {
@@ -190,9 +204,13 @@ func (n Node) Elems() iter.Seq[Node] {
 	}
 }
 
+// IndexedElems returns all elements in an array together with their index.
+//
+// On a node that is not an array it yields nothing (ranging it is safe, never panics).
 func (n Node) IndexedElems() iter.Seq2[int, Node] {
 	if n.kind != nodes.KindArray {
-		return nil
+		// empty (non-nil) iterator: ranging a nil iter.Seq2 panics.
+		return func(func(int, Node) bool) {}
 	}
 
 	return func(yield func(int, Node) bool) {

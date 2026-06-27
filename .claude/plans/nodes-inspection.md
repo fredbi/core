@@ -275,6 +275,25 @@ slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `
   re-implementing it. Documented on `Decode`; pinned by `TestDecodeTopLevel` (single value accepted;
   trailing/multiple and empty inputs error; trailing whitespace tolerated).
 
+### Read/accessor API (`node.go` query methods) — Tier-2
+
+- ✅ **ACC-1 — `Pairs`/`Elems`/`IndexedElems` returned a nil iterator on a kind-mismatch (public-API
+  panic, fixed).** Same footgun as DEC-2 but on the *public* surface: `for range scalar.Pairs()` panicked
+  (ranging a nil `iter.Seq` is a nil-func call). All three now return an empty iterator on the wrong
+  kind, so ranging is always safe. Pinned by `TestAccessorIteratorsNeverPanic` (every kind × all three).
+- ✅ **ACC-2 — `KeyIndex` lacked the kind guard** the other object accessors have (it was safe via
+  nil-map read, but inconsistent). Added `kind != KindObject → (0,false)`.
+- ✅ **ACC-3 — documented the not-found contract.** `KindNull` is the zero kind, so the zero `Node`
+  returned by `AtKey`/`Elem`/`AtInternedKey` on a miss is indistinguishable from a JSON null. Callers
+  must test the `bool`, not infer absence from kind — now stated on `AtKey`.
+- ℹ️ **ACC-4 — `Value`/`Handle` are scalar-only by design** (return false for null and containers); a
+  null value is reached via `IsNull`, not `Value`. Confirmed intentional (KindNull ≠ KindScalar); pinned
+  by `TestAccessorScalarKindGuards` (null reports false from Value/Handle; containers too).
+- Coverage: `Elem` bounds (incl. negative), `AtKey`/`KeyIndex` hit & miss, `Len`/`Is*` across kinds,
+  order-preserving `Pairs`/`Elems`, and wrong-kind safety — all pinned (`TestAccessorObject`,
+  `TestAccessorArray`, `TestAccessorScalarKindGuards`). Index integrity itself (keysIndex↔children) was
+  the C1–C4 builder track, already fixed; the accessors trust that invariant.
+
 ### Pools (`pools.go`) — combed before the decode path
 
 Per Fred: standardize on the `pools.PoolRedeemable` variant (cached, alloc-free, built-in redeemer that
