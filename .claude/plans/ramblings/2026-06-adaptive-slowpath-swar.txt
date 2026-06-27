@@ -1,0 +1,18 @@
+# Adaptive SWAR in the string unescape slow path (Fred's heuristic): scalar-probe the
+# clean run (swarProbe=8 bytes); if it outruns the probe, finish with SWAR (escapes are
+# sparse -> the tail is likely clean). go1.26.4, count=6 medians, pull/bytes, MB/s.
+#
+# Captures the long-clean-tail win WITHOUT the dense-escape regression the pure-SWAR
+# variant caused (-16%). Validated on real corpora (the pure-SWAR variant never was).
+#
+# workload              reference   lab    jsontext   lab vs jsontext
+# strings_escaped_long     1350    2375     1708      +39%  WIN
+# twitter_status            642     699      609      +15%  WIN
+# golang_source             450     549      520      +5.5% WIN
+# canada_geometry           496     585      592       99%  parity
+# citm_catalog              635     628     1145       55%  trail (many tiny tokens)
+# strings_escaped (dense)   580     558      818       68%  trail (we unescape; they don't)
+#
+# Net: now beat jsontext on 3 (twitter/golang/escaped_long), parity on canada; trail on
+# citm (per-token-overhead regime) and dense escapes (structural eager-unescape cost).
+# Remaining rematch targets: citm small-token throughput; dense-escape is a deliberate trade.

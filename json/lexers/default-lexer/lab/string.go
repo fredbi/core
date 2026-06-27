@@ -12,6 +12,12 @@ import (
 	"github.com/fredbi/core/json/lexers/token"
 )
 
+// swarProbe is the scalar look-ahead (bytes) the unescape slow path scans before
+// switching a clean run to SWAR. Runs shorter than this (the escape-dense case)
+// resolve scalar with no SWAR overhead; longer runs (sparse escapes + clean tail)
+// switch to the word-at-a-time scan. One word keeps dense strings cheap.
+const swarProbe = 8
+
 // consumeString scans a string value (the opening quote is already consumed).
 //
 // In whole-buffer mode it takes the fast path: a local-cursor scan that aliases
@@ -169,18 +175,35 @@ func (l *L) consumeStringEscaped(start, i int) token.T {
 			return token.None
 		}
 
-		// batch-copy the clean run following the escape up to the next stop byte,
-		// then append it in one shot. A scalar scan (not SWAR) is deliberate: in
-		// escape-dense strings the runs are tiny, and the SWAR word math would cost
-		// more than it saves on a 3-byte run; the real win here is the single bulk
-		// append (memmove) replacing one append per byte. The bound is checked
-		// against len + the run width *before* the append so an over-long value is
-		// rejected without first copying a huge clean run, and escape-only
-		// expansion (no clean bytes) is still caught when the run width is zero.
+		// Scan the clean run after the escape to the next stop byte, then bulk-append
+		// it. Adaptive scan (escapes are usually sparse): start scalar — in
+		// escape-dense strings the runs are tiny and a SWAR word-load would cost more
+		// than it saves — but once a run proves longer than a word, bet the rest of
+		// the string is mostly clean and finish the run with SWAR. This keeps the
+		// dense case cheap while making the long-clean-tail case (sparse escapes + a
+		// long unescaped trail) fast. The bound is checked against len + the run
+		// width *before* the append so an over-long value is rejected without copying
+		// a huge clean run, and escape-only expansion (zero-width run) is still caught.
 		stop := i
-		for ; stop < n; stop++ {
+		probe := min(i+swarProbe, n)
+		for ; stop < probe; stop++ {
 			if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {
 				break
+			}
+		}
+		if stop == probe && stop < n { // run outran the probe → likely long, switch to SWAR
+			for stop+8 <= n {
+				if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[stop:])); m != 0 {
+					stop += swar.FirstByte(m)
+
+					break
+				}
+				stop += 8
+			}
+			for ; stop < n; stop++ {
+				if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {
+					break
+				}
 			}
 		}
 		if l.maxValueBytes > 0 && len(l.currentValue)+(stop-i) > l.maxValueBytes {
