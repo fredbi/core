@@ -158,7 +158,7 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 }
 
 func (s *Schema) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = s.Store()
 	context.DO = s.hooks()
@@ -168,7 +168,7 @@ func (s *Schema) decode(lex lexers.Lexer) error {
 
 	n := s.Node()
 	n.Decode(context)
-	light.RedeemParentContext(context)
+	redeemContext()
 	poolOfOverlayContexts.Redeem(octx)
 
 	return lex.Err()

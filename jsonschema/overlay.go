@@ -243,7 +243,7 @@ type overlayContext struct {
 }
 
 func (o *Overlay) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = o.Store()
 	context.DO = o.hooks()
@@ -253,7 +253,7 @@ func (o *Overlay) decode(lex lexers.Lexer) error {
 
 	n := o.Node()
 	n.Decode(context)
-	light.RedeemParentContext(context)
+	redeemContext()
 	poolOfOverlayContexts.Redeem(octx)
 
 	return lex.Err()

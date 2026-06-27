@@ -282,17 +282,17 @@ func (d Document) String() string {
 }
 
 func (d *Document) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = d.store
 	context.DO = d.DecodeOptions
-	pth, redeemPath := light.BorrowPathWithRedeem()
+	pth, redeemPath := light.BorrowPath()
 	context.P = pth
-	d.root.Decode(context)
 	defer func() {
-		light.RedeemParentContext(context)
+		redeemContext()
 		redeemPath()
 	}()
+	d.root.Decode(context)
 
 	if lex.Ok() {
 		return nil
@@ -306,13 +306,13 @@ func (d Document) encodeStore(jw writers.StoreWriter) error {
 }
 
 func (d Document) encode(jw writers.StoreWriter) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.W = jw
 	context.S = d.store
 	context.EO = d.EncodeOptions
 
 	d.root.Encode(context)
-	light.RedeemParentContext(context)
+	redeemContext()
 
 	if flusher, ok := jw.(writers.Flusher); ok {
 		if err := flusher.Flush(); err != nil {

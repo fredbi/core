@@ -229,6 +229,29 @@ slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `
   per goroutine per document), annotates the terse single-letter fields, and notes `ctx.P` is only valid
   during a callback. Fields remain in flux (kept light per Fred).
 
+### Pools (`pools.go`) — combed before the decode path
+
+Per Fred: standardize on the `pools.PoolRedeemable` variant (cached, alloc-free, built-in redeemer that
+detects double-redeem) and simplify the API to a uniform `Borrow…() (*T, func())` shape.
+
+- ✅ **POOL-1 — `poolOfParentContexts` → `pools.NewRedeemable`; uniform borrow-with-redeem API.**
+  `BorrowParentContext() (*ParentContext, func())` and `BorrowPath() (Path, func())` (renamed from
+  `BorrowPathWithRedeem`); dropped `RedeemParentContext`. `poolOfPaths` was already redeemable-backed
+  (`PoolSlice`). Callers adapted across both modules: `json/document.go` (decode + encode),
+  `json/constrained/constrained.go` (5 sites), `jsonschema/overlay.go`, `jsonschema/schema.go`.
+- ✅ **POOL-2 — removed the dead, pooling-incompatible `Builder` pool.** `light.BorrowBuilder` /
+  `RedeemBuilder` had no callers, and `Builder.Reset` deliberately keeps `b.s` (the reuse benchmark
+  `builder_cow_test.go` does `rb.Reset()` then keeps building, so the store must survive `Reset`). Since
+  `PoolRedeemable`'s only cleanup hook is `Reset`, a pooled `Builder` would pin its store while idle —
+  exactly the leak the redeem-reset contract forbids. Rather than ship that, the unused pool is removed.
+  If builder pooling is wanted later, resolve the `Reset`-keeps-store vs pool-clears-store tension first.
+- ✅ **POOL-3 — added the missing pool tests** (`pools_test.go`, none existed): `ParentContext.Reset`
+  drops every injected reference (no idle pin), borrow/redeem round-trip is clean, and the double-redeem
+  guard panics — for both the context and path pools. Green under `-race` and `-tags poolsdebug`.
+- 🐞 **Pre-existing, out of scope (jsonschema WIP, not from this change):** `jsonschema` does not compile
+  on its own today — `schema.go:106/108 undefined: meta.Data`, and `octx declared and not used` in
+  `core.go:185` / `applicator.go:209` (files untouched here). Flagged for the owner.
+
 ---
 
 ## 3. Proposed sequencing (for review — not started)

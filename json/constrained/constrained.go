@@ -88,7 +88,7 @@ func (d *Object) mustBeObject(
 }
 
 func (d *Object) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
@@ -99,7 +99,7 @@ func (d *Object) decode(lex lexers.Lexer) error {
 	n := d.Node()
 	n.Decode(context)
 
-	light.RedeemParentContext(context)
+	redeemContext()
 	poolOfObjectContexts.Redeem(octx)
 
 	return lex.Err()
@@ -176,7 +176,7 @@ func (d *Array) mustBeArray(
 }
 
 func (d *Array) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
@@ -186,7 +186,7 @@ func (d *Array) decode(lex lexers.Lexer) error {
 
 	n := d.Node()
 	n.Decode(context)
-	light.RedeemParentContext(context)
+	redeemContext()
 	poolOfArrayContexts.Redeem(octx)
 
 	return lex.Err()
@@ -273,7 +273,7 @@ func (d *StringOrArrayOfStrings) mustBeStringOrArrayOfStrings(
 }
 
 func (d *StringOrArrayOfStrings) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
@@ -283,7 +283,7 @@ func (d *StringOrArrayOfStrings) decode(lex lexers.Lexer) error {
 
 	n := d.Node()
 	n.Decode(context)
-	light.RedeemParentContext(context)
+	redeemContext()
 	poolOfStringOrArrayContexts.Redeem(octx)
 
 	return lex.Err()
@@ -367,7 +367,7 @@ func (d *BoolOrObject) mustBeBoolOrObject(
 }
 
 func (d *BoolOrObject) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
@@ -377,7 +377,7 @@ func (d *BoolOrObject) decode(lex lexers.Lexer) error {
 
 	n := d.Node()
 	n.Decode(context)
-	light.RedeemParentContext(context)
+	redeemContext()
 	poolOfBoolOrObjectContexts.Redeem(octx)
 
 	return lex.Err()
@@ -492,7 +492,7 @@ func (d *ObjectOrArrayOfObjects) elementMustBeObject(
 }
 
 func (d *ObjectOrArrayOfObjects) decode(lex lexers.Lexer) error {
-	context := light.BorrowParentContext()
+	context, redeemContext := light.BorrowParentContext()
 	context.L = lex
 	context.S = d.Store()
 	context.DO = d.hooks()
@@ -502,7 +502,7 @@ func (d *ObjectOrArrayOfObjects) decode(lex lexers.Lexer) error {
 
 	n := d.Node()
 	n.Decode(context)
-	light.RedeemParentContext(context)
+	redeemContext()
 	poolOfObjectOrArrayOfObjectsContexts.Redeem(octx)
 
 	return lex.Err()
