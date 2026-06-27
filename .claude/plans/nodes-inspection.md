@@ -294,6 +294,30 @@ slot. JSON-Pointer escaping in `String()` (`~`→`~0`, `/`→`~1`, single-pass `
   `TestAccessorArray`, `TestAccessorScalarKindGuards`). Index integrity itself (keysIndex↔children) was
   the C1–C4 builder track, already fixed; the accessors trust that invariant.
 
+### Coverage pass (go-fred-mcp `coverage_details` + `go tool cover`)
+
+Note: the MCP `coverage_details` reads source from the *main* repo root (`workspace_root`), not the
+worktree, so its line numbers/function list reflect master — use it for the directional signal, but
+`go tool cover -func` on the worktree profile for ground truth. Lifted the package **76.1% → 90.6%**.
+
+- ✅ **COV-1 — numeric builder family was the biggest real gap (~0%).** `Float64Value`, `Float32Value`,
+  `IntegerValue`, `UintegerValue` (0%), `NumericalValue` (11%, a 20-arm `any` type switch), and the
+  `buildFrom{Float,Integer,Uinteger,TextAppender}` helpers — all public API, all untested. Added
+  `TestBuilderNumberConstructors`, `TestBuilderNumericalValue` (every supported type incl. `*big.Int/
+  big.Int/*big.Float/big.Float/*big.Rat/big.Rat/string/[]byte`), and `TestBuilderNumericalValueErrorsAndNoops`
+  (unsupported type, bad string/bytes, nil-pointer & empty no-ops). Each round-trips through the store's
+  BCD encoding and the writer (`Dump`), so this also exercises number storage end-to-end.
+- ✅ **COV-2 — other 0% public methods covered:** `WithStore`, `WithContext` (+ `Node.Context` /
+  `Context.Offset` getters), `SetErr`, `ClearChildren` (container + non-container error), and
+  `IsBool`/`IsNumber`/`IsString` on the non-scalar branch (`TestBuilderMiscPublicMethods`).
+- ✅ **COV-3 — builder error short-circuit contract pinned.** `TestBuilderShortCircuitsOnError` drives
+  every value/structural method on an already-errored builder in one chain: all are no-ops, the error is
+  preserved, nothing panics — covering the `!b.Ok()` guard branch across the API at once.
+- ℹ️ **Left uncovered deliberately (~9%):** unreachable invariant panics (`addKeyToPath`/`addElemToPath`
+  `panic("assert")`, `drainValue`'s early-EOF guard) and the structural-builder error branches
+  (`InsertElem`/`RemoveElem` bounds, `requireObject`/`requireArray`) which belong to the C/M/D builder
+  track and its `builder_index_test`. Not worth contriving tests for defensive/unreachable code.
+
 ### Pools (`pools.go`) — combed before the decode path
 
 Per Fred: standardize on the `pools.PoolRedeemable` variant (cached, alloc-free, built-in redeemer that
