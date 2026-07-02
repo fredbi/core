@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Line/column accounting lives ONLY in the verbatim lexer now. The semantic lexer
+// L deliberately exposes no Line()/Column() (tracking them is costly on
+// whitespace-heavy input and cannot be recovered lazily on a streaming buffer —
+// see the note in lexer.go). These tests pin the verbatim position contract on
+// [VL] and [token.VT]. Byte position for the semantic lexer is [L.Offset].
+
 type pos struct{ line, col int }
 
 // doc spans two lines; column/line are 1-based:
@@ -15,7 +21,7 @@ type pos struct{ line, col int }
 //	line 1: {"a": 12,
 //	line 2:  "b": true}
 //
-// expected start positions of every token (separators included):
+// expected start positions of every token (separators included; VL never elides):
 //
 //	{    (1,1)
 //	"a"  (1,2)   :  (1,5)   12  (1,7)   ,  (1,9)
@@ -31,36 +37,6 @@ func posWant() []pos {
 }
 
 func TestLinePosition(t *testing.T) {
-	t.Run("L exposes start line/column via methods (separators kept)", func(t *testing.T) {
-		lex := NewWithBytes([]byte(posDoc), WithElideSeparator(false))
-
-		var got []pos
-		for {
-			tok := lex.NextToken()
-			if !lex.Ok() || tok.IsEOF() {
-				break
-			}
-			got = append(got, pos{lex.Line(), lex.Column()})
-		}
-		require.NoError(t, lex.Err())
-		assert.Equal(t, posWant(), got)
-	})
-
-	t.Run("L streaming with a tiny buffer reports the same positions", func(t *testing.T) {
-		lex := New(strings.NewReader(posDoc), WithElideSeparator(false), WithBufferSize(4))
-
-		var got []pos
-		for {
-			tok := lex.NextToken()
-			if !lex.Ok() || tok.IsEOF() {
-				break
-			}
-			got = append(got, pos{lex.Line(), lex.Column()})
-		}
-		require.NoError(t, lex.Err())
-		assert.Equal(t, posWant(), got)
-	})
-
 	t.Run("VL carries start line/column in the token", func(t *testing.T) {
 		vl := NewVerbatimWithBytes([]byte(posDoc))
 
@@ -73,11 +49,10 @@ func TestLinePosition(t *testing.T) {
 			got = append(got, pos{tok.Line(), tok.Col()})
 		}
 		require.NoError(t, vl.Err())
-		// VL never elides, so it yields the same token set and positions
 		assert.Equal(t, posWant(), got)
 	})
 
-	t.Run("VL methods (promoted from L) agree with token fields", func(t *testing.T) {
+	t.Run("VL methods agree with the token fields", func(t *testing.T) {
 		vl := NewVerbatimWithBytes([]byte(posDoc))
 		for {
 			tok := vl.NextToken()
@@ -90,25 +65,19 @@ func TestLinePosition(t *testing.T) {
 		require.NoError(t, vl.Err())
 	})
 
-	t.Run("default L (elision on) keeps correct positions for surfaced tokens", func(t *testing.T) {
-		// with elision, only { "a" 12 "b" true } are surfaced
-		lex := NewWithBytes([]byte(posDoc))
+	t.Run("VL streaming with a tiny buffer reports the same positions", func(t *testing.T) {
+		vl := NewVerbatim(strings.NewReader(posDoc), WithBufferSize(4))
 
 		var got []pos
 		for {
-			tok := lex.NextToken()
-			if !lex.Ok() || tok.IsEOF() {
+			tok := vl.NextToken()
+			if !vl.Ok() || tok.IsEOF() {
 				break
 			}
-			got = append(got, pos{lex.Line(), lex.Column()})
+			got = append(got, pos{tok.Line(), tok.Col()})
 		}
-		require.NoError(t, lex.Err())
-		assert.Equal(t, []pos{
-			{1, 1},         // {
-			{1, 2}, {1, 7}, // "a" 12
-			{2, 2}, {2, 7}, // "b" true
-			{2, 11}, // }
-		}, got)
+		require.NoError(t, vl.Err())
+		assert.Equal(t, posWant(), got)
 	})
 }
 
@@ -120,17 +89,17 @@ func TestLinePositionMultiline(t *testing.T) {
 	//	line3:   2,
 	//	line4:   3
 	//	line5: ]
-	lex := NewWithBytes([]byte(doc), WithElideSeparator(false))
+	vl := NewVerbatimWithBytes([]byte(doc))
 
 	var got []pos
 	for {
-		tok := lex.NextToken()
-		if !lex.Ok() || tok.IsEOF() {
+		tok := vl.NextToken()
+		if !vl.Ok() || tok.IsEOF() {
 			break
 		}
-		got = append(got, pos{lex.Line(), lex.Column()})
+		got = append(got, pos{tok.Line(), tok.Col()})
 	}
-	require.NoError(t, lex.Err())
+	require.NoError(t, vl.Err())
 	assert.Equal(t, []pos{
 		{1, 1},         // [
 		{2, 3}, {2, 4}, // 1 ,

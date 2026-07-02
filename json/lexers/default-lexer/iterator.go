@@ -35,10 +35,11 @@ func (l *L) Tokens() iter.Seq[token.T] {
 		// in a local across the whole scan (no per-byte struct writes). Streaming
 		// and value-capped modes keep the proven NextToken loop.
 		if l.wholeBuffer && l.maxValueBytes == 0 {
-			// route the whole-buffer push path through the policy-parameterized
-			// core via a non-generic wrapper (keeps Tokens inlinable; see
-			// scanPushSemantic).
-			l.scanPushSemantic(yield)
+			// route the whole-buffer push path through the DEVIRTUALIZED core (adopted
+			// 2026-06-27: +7..+18% over the generic core on push, measured in-binary;
+			// see devirt_bench_test + plan §5.1). The generic shim scanPushSemantic is
+			// retained as the A/B baseline. Non-inlined wrapper keeps Tokens inlinable.
+			l.scanPushSemanticDevirt(yield)
 
 			return
 		}
@@ -65,7 +66,7 @@ func (l *L) Tokens() iter.Seq[token.T] {
 func (l *VL) Tokens() iter.Seq[token.VT] {
 	return func(yield func(token.VT) bool) {
 		if l.wholeBuffer && l.maxValueBytes == 0 {
-			l.scanPushVerbatim(yield)
+			l.scanPushVerbatimDevirt(yield)
 
 			return
 		}

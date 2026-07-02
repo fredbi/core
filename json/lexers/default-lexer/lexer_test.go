@@ -643,11 +643,12 @@ func getLexerWithBytes(fixture string) *L {
 }
 
 func TestResetWithBytesReuse(t *testing.T) {
-	// drain a lexer into a comparable list of tokens (kind + value + position)
+	// drain a lexer into a comparable list of tokens (kind + value). The semantic
+	// lexer no longer tracks line/column (position is a verbatim-lexer concern);
+	// kind+value is enough to prove ResetWithBytes clears carried-over state.
 	type tok struct {
-		kind      token.Kind
-		value     string
-		line, col int
+		kind  token.Kind
+		value string
 	}
 	drainAll := func(l *L) ([]tok, error) {
 		var out []tok
@@ -659,7 +660,7 @@ func TestResetWithBytesReuse(t *testing.T) {
 			if tk.IsEOF() {
 				return out, nil
 			}
-			out = append(out, tok{tk.Kind(), string(tk.Value()), l.Line(), l.Column()})
+			out = append(out, tok{tk.Kind(), string(tk.Value())})
 		}
 	}
 

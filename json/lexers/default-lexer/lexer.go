@@ -127,19 +127,13 @@ func (l *L) Offset() uint64 {
 	return l.offset
 }
 
-// Line yields the 1-based line number at which the most recently returned token
-// starts. It is 0 before the first token.
-//
-// Line tracking is always on; its cost is one increment per newline byte.
-func (l *L) Line() int {
-	return l.tokLine
-}
-
-// Column yields the 1-based column at which the most recently returned token
-// starts. It is 0 before the first token.
-func (l *L) Column() int {
-	return l.tokCol
-}
+// The semantic lexer deliberately does NOT expose line/column. Tracking them is
+// costly on whitespace-heavy input (it forces newline counting in the whitespace
+// skip — measured ~-28% on citm; see ramblings/2026-06-linecol-cost-decomposition),
+// and it cannot be computed lazily either, because a streaming buffer discards past
+// bytes. Position is a verbatim-lexer concern: use [VL] / [token.VT] (VL.Line /
+// VL.Column, or VT.Line / VT.Col), which carry it. The byte position is always
+// available via [L.Offset].
 
 // NextToken returns the next JSON token consumed from the stream or slice of bytes.
 //
@@ -157,8 +151,10 @@ func (l *L) Column() int {
 // If you want to keep tokens for later reuse, you may clone a token
 // using its [T.Clone] method.
 func (l *L) NextToken() token.T {
-	// unified pull core (semantic policy); see generic.go.
-	return scanTokenG[token.T, semanticPolicy](l, semanticPolicy{})
+	// devirtualized pull core (adopted 2026-06-27: +4.23% geomean over the generic
+	// core, no regressions; see plan §5.1 + devirt_bench_test). The generic
+	// scanTokenG is retained as lexgen's source-of-truth and the A/B baseline.
+	return scanTokenSemantic(l, semanticPolicy{})
 }
 
 // readMore provides more input from the internal buffer or

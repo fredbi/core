@@ -504,12 +504,29 @@ Notes:
 - Measure on `strings_plain`, `strings_escaped_long`, `whitespace_heavy`, citm;
   needs an AVX-512 CPU-feature check + a scalar fallback (build tag / runtime guard).
 
-### 9.4 Retrofit lab → master (§7) ⬜
-Once 9.1 (and maybe 9.2) land, cherry-pick the proven lab gains onto the reference
-`default-lexer`: devirt (push+pull) via lexgen, number full-grammar fast path,
-string fast/slow split + FirstByte, adaptive-SWAR slow path, jsontext-style
-whitespace skip, drop semantic line/col (position → verbatim only). Re-run the gate
-on master to confirm parity holds post-retrofit.
+### 9.4 Retrofit lab → reference ✅ (done 2026-07-02, ahead of 9.1)
+Promoted the whole first-workable lab version onto the reference `default-lexer`
+(Fred: "reap the benefit … before the next lab experiment"). Done ahead of 9.1 so
+the next lab experiment forks from a devirt'd baseline. What moved (all impl files
+byte-identical to lab modulo `package lab`→`package lexer`):
+- generic.go (tracksPosition gating, consumeWhitespace batch-skip, full number +
+  string fast paths), iterator.go (push → devirt shims), lexer.go (NextToken →
+  scanTokenSemantic; semantic L.Line()/Column() REMOVED), number.go, string.go
+  (fast/slow split + adaptive-SWAR), verbatim.go (VL.Line()/Column() added).
+- NEW: devirt.go (noinline push shims), scan_gen.go (REGENERATED in-place; byte-
+  identical to lab), internal/lexgen/ (generator, header pkg → lexer).
+- `internal/swar` was already in the reference — kept as-is (lab imported it).
+- Tests fixed for the dropped semantic position: lexer_test.go
+  (TestResetWithBytesReuse drops line/col), position_test.go (rewritten
+  verbatim-only). Brought devirt_test.go + devirt_bench_test.go as the
+  generic↔generated equivalence guard (scan_gen.go is generated → must not drift).
+- VERIFIED: build/vet/test/`-race` green; `go generate` idempotent (scan_gen.go
+  unchanged on re-run); devirt cores inline (gcflags -m); no external consumer used
+  semantic Line()/Column(); json module + direct consumers (json, nodes/light,
+  benchmarks) build+pass. Bench confirms win carried: twitter +54% vs jsontext,
+  citm_min ahead, citm pull near-parity; default-lexer/* == lab/* within noise.
+- lab/ left in place (stale duplicate of reference now) as the base to re-sync for
+  the NEXT experiment — re-sync when that starts, not now.
 
 ### 9.5 Publish the benchmark chart ⬜
 Produce barcharts (lab vs jsontext vs reference vs easyjson) from the gate

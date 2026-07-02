@@ -62,8 +62,19 @@ func NewVerbatimWithBytes(data []byte, opts ...Option) *VL {
 // the memory backing the previous token's value is reused. To keep a token, use
 // its Clone() method.
 func (l *VL) NextToken() token.VT {
-	return scanTokenG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
+	// devirtualized pull core (adopted 2026-06-27); see [L.NextToken].
+	return scanTokenVerbatim(l.L, verbatimPolicy{})
 }
+
+// Line yields the 1-based line number at which the most recently returned token
+// starts (0 before the first token). The verbatim lexer maintains line/column
+// accounting (the semantic lexer does not — see lexer.go); the cost is already
+// paid, so these accessors are free. Per-token position is also on [token.VT].
+func (l *VL) Line() int { return l.tokLine }
+
+// Column yields the 1-based column at which the most recently returned token
+// starts (0 before the first token). See [VL.Line].
+func (l *VL) Column() int { return l.tokCol }
 
 // Reset returns the verbatim lexer to a clean, source-less state for reuse,
 // scrubbing the embedded L (which drops references to caller-supplied memory)
