@@ -452,14 +452,28 @@ func scanPushSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool) {
 
 		switch b {
 		case lineFeed:
-			i++
-			if p.tracksPosition() {
-				l.line++
-				l.lineStart = uint64(i)
+			if !p.tracksPosition() {
+				// semantic: batch-skip the whole whitespace run in one shot (the
+				// citm/indentation bottleneck), mirroring the pull core. Gated by
+				// the compile-time tracksPosition() constant so the verbatim core,
+				// which must walk each blank to accumulate the preceding-blanks
+				// slice and count lines, keeps its per-byte path below. Register-
+				// safe: the semantic core has headroom since it dropped line/col.
+				i += consumeWhitespace(data[i:])
+
+				continue
 			}
+			i++
+			l.line++
+			l.lineStart = uint64(i)
 
 			continue
 		case blank, tab, carriageReturn:
+			if !p.tracksPosition() {
+				i += consumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
+
+				continue
+			}
 			i++
 
 			continue
@@ -1345,14 +1359,28 @@ func scanPushVerbatimCore(l *L, p verbatimPolicy, yield func(token.VT) bool) {
 
 		switch b {
 		case lineFeed:
-			i++
-			if p.tracksPosition() {
-				l.line++
-				l.lineStart = uint64(i)
+			if !p.tracksPosition() {
+				// semantic: batch-skip the whole whitespace run in one shot (the
+				// citm/indentation bottleneck), mirroring the pull core. Gated by
+				// the compile-time tracksPosition() constant so the verbatim core,
+				// which must walk each blank to accumulate the preceding-blanks
+				// slice and count lines, keeps its per-byte path below. Register-
+				// safe: the semantic core has headroom since it dropped line/col.
+				i += consumeWhitespace(data[i:])
+
+				continue
 			}
+			i++
+			l.line++
+			l.lineStart = uint64(i)
 
 			continue
 		case blank, tab, carriageReturn:
+			if !p.tracksPosition() {
+				i += consumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
+
+				continue
+			}
 			i++
 
 			continue
