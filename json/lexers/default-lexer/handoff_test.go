@@ -98,7 +98,7 @@ func TestHandoffTokensThenNextToken_Verbatim(t *testing.T) {
 		line, col int
 	}
 	mk := func(x token.VT) tk {
-		return tk{x.Kind(), string(x.Value()), string(x.Blanks()), x.Line(), x.Col()}
+		return tk{x.Kind(), string(x.Value()), string(x.Blanks()), x.Line(), x.Column()}
 	}
 
 	for name, data := range acceptFixtures(t) {

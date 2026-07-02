@@ -90,12 +90,14 @@ const (
 
 	// String token.
 	//
-	// Decoded strings are unescaped by [T], and left unchanged by [VT].
+	// [T.Value] is unescaped (decoded); [VT.Value] keeps the raw source bytes
+	// (escapes intact) for faithful round-tripping — decode on demand with
+	// [VT.Unescaped] / [VT.UnescapedString].
 	String
 
 	// Key string token.
 	//
-	// Decoded strings are unescaped by [T], and left unchanged by [VT].
+	// Like [String]: [T.Value] is decoded, [VT.Value] is raw (see [VT.Unescaped]).
 	Key
 
 	// Number JSON token.
@@ -338,9 +340,9 @@ func (t VT) Line() int {
 	return t.line
 }
 
-// Col returns the 1-based column of the start of the token's significant content
-// (0 if not set).
-func (t VT) Col() int {
+// Column returns the 1-based column of the start of the token's significant
+// content (0 if not set). It mirrors [VL.Column] on the verbatim lexer.
+func (t VT) Column() int {
 	return t.col
 }
 

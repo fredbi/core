@@ -54,8 +54,10 @@ func WithStrictNumber(enabled bool) Option {
 //
 // Disable it (WithElideSeparator(false)) to receive every separator token.
 //
-// This option has no effect on the verbatim lexer [VL], which always preserves
-// all tokens (including separators) for faithful round-tripping.
+// The verbatim lexer [VL] honors this option too, but defaults to NOT eliding
+// (elide-off) so its stream stays faithful and round-trippable. Pass
+// WithElideSeparator(true) to a verbatim constructor to drop "," and ":" there
+// as well; it is up to the caller to decide.
 func WithElideSeparator(enabled bool) Option {
 	return func(o *options) {
 		o.elideSeparator = enabled

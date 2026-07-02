@@ -528,6 +528,34 @@ byte-identical to lab modulo `package lab`→`package lexer`):
 - lab/ left in place (stale duplicate of reference now) as the base to re-sync for
   the NEXT experiment — re-sync when that starts, not now.
 
+### 9.4b Verbatim-token API hardening ✅ (done 2026-07-02, pre-lab prep)
+Three API/behaviour fixes Fred asked to lock in before the next lab session:
+1. Position accessors: `token.VT.Col()` → `VT.Column()` (renamed, matches
+   `VL.Column`); semantic `L` still has none. Call sites updated (handoff/position
+   tests).
+2. Verbatim strings are now kept RAW (escapes intact) instead of eagerly decoded —
+   the documented `[VT]` contract that the impl had been violating (a
+   round-tripping bug: `A` had re-emitted as `A`). `VT.Value()` = raw source;
+   new `VT.Unescaped() []byte` / `VT.UnescapedString() string` decode on demand
+   (validated at scan time, so no error path). New raw scanners `consumeStringRaw*`
+   (string_raw.go) validate every escape but don't materialise — whole-buffer
+   aliases (zero copy), streaming copies raw; adaptive SWAR clean-run skip. Decoder
+   lives standalone in the token pkg (token/unescape.go, no lexer dep).
+   KEY: dispatch is inside `consumeString` on `l.trackBlanks` (the VL flag), NOT in
+   the shared scan core — so generic.go/scan_gen.go are BYTE-IDENTICAL to baseline
+   (routing it through the policy or an inline core branch perturbed the semantic
+   core's escape analysis → +1 alloc under -race; §9.1 fragility, avoided). Writer
+   ripple fixed: default-writer `VerbatimToken` writes raw string values between
+   quotes WITHOUT re-escaping (would double-encode); added the missing byte-exact
+   round-trip test (writer_test TODO). Store round-trip verified.
+3. `WithElideSeparator` now honoured by VL (default false / elide-off for faithful
+   round-trip; caller may opt in) — was hard-clobbered in VL.reset(); fixed via a
+   prepended default option + dropping the clobber.
+   PERF: verbatim raw on escaped_long 1140→1846 MB/s (SWAR clean-run skip), now
+   BEATS jsontext (1661) with fewer allocs (352B/4 vs old 968B/6, no decode buffer).
+   VERIFIED: build/vet/`-race` green across token/default-lexer/default-writer/
+   default-store + json/nodes; generate idempotent; semantic core unchanged.
+
 ### 9.5 Publish the benchmark chart ⬜
 Produce barcharts (lab vs jsontext vs reference vs easyjson) from the gate
 benchmark JSON, using Fred's `benchviz` tool (as done for the default-writer). Wire
