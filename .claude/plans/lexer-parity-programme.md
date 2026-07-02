@@ -452,29 +452,41 @@ point: WIN/parity on 4/5 real corpora + content-rich data; trails are understood
 
 Ordered by priority for the resume:
 
-### 9.1 The unstable main loop ⚠️ (top concern)
-Symptom seen ALL session: adding one line/MV to `scanTokenG` perturbs *unrelated*
-arms (notably numbers) by several % — fragile, non-local. Theories: register
-pressure (the giant function spills; amd64 has 16 GP regs), or inlining flipping on
-an arm. **It doesn't feel right and it caps every other optimization.** Plan:
-1. **Diagnose the mechanism** on a known-perturbing change (e.g. re-add a line to the
-   number arm): diff `-gcflags=-m` (did an inline decision flip?), diff the STEXT
-   `locals=` frame size (did it spill?), and diff the number arm's asm
-   (`-gcflags=-S`) counting spill/reload (`MOVQ ...(SP)`). Pin spill-vs-inline-flip.
-2. **Structural fix hypothesis: split the core.** Extract per-token-type handlers
-   (number fast path, string, delimiter/structure) out of `scanTokenG` into
-   functions so each arm's codegen is independent. We have strong precedent that
-   splitting stabilizes (the string fast/slow split fixed BOTH the FirstByte
-   regression AND, as a side effect, the devirt-pull regression). Success metric:
-   after the split, adding a line to one arm no longer moves the others.
-3. Keep the lexgen generator working through the split (cores stay the source of
-   truth; helpers are shared methods, not monomorphized).
+### 9.1 The unstable main loop — DIAGNOSED at the register level (2026-07-02)
+Symptom seen ALL session: adding one line to `scanTokenG`/`scanPushG` perturbs
+*unrelated* arms (notably numbers) by several %. **Mechanism CONFIRMED via
+disassembly** (method: `-gcflags=-S` → isolate the fn by its `ABIInternal`
+boundary → normalize away addresses/jump-targets/SP-offsets/temp-ids → diff
+mnemonic+register operands; NOT just frame-size/spill proxies):
+- **Root cause = register saturation.** The push main loop references ALL 14
+  allocatable GP regs (AX BX CX DX SI DI BP R8–R13 R15; only R14/g reserved). Zero
+  headroom → historically any addition forced reallocation somewhere.
+- **The line/col decision was the lever.** When the semantic core still tracked
+  line/col, `l.line`/`l.lineStart` were live across EVERY arm (per-token position),
+  holding ~2 regs hostage globally → no headroom → the §9.2 whitespace batch-skip
+  regressed numbers ~-6.35% (why it was reverted). Dropping line/col (§9.4/§5) freed
+  those regs. PROOF at the register level: re-adding the batch-skip now adds only
+  whitespace-local instrs (CMPB $9/$10/$13/$32 + SWAR mask on R9–R13); the number/
+  string/delimiter arms are BYTE-IDENTICAL, spills 72→72. Clean (§9.2 shipped).
+- **Spill contrast = the headroom map.** semantic pull core 12 spills ($32 frame),
+  semantic push 72 ($88); VERBATIM pull 130 ($256), verbatim push 208 ($336). The
+  verbatim cores are the register-starved ones (position + blanks tracking live
+  across the loop) — that's where a future addition WILL still ripple.
+Takeaways: (a) the semantic cores are now stable — the instability was position
+tracking eating the register budget, and we already removed it; (b) remaining §9.1
+risk is verbatim-only. Structural options if verbatim needs de-pressuring: split
+per-token-type handlers out of the core into functions (precedent: string fast/slow
+split fixed FirstByte + devirt-pull), or move blanks/position off hot registers.
+lexgen must keep working through any split (cores stay source of truth).
 
-### 9.2 Push-core whitespace skip ⬜ (clear, small win)
-The gate showed push trails pull on whitespace-heavy (citm push 74% vs pull 91%;
-whitespace_heavy too) because `consumeWhitespace` is **pull-only**. Apply the same
-batch skip to `scanPushG`'s semantic path (`i += consumeWhitespace(data[i:])`).
-Expect citm push → pull-level. Low risk; do early.
+### 9.2 Push-core whitespace skip ✅ (done 2026-07-02, commit 684aef1)
+`scanPushG` walked whitespace byte-by-byte; routed the SEMANTIC push path into the
+same `i += consumeWhitespace(data[i:])` batch-skip the pull core uses, gated by the
+existing `tracksPosition()` compile-time constant (verbatim keeps per-byte: it must
+accumulate the preceding-blanks slice + count lines). RESULT: citm push +28%
+(1040→1334 MB/s), canada/twitter neutral-to-positive, pull core BYTE-IDENTICAL.
+This is the change that regressed unrelated arms before (§9.1) — clean NOW, and the
+register-level proof IS the §9.1 finding below.
 
 ### 9.3 AVX-512 SIMD via avo (refinement AND a relief valve for 9.1) ⬜
 Idea (Fred): replace the 64-bit (8-byte) SWAR string-stop scan with avo-generated
