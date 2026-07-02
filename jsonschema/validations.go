@@ -12,8 +12,8 @@ import (
 
 // Validation captures the JSON schema vocabulary considered as "validation" by JSON schema draft 2020.
 //
-// This includes the following JSON schema keywords:
-
+// This includes the following JSON schema keywords.
+//
 // General validations:
 //
 //   - type
