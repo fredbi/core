@@ -575,8 +575,39 @@ easyjson jlexer, json/v2 jsontext. `benchviz/throughput.png` rendered with Fred'
 benchviz (vintage theme, median of 6 runs); `benchviz/README.md` carries the
 allocation table (ours: doc-size-independent few-alloc; easyjson: 17k–102k
 allocs/op; jsontext: 26–262). Registered in go.work; standalone go.sum. Findings:
-L leads twitter/golang/canada, jsontext wins whitespace-heavy citm; VL trades
-throughput for round-trip fidelity (blanks + line/col + raw strings).
+L leads twitter/golang/canada (and citm after §9.2 — 1315 vs jsontext 1172); VL
+trades throughput for round-trip fidelity (blanks + line/col + raw strings).
+
+### 9.6 VT-only de-pressuring stream ⏸️ PARKED (resume later)
+The §9.1 register saturation is resolved for the SEMANTIC path (the load-bearing
+one); the VERBATIM cores remain register-starved (pull 130 spills/$256, push 208/
+$336) because position + blanks tracking is live across the loop. These levers
+would speed VL and de-pressure its cores. Parked by Fred 2026-07-02 — VL is the
+round-trip lane (formatters/linters/byte-faithful re-emit); pursue only if VL
+throughput is on a hot path. Scope: 1/2/4 are VT-only (semantic byte-identical);
+3 reaches the shared core (would put a call into scanTokenSemantic too → must be
+re-validated on semantic). Tier 1 = the perf win, Tier 2 = the register fix.
+- **Tier 1 (speed; also shrinks the loop body):**
+  1. Alias the blanks in whole-buffer mode (`data[blankStart:i:i]`) instead of the
+     current per-byte `append` — the push core already does this; bring it to pull.
+     Removes a growing live slice + the per-byte copy. (Streaming still copies.)
+  2. Batch-skip the whitespace run while counting newlines in ONE pass — a
+     `consumeWhitespaceCounting(data) (n, newlines, lastNLoffset)` (SWAR popcount of
+     newlines over the same words). Updates l.line/l.lineStart once per run, not per
+     byte. This is the VL analog of §9.2; expected to close most of the citm-VL gap
+     (524 → toward L's level).
+- **Tier 2 (actual register de-pressuring):**
+  4. Non-inline the VT emit: move `AsVerbatim().WithPosition()` behind a
+     //go:noinline shim so the wider-token construction leaves the core (same lever
+     as §9.3 "asm never inlines → shrinks the caller"). One-line change, measurable
+     frame delta — do this BEFORE #3 to see if shrinking suffices.
+  3. Split the inline value arms (number fast path, delimiter/structure) out of the
+     core into methods so they stop sharing registers with the position state.
+     SHARED-core change (hits semantic too — re-validate). Precedent: the string
+     fast/slow split fixed FirstByte + devirt-pull.
+- NOT viable: fully-lazy line/col — `line` is a cumulative running sum across
+  tokens (can't be made loop-free without O(n) rescan); column could derive from
+  blanks but line can't. Position stays a running counter; Tier 1 makes it cheap.
 
 ### Parked / not chasing
 - Tiny-token dispatch floor (bools_nulls 36%): jsontext is leaner per token; the
