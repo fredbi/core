@@ -13,10 +13,16 @@ Rendered with [benchviz](https://github.com/fredbi/benchviz).
 
 ## What you are looking at
 
-Each cluster is one workload; within it, the four bars are the tokenizers, side by
-side. Longer is faster. The numbers are the **median of 3 runs**. Each tokenizer
-drains the whole document to EOF; `b.SetBytes` is the input size, so the bars are
-*input* throughput. Workloads are ordered top-to-bottom by L/jsontext ratio.
+The 16 workloads are split into **4 scenario charts** — number-heavy, string /
+document-heavy, structured & mixed, and social / edge cases — so each auto-scales
+to its own range. Within a chart, each cluster is one workload and the four bars
+are the tokenizers side by side. Longer is faster. The numbers are the **median of
+3 runs**. Each tokenizer drains the whole document to EOF; `b.SetBytes` is the input
+size, so the bars are *input* throughput.
+
+> Rendering the context-only y-axis labels (no redundant `lexers - ` prefix) needs
+> a benchviz that drops the function prefix for single-function charts and honors
+> the version `title` in the legend — see the config note below.
 
 ## Untrained ground
 
