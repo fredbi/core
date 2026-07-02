@@ -16,7 +16,9 @@ drains the whole document to EOF; `b.SetBytes` is the input size, so the bars ar
 *input* throughput.
 
 - **`L` (semantic)** — our default lexer: SWAR fast-path scan, decodes string
-  escapes, elides structural separators. It leads on three of the four workloads.
+  escapes, elides structural separators, and batch-skips whitespace runs. It leads
+  on **all four** workloads, including whitespace-heavy `citm_catalog` (1315 vs
+  jsontext's 1172 MB/s).
 - **`VL` (verbatim)** — our verbatim lexer: it does strictly *more* work than `L`
   (preserves the insignificant whitespace between tokens, tracks 1-based
   line/column, and keeps string values raw for byte-faithful round-tripping), so
@@ -25,8 +27,8 @@ drains the whole document to EOF; `b.SetBytes` is the input size, so the bars ar
   conversion), to match what our lexer does.
 - **`json/v2` (jsontext)** — a fully RFC 8259-validating streaming tokenizer; the
   closest peer to `L` (it validates number grammar and never converts to native
-  types). It wins on `citm_catalog`, a whitespace-heavy catalog where its minimal
-  per-token model shines.
+  types), and the stronger of the two external tokenizers — but `L` now edges it
+  on every workload, citm included.
 
 ### The workloads
 
