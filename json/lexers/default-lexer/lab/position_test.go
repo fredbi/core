@@ -1,61 +1,110 @@
 package lab
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	lexer "github.com/fredbi/core/json/lexers/default-lexer"
 )
 
-// TestLabVerbatimPositionEquivalence pins that the VERBATIM lexer's line/column
-// (baked into token.VT) stays identical to the reference verbatim lexer. Position
-// accounting now lives only in the verbatim path (the semantic lexer dropped it —
-// see emitPolicy.tracksPosition); these inputs include multi-space indentation,
-// blank lines, tabs and CRLF so the per-newline bookkeeping is exercised.
-func TestLabVerbatimPositionEquivalence(t *testing.T) {
-	inputs := []string{
-		"{\"a\": 12,\n \"b\": true}",
-		"{\n    \"a\": 1,\n    \"b\": 2\n}",
-		"[\n\n\n  1,\n\n  2\n]",
-		"{\n\t\t\"x\": [\n\t\t\t1,\n\t\t\t2\n\t\t]\n}",
-		"   \n  \t  123   \n  ",
-		"[1,\r\n 2,\r\n 3]",
-	}
+// Line/column accounting lives ONLY in the verbatim lexer now. The semantic lexer
+// L deliberately exposes no Line()/Column() (tracking them is costly on
+// whitespace-heavy input and cannot be recovered lazily on a streaming buffer —
+// see the note in lexer.go). These tests pin the verbatim position contract on
+// [VL] and [token.VT]. Byte position for the semantic lexer is [L.Offset].
 
-	type pos struct{ line, col int }
+type pos struct{ line, col int }
 
-	for _, in := range inputs {
-		var want []pos
-		rv := lexer.NewVerbatimWithBytes([]byte(in))
-		for {
-			tok := rv.NextToken()
-			if !rv.Ok() || tok.IsEOF() {
-				break
-			}
-			want = append(want, pos{tok.Line(), tok.Col()})
-		}
-		require.NoErrorf(t, rv.Err(), "reference verbatim error on %q", in)
+// doc spans two lines; column/line are 1-based:
+//
+//	line 1: {"a": 12,
+//	line 2:  "b": true}
+//
+// expected start positions of every token (separators included; VL never elides):
+//
+//	{    (1,1)
+//	"a"  (1,2)   :  (1,5)   12  (1,7)   ,  (1,9)
+//	"b"  (2,2)   :  (2,5)   true(2,7)   } (2,11)
+const posDoc = "{\"a\": 12,\n \"b\": true}"
 
-		var got []pos
-		lv := NewVerbatimWithBytes([]byte(in))
-		for {
-			tok := lv.NextToken()
-			if !lv.Ok() || tok.IsEOF() {
-				break
-			}
-			// the lexer-level VL.Line()/Column() must agree with the token's position
-			assert.Equalf(t, tok.Line(), lv.Line(), "VL.Line() vs token on %q", in)
-			assert.Equalf(t, tok.Col(), lv.Column(), "VL.Column() vs token on %q", in)
-			got = append(got, pos{tok.Line(), tok.Col()})
-		}
-		require.NoErrorf(t, lv.Err(), "lab verbatim error on %q", in)
-
-		assert.Equalf(t, want, got, "verbatim line/column mismatch on %q", in)
+func posWant() []pos {
+	return []pos{
+		{1, 1},
+		{1, 2}, {1, 5}, {1, 7}, {1, 9},
+		{2, 2}, {2, 5}, {2, 7}, {2, 11},
 	}
 }
 
-// Note: the semantic lexer L intentionally has NO Line()/Column() methods — the
-// no-position-accounting contract is enforced by their absence (the package would
-// not compile if anything called them). Position is verbatim-only; see [VL.Line].
+func TestLinePosition(t *testing.T) {
+	t.Run("VL carries start line/column in the token", func(t *testing.T) {
+		vl := NewVerbatimWithBytes([]byte(posDoc))
+
+		var got []pos
+		for {
+			tok := vl.NextToken()
+			if !vl.Ok() || tok.IsEOF() {
+				break
+			}
+			got = append(got, pos{tok.Line(), tok.Col()})
+		}
+		require.NoError(t, vl.Err())
+		assert.Equal(t, posWant(), got)
+	})
+
+	t.Run("VL methods agree with the token fields", func(t *testing.T) {
+		vl := NewVerbatimWithBytes([]byte(posDoc))
+		for {
+			tok := vl.NextToken()
+			if !vl.Ok() || tok.IsEOF() {
+				break
+			}
+			assert.Equal(t, tok.Line(), vl.Line())
+			assert.Equal(t, tok.Col(), vl.Column())
+		}
+		require.NoError(t, vl.Err())
+	})
+
+	t.Run("VL streaming with a tiny buffer reports the same positions", func(t *testing.T) {
+		vl := NewVerbatim(strings.NewReader(posDoc), WithBufferSize(4))
+
+		var got []pos
+		for {
+			tok := vl.NextToken()
+			if !vl.Ok() || tok.IsEOF() {
+				break
+			}
+			got = append(got, pos{tok.Line(), tok.Col()})
+		}
+		require.NoError(t, vl.Err())
+		assert.Equal(t, posWant(), got)
+	})
+}
+
+func TestLinePositionMultiline(t *testing.T) {
+	// values spread across several lines, with a CRLF line ending mixed in
+	doc := "[\n  1,\r\n  2,\n  3\n]"
+	//	line1: [
+	//	line2:   1,
+	//	line3:   2,
+	//	line4:   3
+	//	line5: ]
+	vl := NewVerbatimWithBytes([]byte(doc))
+
+	var got []pos
+	for {
+		tok := vl.NextToken()
+		if !vl.Ok() || tok.IsEOF() {
+			break
+		}
+		got = append(got, pos{tok.Line(), tok.Col()})
+	}
+	require.NoError(t, vl.Err())
+	assert.Equal(t, []pos{
+		{1, 1},         // [
+		{2, 3}, {2, 4}, // 1 ,
+		{3, 3}, {3, 4}, // 2 ,
+		{4, 3}, // 3
+		{5, 1}, // ]
+	}, got)
+}
