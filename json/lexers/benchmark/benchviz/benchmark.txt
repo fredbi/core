@@ -1,0 +1,20 @@
+goos: linux
+goarch: amd64
+pkg: github.com/fredbi/core/json/lexers/benchmark
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+BenchmarkLexers/canada_geometry/L-semantic-16         	    3453	    343810 ns/op	 786.49 MB/s	     328 B/op	       2 allocs/op
+BenchmarkLexers/canada_geometry/VL-verbatim-16        	    1357	    876380 ns/op	 308.55 MB/s	     352 B/op	       4 allocs/op
+BenchmarkLexers/canada_geometry/easyjson-16           	    2466	    484257 ns/op	 558.39 MB/s	     120 B/op	      12 allocs/op
+BenchmarkLexers/canada_geometry/jsontext-16           	    2684	    445448 ns/op	 607.04 MB/s	    1152 B/op	      26 allocs/op
+BenchmarkLexers/citm_catalog/L-semantic-16            	     572	   2019523 ns/op	 855.25 MB/s	     424 B/op	       4 allocs/op
+BenchmarkLexers/citm_catalog/VL-verbatim-16           	     348	   3440041 ns/op	 502.09 MB/s	     352 B/op	       4 allocs/op
+BenchmarkLexers/citm_catalog/easyjson-16              	     363	   3179161 ns/op	 543.29 MB/s	  258704 B/op	   26604 allocs/op
+BenchmarkLexers/citm_catalog/jsontext-16              	     742	   1563852 ns/op	1104.45 MB/s	   30656 B/op	     262 allocs/op
+BenchmarkLexers/golang_source/L-semantic-16           	     433	   2791749 ns/op	 695.07 MB/s	     328 B/op	       2 allocs/op
+BenchmarkLexers/golang_source/VL-verbatim-16          	     153	   7956276 ns/op	 243.89 MB/s	     352 B/op	       4 allocs/op
+BenchmarkLexers/golang_source/easyjson-16             	     163	   7689618 ns/op	 252.35 MB/s	 1016939 B/op	  102450 allocs/op
+BenchmarkLexers/golang_source/jsontext-16             	     321	   3701654 ns/op	 524.22 MB/s	    7008 B/op	     136 allocs/op
+BenchmarkLexers/twitter_status/L-semantic-16          	    1792	    680371 ns/op	 928.19 MB/s	    1768 B/op	       8 allocs/op
+BenchmarkLexers/twitter_status/VL-verbatim-16         	     970	   1227155 ns/op	 514.62 MB/s	     352 B/op	       4 allocs/op
+BenchmarkLexers/twitter_status/easyjson-16            	     744	   1635496 ns/op	 386.13 MB/s	  423945 B/op	   17874 allocs/op
+BenchmarkLexers/twitter_status/jsontext-16            	    1190	    986668 ns/op	 640.05 MB/s	    9584 B/op	      83 allocs/op

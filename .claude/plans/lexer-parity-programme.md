@@ -556,10 +556,15 @@ Three API/behaviour fixes Fred asked to lock in before the next lab session:
    VERIFIED: build/vet/`-race` green across token/default-lexer/default-writer/
    default-store + json/nodes; generate idempotent; semantic core unchanged.
 
-### 9.5 Publish the benchmark chart ⬜
-Produce barcharts (lab vs jsontext vs reference vs easyjson) from the gate
-benchmark JSON, using Fred's `benchviz` tool (as done for the default-writer). Wire
-the gate run to emit benchviz-consumable output.
+### 9.5 Publish the benchmark chart ✅ (done 2026-07-02)
+New self-contained module `json/lexers/benchmark` (mirrors `json/writers/benchmark`):
+4-way input-throughput comparison per corpus — L (semantic), VL (verbatim),
+easyjson jlexer, json/v2 jsontext. `benchviz/throughput.png` rendered with Fred's
+benchviz (vintage theme, median of 6 runs); `benchviz/README.md` carries the
+allocation table (ours: doc-size-independent few-alloc; easyjson: 17k–102k
+allocs/op; jsontext: 26–262). Registered in go.work; standalone go.sum. Findings:
+L leads twitter/golang/canada, jsontext wins whitespace-heavy citm; VL trades
+throughput for round-trip fidelity (blanks + line/col + raw strings).
 
 ### Parked / not chasing
 - Tiny-token dispatch floor (bools_nulls 36%): jsontext is leaner per token; the

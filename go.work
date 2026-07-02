@@ -22,6 +22,7 @@ use (
 	./go-swagger/examples
 	./json
 	./json/benchmarks
+	./json/lexers/benchmark
 	./json/lexers/contrib
 	./json/lexers/default-lexer/benchmarks/comparative
 	./json/lexers/default-lexer/benchmarks/extras
