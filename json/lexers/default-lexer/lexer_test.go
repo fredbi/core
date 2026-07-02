@@ -757,26 +757,10 @@ func TestPoolReuse(t *testing.T) {
 		require.GreaterOrEqual(t, cap(l.buffer), l.bufferSize)
 	})
 
-	t.Run("borrow/redeem cycle is allocation-free", func(t *testing.T) {
-		if pools.DebugBuild {
-			t.Skip("the poolsdebug build allocates a per-borrow redeemer to track redemptions")
-		}
-		// warm the pool so the first Borrow does not allocate the lexer itself
-		_, redeem := BorrowLexerWithBytes(docA)
-		redeem()
-
-		allocs := testing.AllocsPerRun(100, func() {
-			l, redeem := BorrowLexerWithBytes(docA)
-			for {
-				tk := l.NextToken()
-				if tk.IsEOF() || !l.Ok() {
-					break
-				}
-			}
-			redeem()
-		})
-		require.Zerof(t, allocs, "borrow→lex→redeem of a small doc must not allocate, got %v", allocs)
-	})
+	// NOTE: the "borrow/redeem cycle is allocation-free" assertion lives in
+	// lexer_norace_test.go (build tag !race): testing.AllocsPerRun is unreliable
+	// under -race (the detector instruments allocations), so it is enforced only in
+	// the normal build, which reflects production — mirrors writer_norace_test.go.
 
 	// In the poolsdebug build, assert the pool tracker recorded no leaked
 	// borrows from this test (a no-op in release builds).

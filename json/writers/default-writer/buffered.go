@@ -721,6 +721,15 @@ func (w *Buffered) VerbatimToken(tok token.VT) {
 	}
 
 	w.jw.writeBinary(tok.Blanks())
+
+	if k := tok.Kind(); k == token.String || k == token.Key {
+		w.jw.writeSingleByte(quote)
+		w.jw.writeBinary(tok.Value())
+		w.jw.writeSingleByte(quote)
+
+		return
+	}
+
 	w.Token(tok.T)
 }
 
