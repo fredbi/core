@@ -102,26 +102,36 @@ func TestElideSeparator(t *testing.T) {
 	})
 }
 
-func TestVerbatimNeverElides(t *testing.T) {
+func TestVerbatimElideSeparator(t *testing.T) {
 	const doc = `{"a": 1, "b": 2}`
 
-	// even if the option is requested, the verbatim lexer keeps every token
-	vl := NewVerbatimWithBytes([]byte(doc), WithElideSeparator(true))
+	countSeps := func(vl *VL) (commas, colons int) {
+		for {
+			tok := vl.NextToken()
+			if tok.IsEOF() {
+				break
+			}
+			if tok.IsComma() {
+				commas++
+			}
+			if tok.IsColon() {
+				colons++
+			}
+		}
+		require.NoError(t, vl.Err())
 
-	commas, colons := 0, 0
-	for {
-		tok := vl.NextToken()
-		if tok.IsEOF() {
-			break
-		}
-		if tok.IsComma() {
-			commas++
-		}
-		if tok.IsColon() {
-			colons++
-		}
+		return
 	}
-	require.NoError(t, vl.Err())
-	assert.Equal(t, 1, commas)
-	assert.Equal(t, 2, colons)
+
+	t.Run("default keeps every separator (round-trippable)", func(t *testing.T) {
+		commas, colons := countSeps(NewVerbatimWithBytes([]byte(doc)))
+		assert.Equal(t, 1, commas)
+		assert.Equal(t, 2, colons)
+	})
+
+	t.Run("caller may opt into elision on the verbatim lexer", func(t *testing.T) {
+		commas, colons := countSeps(NewVerbatimWithBytes([]byte(doc), WithElideSeparator(true)))
+		assert.Equal(t, 0, commas)
+		assert.Equal(t, 0, colons)
+	})
 }

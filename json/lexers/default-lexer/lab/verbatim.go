@@ -24,12 +24,17 @@ type VL struct {
 //
 // Use option WithBufferSize to alter the size of this buffer (defaults to 4KB).
 //
+// The verbatim lexer defaults to NOT eliding separators (unlike the semantic
+// lexer [L]), so a faithful, round-trippable token stream is produced. A caller
+// may still pass WithElideSeparator(true) to drop "," and ":" — this constructor
+// only seeds the verbatim default, which the caller's options override.
+//
 // If you plan to allocate many lexers with a short life span, consider using the global pool
 // with the BorrowLexerWithBytes() / BorrowLexerWithReader() functions and the
 // returned redeem closure.
 func NewVerbatim(r io.Reader, opts ...Option) *VL {
 	l := new(VL)
-	l.L = New(r, opts...)
+	l.L = New(r, verbatimOpts(opts)...)
 	l.reset()
 
 	return l
@@ -39,14 +44,24 @@ func NewVerbatim(r io.Reader, opts ...Option) *VL {
 //
 // Since the full buffer is provided by the caller, there is no additional internal buffering.
 //
+// Like [NewVerbatim], separators are not elided by default; pass
+// WithElideSeparator(true) to drop them.
+//
 // If you plan to allocate many lexers with a short life span, consider using the global pool
 // with the BorrowLexerWithBytes() function and the returned redeem closure.
 func NewVerbatimWithBytes(data []byte, opts ...Option) *VL {
 	l := new(VL)
-	l.L = NewWithBytes(data, opts...)
+	l.L = NewWithBytes(data, verbatimOpts(opts)...)
 	l.reset()
 
 	return l
+}
+
+// verbatimOpts prepends the verbatim-specific default (do NOT elide separators)
+// ahead of the caller's options, so a caller-supplied WithElideSeparator wins
+// while the default flips from the semantic lexer's elide-on to elide-off.
+func verbatimOpts(opts []Option) []Option {
+	return append([]Option{WithElideSeparator(false)}, opts...)
 }
 
 // NextToken returns the next verbatim token consumed from the stream or slice of
@@ -102,8 +117,9 @@ func (l *VL) ResetWithReader(r io.Reader) {
 
 func (l *VL) reset() {
 	l.blanks = l.blanks[:0]
-	// the verbatim lexer never elides separators, and the unified core
-	// accumulates the preceding blanks for it; both are read off the embedded L.
-	l.elideSeparator = false
+	// elideSeparator is seeded at construction (default false, see verbatimOpts)
+	// and preserved across L.Reset*; do NOT clobber it here or a caller's
+	// WithElideSeparator(true) would be lost on reuse. The unified core
+	// accumulates the preceding blanks, read off the embedded L.
 	l.trackBlanks = true
 }

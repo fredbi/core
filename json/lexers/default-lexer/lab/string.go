@@ -23,7 +23,23 @@ const swarProbe = 8
 // In whole-buffer mode it takes the fast path: a local-cursor scan that aliases
 // the input for unescaped strings (zero copy) and falls back to copying only on
 // the first escape. Streaming uses the buffer-refilling path.
+//
+// The verbatim lexer (flagged by trackBlanks, set only for VL) keeps strings RAW
+// — escapes intact for faithful round-tripping, decoded on demand via
+// token.VT.Unescaped — so it routes to the validate-but-don't-decode scanners.
+// The choice lives here, not in the shared scan core: that keeps both cores
+// calling l.consumeString() directly, so the semantic core's codegen is
+// unchanged (plan §9.1 — routing this through the policy or an inline branch in
+// the core perturbed the semantic path's escape analysis, costing an alloc).
 func (l *L) consumeString() token.T {
+	if l.trackBlanks {
+		if l.wholeBuffer {
+			return l.consumeStringRawWhole()
+		}
+
+		return l.consumeStringRawStreaming()
+	}
+
 	if l.wholeBuffer {
 		return l.consumeStringWhole()
 	}

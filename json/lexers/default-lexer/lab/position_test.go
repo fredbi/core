@@ -46,7 +46,7 @@ func TestLinePosition(t *testing.T) {
 			if !vl.Ok() || tok.IsEOF() {
 				break
 			}
-			got = append(got, pos{tok.Line(), tok.Col()})
+			got = append(got, pos{tok.Line(), tok.Column()})
 		}
 		require.NoError(t, vl.Err())
 		assert.Equal(t, posWant(), got)
@@ -60,7 +60,7 @@ func TestLinePosition(t *testing.T) {
 				break
 			}
 			assert.Equal(t, tok.Line(), vl.Line())
-			assert.Equal(t, tok.Col(), vl.Column())
+			assert.Equal(t, tok.Column(), vl.Column())
 		}
 		require.NoError(t, vl.Err())
 	})
@@ -74,7 +74,7 @@ func TestLinePosition(t *testing.T) {
 			if !vl.Ok() || tok.IsEOF() {
 				break
 			}
-			got = append(got, pos{tok.Line(), tok.Col()})
+			got = append(got, pos{tok.Line(), tok.Column()})
 		}
 		require.NoError(t, vl.Err())
 		assert.Equal(t, posWant(), got)
@@ -97,7 +97,7 @@ func TestLinePositionMultiline(t *testing.T) {
 		if !vl.Ok() || tok.IsEOF() {
 			break
 		}
-		got = append(got, pos{tok.Line(), tok.Col()})
+		got = append(got, pos{tok.Line(), tok.Column()})
 	}
 	require.NoError(t, vl.Err())
 	assert.Equal(t, []pos{
