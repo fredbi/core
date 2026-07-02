@@ -609,9 +609,39 @@ re-validated on semantic). Tier 1 = the perf win, Tier 2 = the register fix.
   tokens (can't be made loop-free without O(n) rescan); column could derive from
   blanks but line can't. Position stays a running counter; Tier 1 makes it cheap.
 
-### Parked / not chasing
-- Tiny-token dispatch floor (bools_nulls 36%): jsontext is leaner per token; the
-  per-token structure levers (token size, classification table) already failed
-  measurement. Pull's gap is per-NextToken-call overhead (push is near-parity).
-  Revisit only if 9.1 (the split) opens new room.
-- Dense escaped strings (63%): structural (eager unescape is the feature). Not chasing.
+### Parked / not chasing — the two understood floors (2026-07-02, CLOSED)
+Extended-corpus study (16 workloads, simdjson-go set) confirmed we generalize:
+**L beats jsontext on 13/16**, including untrained string-heavy payloads
+(update-center 1.62×, gsoc-2018 1.52×). The 3 losses are BOTH deliberate design
+choices, fully diagnosed — accepted, not chased (Fred: "we're good"):
+
+- **The tiny-token floor** (mesh/mesh.pretty 0.93×; also bools/nulls ~36%, single-
+  char strings). ROOT CAUSE nailed by categorize→profile: mesh is 56% short
+  integers at 2× canada's number density; profiling the push core shows ~18% of
+  time is the by-value 32-byte token being constructed (MakeWithValue 280ms) +
+  copied 3× through emit/yield (360ms) PER token — poorly amortized when tokens are
+  1–3 bytes. NOT a missing integer fast-path (that exists, generic.go:435 — valid
+  ints emit without touching consumeNumberWhole). It's the PRICE of the zero-alloc
+  by-value token model. Fixes rejected: by-pointer emit → token escapes to heap,
+  destroys zero-alloc (worse); 16-byte token (§5.3) → −17–26% on canada/citm/
+  twitter. The two token verdicts RECONCILED: small token moves cost from copy
+  (dominates on dense tiny tokens) to value-access (dominates on value-heavy
+  corpora we win) — a net trade, not a win. The floor is what BUYS us 13/16 + near-
+  zero allocs (jsontext 26–262 allocs/op, easyjson 17k–102k). Not chasing.
+- **Dense escaped strings** (twitterescaped 0.93×): eager-unescape is the feature
+  (Go-consumable string values, no re-reading RFC 8259 escaping). Mostly synthetic
+  in real data. Not chasing.
+
+### AVX2 string-scan — proven-but-unshipped (2026-07-02)
+Isolated experiment (avo → AVX2, runs on this Zen 3 box; kernel correct vs oracle
+incl. high-byte safety): string-stop scan is **6–14× vs SWAR for strings ≥64 B**,
+loses <32 B (broadcast setup), crossover at 32 B → length-gated. Prize-sizing:
+marginal on the parity 4-set (only twitter has long strings), but the extended
+corpus flips it — gsoc-2018 80% / github_events 52% / update-center 37% of bytes in
+string values ≥32. HOWEVER we ALREADY win those without it (gsoc 1.52×), and the
+§9.1 register-relief rationale does NOT apply to strings (string scan is already
+out of the main loop). So AVX2 is a MARGIN-WIDENER on payloads we already lead, not
+a necessity + a permanent amd64 asm/CPU-gate/fallback surface. PARKED; pull off the
+shelf only for a big-text-document-lexing consumer. Fred's adaptive gate (SWAR-
+probe first, AVX2 only if the first word finds no closing quote) is the right shape
+if revived. Experiment code was throwaway (avo examples dir).
