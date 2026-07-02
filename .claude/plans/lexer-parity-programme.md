@@ -450,6 +450,24 @@ point: WIN/parity on 4/5 real corpora + content-rich data; trails are understood
 (tiny-token dispatch floor; eager-unescape by design). The methodology is settled —
 **size the prize, measure in isolation, reject with data (Occam's razor)**.
 
+### STATE at 2026-07-02 session end (parity ACHIEVED — remaining work is upside)
+The core programme is **done**: L (semantic) leads json/v2 on **13/16** workloads
+(extended simdjson-go corpus), the unstable-loop itch (§9.1) is diagnosed at the
+register level and the semantic cores are stable, and both remaining losses are
+principled design costs (tiny-token floor, eager-unescape). Rebased onto master.
+Deliverables: `json/lexers/benchmark` 4-scenario benchviz chart; AVX2 scanner
+preserved in `internal/simd`. Everything below §9.2 is either DONE or PARKED.
+
+**The three forward arcs (Fred, session end) — each a self-contained next session:**
+1. **Leave competitors in the dust on string-heavy workloads** → revive the AVX2
+   string-scan (§9.3 / `internal/simd`): proven 6–14× isolated, prize is real
+   (gsoc 80%, github 52%). Adaptive gate = SWAR-probe then AVX2 when the string
+   proves long. Would widen 1.5× leads toward 2×+.
+2. **Make VL catch up** → §9.6 Tier 1 (alias blanks whole-buffer + batch-skip-with-
+   newline-count = the VL analog of the §9.2 win) then Tier 2 (register de-pressure).
+3. **Make stream-mode catch up with in-memory** → §6 Streams: the buffer-refill
+   path copies where whole-buffer aliases zero-copy — the deepest, "final" arc.
+
 Ordered by priority for the resume:
 
 ### 9.1 The unstable main loop — DIAGNOSED at the register level (2026-07-02)
@@ -488,7 +506,14 @@ accumulate the preceding-blanks slice + count lines). RESULT: citm push +28%
 This is the change that regressed unrelated arms before (§9.1) — clean NOW, and the
 register-level proof IS the §9.1 finding below.
 
-### 9.3 AVX-512 SIMD via avo (refinement AND a relief valve for 9.1) ⬜
+### 9.3 SIMD via avo (refinement AND a relief valve for 9.1) — AVX2 PROTOTYPED + PARKED
+UPDATE 2026-07-02: prototyped as **AVX2** (this box is Zen 3, no AVX-512), proven
+6–14× vs SWAR for strings ≥64 B, kept runnable in `default-lexer/internal/simd`.
+PARKED — see the "AVX2 string-scan" entry under "Parked / not chasing" for the
+full result + why (margin-widener, not a necessity; string scan is already off the
+main loop so the register-relief angle below does not apply). AVX-512 remains the
+width-doubling follow-up on capable silicon. Original rationale kept below.
+
 Idea (Fred): replace the 64-bit (8-byte) SWAR string-stop scan with avo-generated
 AVX-512 asm — 512-bit (64-byte) registers gobble long strings faster. TWO payoffs,
 and they connect to the unstable loop (9.1):
