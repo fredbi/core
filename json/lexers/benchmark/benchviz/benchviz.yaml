@@ -22,7 +22,7 @@ render:
     horizontal: 1
   screenshot:
     width: 1280
-    height: 720
+    height: 580
     sleep: 2s
 
 metrics:
@@ -35,20 +35,57 @@ functions:
     title: Lexers
     match: 'Lexers'
 
-# one bar group per corpus workload
+# one bar group per corpus workload (ordered best-to-worst L/jsontext ratio)
 contexts:
+  - id: update-center
+    title: update-center
+    match: 'update-center'
+  - id: twitter
+    title: twitter_status
+    match: 'twitter_status'
+  - id: gsoc
+    title: gsoc-2018
+    match: 'gsoc-2018'
+  - id: random
+    title: random
+    match: 'random'
+  - id: payload-large
+    title: payload-large
+    match: 'payload-large'
+  - id: golang
+    title: golang_source
+    match: 'golang_source'
+  - id: github
+    title: github_events
+    match: 'github_events'
   - id: canada
     title: canada_geometry
     match: 'canada_geometry'
   - id: citm
     title: citm_catalog
     match: 'citm_catalog'
-  - id: golang
-    title: golang_source
-    match: 'golang_source'
-  - id: twitter
-    title: twitter_status
-    match: 'twitter_status'
+  - id: marine_ik
+    title: marine_ik
+    match: 'marine_ik'
+  - id: numbers
+    title: numbers
+    match: 'numbers'
+  - id: instruments
+    title: instruments
+    match: 'instruments'
+  - id: apache_builds
+    title: apache_builds
+    match: 'apache_builds'
+  - id: mesh-pretty
+    title: mesh.pretty
+    match: 'mesh.pretty'
+  - id: twitterescaped
+    title: twitterescaped
+    match: 'twitterescaped'
+  - id: mesh
+    title: mesh
+    match: 'mesh'
+    notmatch: 'pretty'
 
 # one bar (series) per implementation, shown side by side
 versions:
@@ -77,9 +114,21 @@ categories:
         - easyjson
         - jsontext
       contexts:
+        - update-center
+        - twitter
+        - gsoc
+        - random
+        - payload-large
+        - golang
+        - github
         - canada
         - citm
-        - golang
-        - twitter
+        - marine_ik
+        - numbers
+        - instruments
+        - apache_builds
+        - mesh-pretty
+        - twitterescaped
+        - mesh
       metrics:
         - MBytesPerS

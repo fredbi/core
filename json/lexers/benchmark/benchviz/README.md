@@ -3,7 +3,10 @@
 Input tokenization throughput (MB/s) for the in-repo `default-lexer` — both the
 **semantic lexer `L`** and the **verbatim lexer `VL`** — against two external JSON
 tokenizers: mailru/easyjson's `jlexer` (the lexer our design is inspired from) and
-go-json-experiment's `jsontext` (`encoding/json/v2`), grouped by corpus workload.
+go-json-experiment's `jsontext` (`encoding/json/v2`), across **16 workloads**:
+the 4-corpus parity set the lexer was tuned against, plus 12 "untrained" payloads
+from the [simdjson-go](https://github.com/minio/simdjson-go) testdata (see
+[`../workloads/testdata/SOURCE.md`](../workloads/testdata/SOURCE.md)).
 Rendered with [benchviz](https://github.com/fredbi/benchviz).
 
 ![throughput](throughput.png)
@@ -11,9 +14,20 @@ Rendered with [benchviz](https://github.com/fredbi/benchviz).
 ## What you are looking at
 
 Each cluster is one workload; within it, the four bars are the tokenizers, side by
-side. Longer is faster. The numbers are the **median of 6 runs**. Each tokenizer
+side. Longer is faster. The numbers are the **median of 3 runs**. Each tokenizer
 drains the whole document to EOF; `b.SetBytes` is the input size, so the bars are
-*input* throughput.
+*input* throughput. Workloads are ordered top-to-bottom by L/jsontext ratio.
+
+## Untrained ground
+
+The lexer was tuned against only the parity 4-set (canada/citm/twitter/golang),
+so the 12 simdjson payloads test whether the wins generalize. They do: **`L` beats
+`jsontext` on 13 of 16 workloads** (9 of the 12 untrained), and two of its best
+results are untrained string-heavy payloads — `update-center` (1.62×) and
+`gsoc-2018` (1.52×, the long red bar). The three losses are all explained:
+`twitterescaped` (0.93×) is dense `\uXXXX` escapes, our eager-unescape tradeoff;
+`mesh`/`mesh.pretty` (0.93×/0.97×) are a number distribution where jsontext's
+number path edges ours — a genuine finding the broader corpus surfaced.
 
 - **`L` (semantic)** — our default lexer: SWAR fast-path scan, decodes string
   escapes, elides structural separators, and batch-skips whitespace runs. It leads
