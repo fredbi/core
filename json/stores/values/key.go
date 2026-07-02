@@ -6,6 +6,8 @@ import "unique"
 //
 // The current implementation of [InternedKey] merely wraps the standard [unique] package.
 // Therefore, interning occurs on global memory.
+//
+// TODO: unique provides interning with a global scope. Provide an opt-in to keep a scoped pool of interned strings.
 type InternedKey struct {
 	unique.Handle[string]
 }
