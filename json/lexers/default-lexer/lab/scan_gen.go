@@ -772,7 +772,7 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 					return p.none()
 				}
 
-				l.current = l.consumeNumberStreaming(b)
+				l.current = l.consumeNumberStreamFast(b)
 				if l.err != nil {
 					return p.none()
 				}
@@ -2062,7 +2062,7 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.VT {
 					return p.none()
 				}
 
-				l.current = l.consumeNumberStreaming(b)
+				l.current = l.consumeNumberStreamFast(b)
 				if l.err != nil {
 					return p.none()
 				}

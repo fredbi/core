@@ -923,3 +923,33 @@ Laggards, decomposed (each a known next lever, NOT a mystery):
 
 Phase 1 remaining: 1b numbers, 1c escaped-string bulk runs. Then Phase 2 slide+grow
 (spanning — secondary per the 4k≈64k finding). Measurement harness kept: streamgap_bench.
+
+### 10.3b Phase 1b RESULTS — streaming number fast path (2026-07-20)
+
+`consumeNumberStreamFast` (number.go): mirror of the string fast path — runs the
+whole-buffer inline number scan over the window; aliases zero-copy when the number's
+TERMINATOR is visible inside the window (end < bufferized ⇒ known-complete; unlike
+whole-buffer, end==bufferized is NOT EOF, so it delegates). Delegates to
+consumeNumberStreaming on: spans-window, bail forms (leadingZero/trailing-dot/
+malformed-exponent/ambiguous), or maxValueBytes set. Relative offsets; l.consumed
+untouched until alias so a delegate re-scans from the number start.
+
+Recovery (stream-4k % of buffer, base→1a→1b): canada 40→36→75, numbers 32→37→71,
+mesh 42→41→76, marine_ik 52→51→71, mesh.pretty 42→45→70, golang 40→61→83,
+instruments 50→72→88, citm 60→73→86, twitterescaped 62→87→94. String-heavy held
+within noise (Phase 1b doesn't touch the string path).
+
+Correctness: extended TestStreamFastEquivalence with number boundary + bail + long-
+spanning cases. Surfaced a PRE-EXISTING (not Phase-1b) buffer-vs-stream divergence on
+the folded-look-ahead form "1.2.3": whole-buffer emits "1.2" then defers the error to
+the rejected ".3"; consumeNumberStreaming rejects inline (repeated separator). BOTH
+reject the document — only the token prefix + error code differ. The fast path
+delegates that form, so it matches pre-Phase-1b streaming exactly. Test now pins
+"both reject" for malformed input (strict identity for well-formed). This divergence
+DISSOLVES in Phase 2 when the byte-by-byte consumers are retired (streaming would use
+the same window scanner as whole-buffer). Full suite + -race green; generate idempotent.
+
+**After Phase 1a+1b:** streaming is 70–94% of buffer for all workloads EXCEPT gsoc-2018
+(8.8%, escaped long strings — untouched, delegates wholesale). → Phase 1c: streaming
+escaped-string fast path (bulk clean runs between escapes). The ~65–70% cluster
+(github, twitter, update-center) likely also has moderate escape density → 1c helps too.

@@ -625,8 +625,10 @@ func consumeWhitespace(b []byte) (n int) {
 // The whole-buffer lane is scanTokenBufferG (no readMore, local cursor, zero-copy
 // blanks). Splitting the two (roadmap §10) lets us optimize the stream refill
 // path without perturbing the register-delicate whole-buffer core (§9.1). Here
-// l.wholeBuffer is always false, so numbers go straight to consumeNumberStreaming
-// (the whole-buffer inline fast path lives only in scanTokenBufferG).
+// l.wholeBuffer is always false; values take the streaming fast paths
+// (consumeStringStreamFast / consumeNumberStreamFast, §10.3) — optimistic in-window
+// scan + zero-copy alias, delegating to the byte-by-byte consumers only on an
+// escape or a token that spans a refill.
 //
 //nolint:gocognit,gocyclo
 func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
@@ -912,7 +914,7 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 					return p.none()
 				}
 
-				l.current = l.consumeNumberStreaming(b)
+				l.current = l.consumeNumberStreamFast(b)
 				if l.err != nil {
 					return p.none()
 				}
