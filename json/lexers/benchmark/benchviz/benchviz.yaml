@@ -1,7 +1,7 @@
 # benchviz configuration — JSON lexers (default-lexer L + VL) vs easyjson jlexer
 # and go-json-experiment json/v2 (jsontext).
 #
-# 16 workloads split into 4 scenario charts (2x2 grid). The function id is empty on
+# 18 workloads split into 5 scenario charts (stacked). The function id is empty on
 # purpose so the y-axis labels are just the workload name (benchviz composes the
 # label as "<function-id> - <context-id>").
 #
@@ -18,11 +18,11 @@ render:
   scale: auto
   orientation: horizontal
   layout:
-    horizontal: 1   # single column: 4 full-width charts stacked vertically
+    horizontal: 1   # single column: 5 full-width charts stacked vertically
   screenshot:
     width: 1100
-    height: 2300
-    sleep: 2s
+    height: 2740
+    sleep: 5s
 
 metrics:
   - id: MBytesPerS
@@ -51,6 +51,11 @@ versions:
 
 # one bar group per workload; id is the display label
 contexts:
+  - id: azure_swagger
+    match: 'azure_swagger'
+    notmatch: 'pretty'
+  - id: azure_swagger.pretty
+    match: 'azure_swagger.pretty'
   - id: canada_geometry
     match: 'canada_geometry'
   - id: mesh
@@ -87,6 +92,13 @@ contexts:
 
 # each category renders as one chart on the page
 categories:
+  - id: openapi
+    title: 'OpenAPI specs — go-openapi/azure (long descriptions, short keys)'
+    includes:
+      functions: [lexers]
+      versions: [L, VL, easyjson, jsontext]
+      contexts: [azure_swagger, azure_swagger.pretty]
+      metrics: [MBytesPerS]
   - id: numbers
     title: 'Number-heavy — coordinates, meshes, pure numbers'
     includes:
