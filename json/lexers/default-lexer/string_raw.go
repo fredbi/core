@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
+	"github.com/fredbi/core/json/lexers/default-lexer/internal/strscan"
 	"github.com/fredbi/core/json/lexers/default-lexer/internal/swar"
 	"github.com/fredbi/core/json/lexers/token"
 )
@@ -29,6 +30,7 @@ func (l *L) consumeStringRawWhole() token.T {
 	start := l.consumed
 
 	i := start
+	guard := start + guessLong
 	for i+8 <= n {
 		if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])); m != 0 {
 			i += swar.FirstByte(m)
@@ -36,6 +38,16 @@ func (l *L) consumeStringRawWhole() token.T {
 			break
 		}
 		i += 8
+		if i >= guard {
+			break // guessLong clean bytes in — delegate below (call kept out of the loop)
+		}
+	}
+	// clean past guessLong → guess long, AVX2-gated scan of the rest (same
+	// heuristic, fallback, and out-of-loop placement as consumeStringWhole).
+	if i >= guard && i+8 <= n {
+		if c := data[i]; c != doubleQuote && c != escape && c >= 0x20 {
+			i += strscan.ScanStop(data[i:n])
+		}
 	}
 	for ; i < n; i++ {
 		if c := data[i]; c == doubleQuote || c == escape || c < 0x20 {
@@ -135,6 +147,7 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 		default:
 			// skip the clean run to the next stop (quote/escape/control) without
 			// copying — adaptive scalar probe then SWAR (see consumeStringEscaped).
+			run := i
 			stop := i + 1
 			probe := min(stop+swarProbe, n)
 			for ; stop < probe; stop++ {
@@ -142,7 +155,7 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 					break
 				}
 			}
-			if stop == probe && stop < n {
+			if stop == probe && stop < n { // outran the scalar probe → SWAR, guess long past guessLong
 				for stop+8 <= n {
 					if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[stop:])); m != 0 {
 						stop += swar.FirstByte(m)
@@ -150,6 +163,11 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 						break
 					}
 					stop += 8
+					if stop-run >= guessLong {
+						stop += strscan.ScanStop(data[stop:n])
+
+						break
+					}
 				}
 				for ; stop < n; stop++ {
 					if b := data[stop]; b == doubleQuote || b == escape || b < 0x20 {

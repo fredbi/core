@@ -1,6 +1,8 @@
-//go:build ignore
-
-// Generator for the AVX2 string-stop scanner. Run via `go generate` (see doc.go).
+// Command asm generates the AVX2 string-stop kernel (../stringstop_amd64.s) via
+// avo. Run through `go generate ./internal/strscan` (see ../scan_amd64.go). The
+// emitted .s has no avo import; the func declaration is hand-written and
+// documented in ../scan_amd64.go, so this generator writes only the .s (no
+// -stubs).
 package main
 
 import (

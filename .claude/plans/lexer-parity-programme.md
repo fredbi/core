@@ -457,14 +457,17 @@ register level and the semantic cores are stable, and both remaining losses are
 principled design costs (tiny-token floor, eager-unescape). Rebased onto master.
 Deliverables: `json/lexers/benchmark` 4-scenario benchviz chart; AVX2 scanner
 preserved in `internal/simd`. Everything below §9.2 is either DONE or PARKED.
+(2026-07-20 UPDATE: arc 1 shipped — AVX2 gate now in `internal/strscan`; the
+`internal/simd` experiment module was folded into it and deleted. See §9.3.)
 
 **The three forward arcs (Fred, session end) — each a self-contained next session:**
-1. **Leave competitors in the dust on string-heavy workloads** → revive the AVX2
-   string-scan (§9.3 / `internal/simd`): proven 6–14× isolated, prize is real
-   (gsoc 80%, github 52%). Adaptive gate = SWAR-probe then AVX2 when the string
-   proves long. Would widen 1.5× leads toward 2×+.
+1. ✅ **Leave competitors in the dust on string-heavy workloads** → DONE 2026-07-20:
+   the AVX2 string-stop gate is shipped (§9.3), full-corpus geomean +5.8%, gsoc
+   +40%/+26%, azure +9.7%/+14%. The 6–14× isolated kernel now pays off end-to-end
+   behind the `guessLong=16` clean-bytes gate. Next widener: AVX-512 on capable silicon.
 2. **Make VL catch up** → §9.6 Tier 1 (alias blanks whole-buffer + batch-skip-with-
    newline-count = the VL analog of the §9.2 win) then Tier 2 (register de-pressure).
+   (The AVX2 gate already lifted VL a bit: gsoc VL +26%, azure VL +4%.)
 3. **Make stream-mode catch up with in-memory** → §6 Streams: the buffer-refill
    path copies where whole-buffer aliases zero-copy — the deepest, "final" arc.
 
@@ -506,13 +509,61 @@ accumulate the preceding-blanks slice + count lines). RESULT: citm push +28%
 This is the change that regressed unrelated arms before (§9.1) — clean NOW, and the
 register-level proof IS the §9.1 finding below.
 
-### 9.3 SIMD via avo (refinement AND a relief valve for 9.1) — AVX2 PROTOTYPED + PARKED
-UPDATE 2026-07-02: prototyped as **AVX2** (this box is Zen 3, no AVX-512), proven
-6–14× vs SWAR for strings ≥64 B, kept runnable in `default-lexer/internal/simd`.
-PARKED — see the "AVX2 string-scan" entry under "Parked / not chasing" for the
-full result + why (margin-widener, not a necessity; string scan is already off the
-main loop so the register-relief angle below does not apply). AVX-512 remains the
-width-doubling follow-up on capable silicon. Original rationale kept below.
+### 9.3 SIMD via avo — AVX2 string-stop gate ✅ SHIPPED (2026-07-20)
+REVIVED from PARKED (Fred: "revive the AVX2 gate with the SWAR-probe heuristic; if
+not satisfactory, replace the heuristic by an options knob"). It IS satisfactory
+and is now wired into all four whole-buffer string scans. **Full-corpus geomean
++5.8% throughput (L+VL, 18 workloads), zero alloc change**, big wins on the target
+(go-openapi/azure L +9.7% / pretty +14%, gsoc +40%/+26%, github, numbers +13%,
+mesh +12%, canada +9.9%). One soft spot: **citm VL −3.6%** (whitespace-heavy, NO
+string value ≥64 B — AVX2 can only add overhead there; high-variance workload we
+already dominate). Left as-is; the options knob is the lever if a caller needs it.
+
+**The gate (as built).** Package `internal/strscan` (part of the json module, no
+avo dependency). `ScanStop(data) int` = AVX2 kernel when the CPU supports it and
+the slice is ≥ `avx2Min` (32 B), else the same 8-byte SWAR loop the inline probe
+uses; identical stop semantics everywhere (reuses `internal/swar`). AVX2 support is
+detected once via a hand-written CPUID+XGETBV `.s` (OSXSAVE+AVX+XCR0 YMM + leaf-7
+AVX2) — **no `x/sys/cpu` dependency**, cross-checked against `/proc/cpuinfo` in a
+test. Non-amd64 builds get a SWAR-only `ScanStop` (build-tagged).
+
+**Two heuristic lessons (both measured, both cost real % before they were found):**
+1. **The gate signal is clean-bytes-seen, NOT slice length.** `ScanStop` receives
+   the *buffer remainder* (huge mid-document), so its own length guard can't tell a
+   short value from a long one. The real "guess long" signal is how many clean
+   leading bytes the inline probe already saw → `const guessLong` (bytes; **16** is
+   the swept sweet spot). Only after `guessLong` clean bytes do we delegate.
+2. **Keep the call OUT of the per-word loop (this is the §9.1 lesson again).** A
+   first cut delegated *inside* the SWAR word loop — geomean +4.4% but a real
+   regression cluster (citm L −4.4%, instruments/apache/golang/payload all down):
+   the mere presence of a call in the loop body pessimised its register allocation
+   for every short string that never reached it. Hoisting the call to *after* the
+   loop recovered all of them (geomean +4.4%→+5.8%) with the SAME wins. The tight
+   short-string loop must stay call-free.
+
+**Sweep (full corpus, hoisted):** guessLong 8 → geomean +5.73% but citm VL −5.1%,
+instruments VL −2.1%; **16 → +5.76%, citm VL −3.6%, instruments VL −0.8% (chosen)**;
+32 → +4.58%, adds apache −2%. 8 maximises string-heavy wins but regresses the
+short-string workloads; 16 keeps ~all the win and clears the regressions bar citm.
+
+**Module layout.** `internal/strscan/` ships the kernel (`stringstop_amd64.s` +
+`scan_amd64.go` stub/gate + `scan_noasm.go` + CPUID `.s` + `detect_amd64.go` +
+`strscan.go` SWAR core + oracle/bench tests). The avo generator lives in
+`internal/strscan/_asm/` — its own module (`replace`→local avo) under a
+`_`-prefixed dir the parent go tool ignores, run via `go generate ./internal/strscan`
+(regeneration reproduces the committed `.s` byte-identically). `internal/simd` (the
+old parked experiment module) was folded into this and deleted. avo never enters
+`json/go.mod` (verified: `go mod tidy` adds nothing; `go list -deps` has no avo).
+
+**Corpus.** Added `azure_swagger[.pretty]` — 16 go-openapi/analysis Azure Network
+specs merged into one document (30% of bytes in string values ≥32 B; short keys,
+long descriptions) — the go-openapi mammoth-spec profile Fred flagged as important.
+
+Follow-ups (parked): AVX-512 width-doubling on capable silicon; the options knob
+(`WithoutAVX2` / force-SWAR) if a citm-like consumer needs it; the escaped-path
+clean-run delegation (sites 2 & 4) still calls in-loop — fine for the escaped
+workloads measured (twitterescaped +2.8%), hoist it too if it ever shows up.
+Original AVX-512 rationale kept below.
 
 Idea (Fred): replace the 64-bit (8-byte) SWAR string-stop scan with avo-generated
 AVX-512 asm — 512-bit (64-byte) registers gobble long strings faster. TWO payoffs,
@@ -657,7 +708,11 @@ choices, fully diagnosed — accepted, not chased (Fred: "we're good"):
   (Go-consumable string values, no re-reading RFC 8259 escaping). Mostly synthetic
   in real data. Not chasing.
 
-### AVX2 string-scan — proven-but-unshipped (2026-07-02)
+### AVX2 string-scan — ✅ SHIPPED 2026-07-20 (was proven-but-unshipped 2026-07-02)
+No longer parked — revived and wired in as the `guessLong=16` gate; see §9.3 for the
+shipped design, results (+5.8% geomean), and the two heuristic lessons. The original
+parked note is kept below for the reasoning that led here.
+
 Isolated experiment (avo → AVX2, runs on this Zen 3 box; kernel correct vs oracle
 incl. high-byte safety): string-stop scan is **6–14× vs SWAR for strings ≥64 B**,
 loses <32 B (broadcast setup), crossover at 32 B → length-gated. Prize-sizing:

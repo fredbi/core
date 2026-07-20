@@ -46,6 +46,25 @@ Excluded: `parking-citations` (NDJSON — multiple top-level objects, not a sing
 JSON document); `payload-small`/`payload-medium` (< 1 KB, too small to benchmark);
 `canada`/`citm_catalog`/`twitter` (duplicates of the parity set above).
 
+## OpenAPI / go-openapi specs (long-description workload)
+
+The lexer's low-memory design targets slurping large OpenAPI/Swagger specs, whose
+string *values* (descriptions, documentation) are long while object keys stay
+short — the profile the AVX2 long-string gate (plan §9.3) is built for. These two
+combine every Azure Network Swagger fixture from
+[`go-openapi/analysis`](https://github.com/go-openapi/analysis)
+(`internal/testintegration/fixtures/azure`, 16 specs) into one document, keyed by
+filename, so a single workload exercises a realistic mammoth spec:
+
+| file | shape | %bytes in str-values ≥32 |
+|------|-------|--------------------------|
+| `azure_swagger.json.gz` | 16 Azure specs merged, compact | 30% |
+| `azure_swagger.pretty.json.gz` | same, indented (whitespace-heavy) | 30% |
+
+Regenerate with the merge script in the plan's ramblings, or:
+
+    python3 -c 'import json,glob,gzip; d={f:json.load(open(f)) for f in sorted(glob.glob("*.json"))}; gzip.open("azure_swagger.json.gz","wb").write(json.dumps(d,separators=(",",":")).encode())'
+
 ## Updating
 
 Re-fetch from a fresh checkout of the upstream corpus and re-compress:
