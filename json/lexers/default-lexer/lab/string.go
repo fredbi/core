@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
+	"github.com/fredbi/core/json/lexers/default-lexer/internal/strscan"
 	"github.com/fredbi/core/json/lexers/default-lexer/internal/swar"
 	"github.com/fredbi/core/json/lexers/token"
 )
@@ -17,6 +18,21 @@ import (
 // resolve scalar with no SWAR overhead; longer runs (sparse escapes + clean tail)
 // switch to the word-at-a-time scan. One word keeps dense strings cheap.
 const swarProbe = 8
+
+// guessLong is the number of clean leading bytes after which the whole-buffer
+// string scan stops probing inline (8-byte SWAR words) and hands the rest to the
+// AVX2-gated strscan.ScanStop — Fred's "guess long strings" heuristic. It is the
+// real long-string signal: strscan.ScanStop receives the buffer remainder (huge
+// mid-document), so its own length guard cannot tell a short value from a long
+// one; only the count of clean bytes already seen can. Short/medium values (object
+// keys, most citm strings) resolve entirely inline and never pay the (non-inlinable)
+// call; only genuinely long values, where AVX2's 32-bytes/iter pays off, delegate.
+//
+// 16 is the measured sweet spot across the full corpus (plan §9.3): it maximises
+// geometric-mean throughput (+5.8%) while keeping the short-string workloads that
+// gain nothing from AVX2 (citm, instruments, apache) at or above baseline — the
+// larger win at 8 came with a real regression there. Must be a multiple of 8.
+const guessLong = 16
 
 // consumeString scans a string value (the opening quote is already consumed).
 //
@@ -63,6 +79,14 @@ func (l *L) consumeStringWhole() token.T {
 	// overwhelmingly common case (no escapes, no control chars) aliases the input
 	// with zero copy.
 	i := start
+	// guard is where the inline probe stops and delegates to the AVX2 scan. With
+	// WithoutAVX2 it is pushed past the buffer so the loop never breaks to delegate
+	// — the string is scanned entirely by the inline SWAR word loop (the pre-AVX2
+	// baseline), no vector call at all.
+	guard := start + guessLong
+	if l.noAVX2 {
+		guard = n + 1
+	}
 	for i+8 <= n {
 		if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])); m != 0 {
 			i += swar.FirstByte(m) // exact stop lane; skips the scalar re-scan
@@ -70,6 +94,20 @@ func (l *L) consumeStringWhole() token.T {
 			break
 		}
 		i += 8
+		if i >= guard {
+			break // guessLong clean bytes in — leave the loop to delegate below
+		}
+	}
+	// If the run stayed clean past guessLong (not stopped) and the buffer holds
+	// more, guess this is a long value and hand the rest to the AVX2 scan. The call
+	// lives OUTSIDE the word loop on purpose: a call in the loop body pessimizes its
+	// register allocation for every short string that never reaches it (plan §9.1),
+	// so short-string workloads must keep the tight, call-free loop above. i lands
+	// on the stop byte or on n.
+	if i >= guard && i+8 <= n {
+		if c := data[i]; c != doubleQuote && c != escape && c >= 0x20 {
+			i += strscan.ScanStop(data[i:n])
+		}
 	}
 	for ; i < n; i++ {
 		if c := data[i]; c == doubleQuote || c == escape || c < 0x20 {
@@ -207,7 +245,7 @@ func (l *L) consumeStringEscaped(start, i int) token.T {
 				break
 			}
 		}
-		if stop == probe && stop < n { // run outran the probe → likely long, switch to SWAR
+		if stop == probe && stop < n { // run outran the scalar probe → SWAR, guess long past guessLong
 			for stop+8 <= n {
 				if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[stop:])); m != 0 {
 					stop += swar.FirstByte(m)
@@ -215,6 +253,11 @@ func (l *L) consumeStringEscaped(start, i int) token.T {
 					break
 				}
 				stop += 8
+				if stop-i >= guessLong && !l.noAVX2 {
+					stop += strscan.ScanStop(data[stop:n])
+
+					break
+				}
 			}
 			for ; stop < n; stop++ {
 				if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {

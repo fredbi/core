@@ -11,6 +11,7 @@ type (
 		keepPreviousBuffer int
 		strictNumbers      bool
 		elideSeparator     bool
+		noAVX2             bool
 	}
 )
 
@@ -61,6 +62,28 @@ func WithStrictNumber(enabled bool) Option {
 func WithElideSeparator(enabled bool) Option {
 	return func(o *options) {
 		o.elideSeparator = enabled
+	}
+}
+
+// WithoutAVX2 disables the AVX2-accelerated long-string scan, keeping the lexer on
+// the portable 8-byte SWAR path everywhere: once set, a long string value is
+// scanned by the inline SWAR word loop instead of being handed to the vector
+// kernel (see internal/strscan).
+//
+// The AVX2 gate is on by default on amd64 CPUs that support it: once a string
+// value stays clean past a short inline probe it is scanned 32 bytes at a time,
+// which is a large win on long values (descriptions, documentation, text payloads)
+// and neutral on short ones. On non-amd64, or CPUs without AVX2, the SWAR path is
+// already used and this option is a no-op.
+//
+// Most callers should leave the gate on. Reach for WithoutAVX2 when you want
+// deterministic, CPU-independent behavior (identical code path regardless of the
+// host's vector support — useful for reproducibility or differential testing), or
+// if profiling a specific workload shows the vector path is not paying off. It does
+// not change the token stream, only how the scan is performed.
+func WithoutAVX2(disabled bool) Option {
+	return func(o *options) {
+		o.noAVX2 = disabled
 	}
 }
 
