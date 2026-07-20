@@ -40,6 +40,12 @@ func streamFastInputs() []string {
 		`"\n\r\t\b\f"`, `"a\nb\tc"`,
 		`"uniécode"`, `"surrogate😀end"`,
 		`"lead\nthen a long clean tail ` + strings.Repeat("y", 100) + `"`,
+		// gsoc-like: long clean runs (SWAR/AVX2 territory) between escapes — the
+		// Phase 1c bulk-clean-run path in the delegated escaped scanner.
+		`"` + strings.Repeat("clean words here ", 8) + `\n` +
+			strings.Repeat("more clean text ", 8) + `\t` +
+			strings.Repeat("and a long tail ", 12) + `"`,
+		`{"doc":"` + strings.Repeat("x", 60) + `\"` + strings.Repeat("y", 60) + `"}`,
 		`{"key":"value","k2":123,"k3":[true,false,null]}`,
 		`{"description":"` + strings.Repeat("word ", 50) + `"}`,
 		`[0,1,-1,42,-42,3.14,-3.14,1e10,1E-10,-0.44e10,12.3456E-3]`,

@@ -493,6 +493,54 @@ func (l *L) consumeStringStreaming() token.T {
 				}
 
 				l.currentValue = append(l.currentValue, b)
+
+				// bulk-scan the rest of this clean run within the current window
+				// (§10.3 Phase 1c): a long clean stretch (e.g. between two escapes, or a
+				// clean string that spilled past the fast path's window) is copied in one
+				// shot — adaptive scalar-probe → SWAR → AVX2, the streaming analogue of
+				// consumeStringEscaped's clean-run copy — instead of one byte per loop
+				// turn. A run that reaches the window end just stops at bufferized; the
+				// outer loop refills and re-enters here for the continuation.
+				data := l.buffer
+				n := l.bufferized
+				runStart := l.consumed
+				stop := runStart
+				probe := min(stop+swarProbe, n)
+				for ; stop < probe; stop++ {
+					if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {
+						break
+					}
+				}
+				if stop == probe && stop < n { // run outran the scalar probe → SWAR
+					for stop+8 <= n {
+						if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[stop:])); m != 0 {
+							stop += swar.FirstByte(m)
+
+							break
+						}
+						stop += 8
+						if stop-runStart >= guessLong && !l.noAVX2 {
+							stop += strscan.ScanStop(data[stop:n])
+
+							break
+						}
+					}
+					for ; stop < n; stop++ {
+						if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {
+							break
+						}
+					}
+				}
+				if stop > runStart {
+					if l.maxValueBytes > 0 && len(l.currentValue)+(stop-runStart) > l.maxValueBytes {
+						l.err = codes.ErrMaxValueBytes
+
+						return token.None
+					}
+					l.currentValue = append(l.currentValue, data[runStart:stop]...)
+					l.offset += uint64(stop - runStart)
+					l.consumed = stop
+				}
 			}
 		}
 	}

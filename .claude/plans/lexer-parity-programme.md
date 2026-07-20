@@ -953,3 +953,28 @@ the same window scanner as whole-buffer). Full suite + -race green; generate ide
 (8.8%, escaped long strings — untouched, delegates wholesale). → Phase 1c: streaming
 escaped-string fast path (bulk clean runs between escapes). The ~65–70% cluster
 (github, twitter, update-center) likely also has moderate escape density → 1c helps too.
+
+### 10.3c Phase 1c RESULTS — streaming escaped-string bulk clean runs (2026-07-20)
+
+Gave the delegated byte-by-byte `consumeStringStreaming` a bulk clean-run scan in its
+clean-byte case: a long clean stretch (between escapes, or a clean string that spilled
+past the fast path's window) is copied in ONE shot — adaptive scalar-probe → SWAR →
+AVX2, the streaming analogue of consumeStringEscaped's clean-run copy — instead of one
+byte per loop turn. A run that reaches the window end stops at bufferized; the outer
+loop refills and re-enters for the continuation. Kept all the escape/\u/refill
+machinery (low risk); benefits both escaped strings AND clean strings that span.
+
+Recovery (stream-4k % of buffer, 1b→1c): gsoc-2018 8.8→76.8 (+68pp — the laggard
+FIXED, 14.5x→1.3x slower), update-center 65→79, github 70→75, mesh.pretty 70→78,
+twitterescaped 94→97, marine 71→76. citm/golang small dips (86→80/83→80) are 100ms-
+benchtime NOISE (short in-window strings alias via the fast path, never reach the
+delegated scanner 1c touched). Correctness: TestStreamFastEquivalence extended with
+gsoc-like long-clean-runs-between-escapes inputs; full suite + -race green.
+
+**PHASE 1 COMPLETE (1a strings + 1b numbers + 1c escaped).** Streaming is now ~70–97%
+of buffer throughput across the WHOLE corpus (was 25–62%); geomean ≈ 79% (was ~35%).
+The go-openapi target azure ≈ 89% (was 29%); gsoc ≈ 77% (was 6.9%). Remaining ~20% gap
+is structural per-token overhead (struct cursor + readMore-per-token) and spanning
+tokens (delegate to copy) — Phase 2 (slide+grow) territory, secondary per the 4k≈64k
+finding. Fast paths: consumeStringStreamFast, consumeNumberStreamFast, + bulk clean
+runs in consumeStringStreaming. All in the lab; not yet retrofit to reference.
