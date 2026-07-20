@@ -20,7 +20,8 @@ const avx2Min = 32
 // < 0x20, '"', or '\') in data, or len(data) if none. It is called only for the
 // long-string case (the caller found a clean first word), so it dispatches to the
 // AVX2 kernel when the CPU supports it and enough bytes remain, and to SWAR
-// otherwise.
+// otherwise. The WithoutAVX2 knob is handled by the caller (it simply never
+// delegates here), so ScanStop always tries the kernel.
 func ScanStop(data []byte) int {
 	if useAVX2 && len(data) >= avx2Min {
 		return stringStopIndexAVX2(data)

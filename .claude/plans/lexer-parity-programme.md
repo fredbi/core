@@ -559,8 +559,18 @@ old parked experiment module) was folded into this and deleted. avo never enters
 specs merged into one document (30% of bytes in string values ≥32 B; short keys,
 long descriptions) — the go-openapi mammoth-spec profile Fred flagged as important.
 
-Follow-ups (parked): AVX-512 width-doubling on capable silicon; the options knob
-(`WithoutAVX2` / force-SWAR) if a citm-like consumer needs it; the escaped-path
+**WithoutAVX2 knob ✅ (2026-07-20).** `WithoutAVX2(bool)` option on both L and VL:
+when set, the fast-path `guard` is pushed past the buffer (`n+1`) so the inline SWAR
+word loop scans the whole value and never delegates — a pure, CPU-independent SWAR
+path, no vector call anywhere. Equivalence test proves the token stream is identical
+on/off for L and VL. HONEST FINDING (measured): the knob is **perf-neutral on citm**
+(on 3.48ms / off 3.49ms) — citm's −3.6% is the per-word `i >= guard` COMPARE in the
+hot loop (structural, present regardless of the knob), NOT the AVX2 path or the
+delegation. So the knob is a determinism / differential-testing / safety switch, not
+a citm recovery lever; the doc says so. Not worth a separate guard-free loop to claw
+back citm's 3.6% (the guard branch is what buys +5.8% everywhere else).
+
+Follow-ups (parked): AVX-512 width-doubling on capable silicon; the escaped-path
 clean-run delegation (sites 2 & 4) still calls in-loop — fine for the escaped
 workloads measured (twitterescaped +2.8%), hoist it too if it ever shows up.
 Original AVX-512 rationale kept below.

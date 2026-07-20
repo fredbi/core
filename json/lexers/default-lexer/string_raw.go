@@ -31,6 +31,9 @@ func (l *L) consumeStringRawWhole() token.T {
 
 	i := start
 	guard := start + guessLong
+	if l.noAVX2 {
+		guard = n + 1 // WithoutAVX2: never delegate, pure inline SWAR (see consumeStringWhole)
+	}
 	for i+8 <= n {
 		if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])); m != 0 {
 			i += swar.FirstByte(m)
@@ -42,8 +45,8 @@ func (l *L) consumeStringRawWhole() token.T {
 			break // guessLong clean bytes in — delegate below (call kept out of the loop)
 		}
 	}
-	// clean past guessLong → guess long, AVX2-gated scan of the rest (same
-	// heuristic, fallback, and out-of-loop placement as consumeStringWhole).
+	// clean past guessLong → guess long, AVX2 scan of the rest (same heuristic and
+	// out-of-loop placement as consumeStringWhole).
 	if i >= guard && i+8 <= n {
 		if c := data[i]; c != doubleQuote && c != escape && c >= 0x20 {
 			i += strscan.ScanStop(data[i:n])
@@ -163,7 +166,7 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 						break
 					}
 					stop += 8
-					if stop-run >= guessLong {
+					if stop-run >= guessLong && !l.noAVX2 {
 						stop += strscan.ScanStop(data[stop:n])
 
 						break

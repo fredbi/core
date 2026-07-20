@@ -79,7 +79,14 @@ func (l *L) consumeStringWhole() token.T {
 	// overwhelmingly common case (no escapes, no control chars) aliases the input
 	// with zero copy.
 	i := start
+	// guard is where the inline probe stops and delegates to the AVX2 scan. With
+	// WithoutAVX2 it is pushed past the buffer so the loop never breaks to delegate
+	// — the string is scanned entirely by the inline SWAR word loop (the pre-AVX2
+	// baseline), no vector call at all.
 	guard := start + guessLong
+	if l.noAVX2 {
+		guard = n + 1
+	}
 	for i+8 <= n {
 		if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])); m != 0 {
 			i += swar.FirstByte(m) // exact stop lane; skips the scalar re-scan
@@ -92,12 +99,11 @@ func (l *L) consumeStringWhole() token.T {
 		}
 	}
 	// If the run stayed clean past guessLong (not stopped) and the buffer holds
-	// more, guess this is a long value and hand the rest to the AVX2-gated scan.
-	// The call lives OUTSIDE the word loop on purpose: a call in the loop body
-	// pessimizes its register allocation for every short string that never
-	// reaches it (plan §9.1), so short-string workloads must keep the tight,
-	// call-free loop above. strscan.ScanStop falls back to SWAR below avx2Min or
-	// with no AVX2. i lands on the stop byte or on n.
+	// more, guess this is a long value and hand the rest to the AVX2 scan. The call
+	// lives OUTSIDE the word loop on purpose: a call in the loop body pessimizes its
+	// register allocation for every short string that never reaches it (plan §9.1),
+	// so short-string workloads must keep the tight, call-free loop above. i lands
+	// on the stop byte or on n.
 	if i >= guard && i+8 <= n {
 		if c := data[i]; c != doubleQuote && c != escape && c >= 0x20 {
 			i += strscan.ScanStop(data[i:n])
@@ -247,7 +253,7 @@ func (l *L) consumeStringEscaped(start, i int) token.T {
 					break
 				}
 				stop += 8
-				if stop-i >= guessLong {
+				if stop-i >= guessLong && !l.noAVX2 {
 					stop += strscan.ScanStop(data[stop:n])
 
 					break

@@ -40,6 +40,8 @@ func TestScanStopOracle(t *testing.T) {
 				data[rng.Intn(n)] = stops[rng.Intn(len(stops))]
 			}
 			want := scalarStop(data)
+			// the AVX2-gated path and the portable SWAR path (which WithoutAVX2
+			// forces the lexer onto) must both match the scalar oracle.
 			if got := ScanStop(data); got != want {
 				t.Fatalf("ScanStop n=%d trial=%d: got %d want %d", n, trial, got, want)
 			}
