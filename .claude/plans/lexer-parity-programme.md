@@ -886,3 +886,40 @@ struct cursor); strings within noise. 0 allocs throughout. Push path unchanged.
 
 **Next:** iterate on the stream lane (§10.3) — first size the actual stream-vs-buffer
 gap on the corpus, then apply refill-side levers there without touching this core.
+
+### 10.3a Phase 1a RESULTS — streaming clean-string fast path (2026-07-20)
+
+Implemented `consumeStringStreamFast` (lab, semantic L): optimistic in-buffer SWAR/
+AVX2 scan of the window; a CLEAN string that completes inside the window aliases
+`l.buffer` zero-copy; ANY escape or window-end (span) → delegate to the existing
+`consumeStringStreaming`. Relative-offset advances (streaming `l.offset` is absolute,
+`l.consumed` is the window index). Correctness: new `TestStreamFastEquivalence`
+(buffer-vs-stream, kinds+values, 16 buffer sizes 1..1024) + `TestStreamFastAliasesWindow`
+(proves the alias); full suite + -race green.
+
+Surfaced + fixed a PRE-EXISTING `consumeN` bug (unrelated to strings): the partial-
+refill branch advanced `l.consumed` by the whole window `delta` instead of the bytes
+actually needed, dropping the surplus — a literal (`true`/`null`) read through a window
+SMALLER than the literal lost its trailing separator. Only reachable at bufsize<literal
+(≤5); found by testing bufsize 2. Fixed (`delta < need`, advance by `need`).
+
+Gap recovery (stream-4k as % of buffer throughput, baseline → Phase 1a):
+
+    azure_swagger      29% → 89%  (+60pp)   ← the go-openapi target, gap nearly closed
+    azure.pretty       32% → 83%  (+52pp)
+    apache_builds      37% → 84%  (+47pp)
+    update-center      26% → 64%  (+38pp)   payload-large 39%→76%   random 45%→81%
+    github_events      29% → 66%  (+37pp)   twitter 37%→67%   twitterescaped 62%→87%
+    citm 60%→73%  instruments 50%→72%  golang 40%→61%
+
+Laggards, decomposed (each a known next lever, NOT a mystery):
+  - NUMBER-heavy barely moved (strings-only lever): numbers 32%→37%, canada 40%→36%,
+    mesh 42%→41%, marine_ik 52%→51%. → Phase 1b: streaming number fast path.
+  - gsoc-2018 6.9%→9.2% (64k also 9.7% → NOT spanning). Escaped: 0.45% backslashes (vs
+    azure 0.01%). Hypothesis: its long strings each carry an escape → Phase 1a delegates
+    the WHOLE string to the byte-by-byte path (one escape in a 1 KB string = 1 KB crawled).
+    → Phase 1c: streaming escaped-string fast path that bulk-copies clean runs between
+    escapes (the streaming analogue of consumeStringEscaped).
+
+Phase 1 remaining: 1b numbers, 1c escaped-string bulk runs. Then Phase 2 slide+grow
+(spanning — secondary per the 4k≈64k finding). Measurement harness kept: streamgap_bench.

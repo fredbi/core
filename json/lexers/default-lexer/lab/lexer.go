@@ -342,22 +342,28 @@ func (l *L) consumeN(buffer []byte) error {
 			return err
 		}
 
-		if delta := l.bufferized - l.consumed; delta < minReadSize {
+		// need is how many more bytes this token still requires.
+		need := minReadSize - n
+		if delta := l.bufferized - l.consumed; delta < need {
+			// the window holds fewer than we need: take all of it, then refill.
 			copy(buffer[n:], l.buffer[l.consumed:l.bufferized])
 			l.consumed += delta
 			l.offset += uint64(delta)
 			n += delta
 
-			if n < minReadSize {
-				continue
-			}
-
-			return nil
+			continue
 		}
 
-		copy(buffer[n:minReadSize], l.buffer[l.consumed:l.consumed+minReadSize-n])
-		l.consumed += minReadSize - n
-		l.offset += uint64(minReadSize - n)
+		// the window holds at least `need` bytes: take EXACTLY need, advancing
+		// consumed by need — NOT by the whole window. Advancing by the full delta
+		// (the old `delta < minReadSize` form) skipped the surplus, which belongs to
+		// the following token, breaking a literal read through a window smaller than
+		// the literal (e.g. "true"/"null" via a 2-byte buffer dropped the trailing
+		// separator). Unreachable once WithBufferSize floors the window, but correct
+		// at any size.
+		copy(buffer[n:minReadSize], l.buffer[l.consumed:l.consumed+need])
+		l.consumed += need
+		l.offset += uint64(need)
 
 		break
 	}
