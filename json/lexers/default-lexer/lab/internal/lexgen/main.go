@@ -61,11 +61,19 @@ type core struct {
 
 var cores = []core{
 	{
-		name:     "scanTokenG",
-		genSig:   "func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {",
-		concName: func(v variant) string { return "scanToken" + v.suffix },
+		name:     "scanTokenBufferG",
+		genSig:   "func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {",
+		concName: func(v variant) string { return "scanTokenBuffer" + v.suffix },
 		concSig: func(v variant) string {
-			return fmt.Sprintf("func scanToken%s(l *L, p %s) %s {", v.suffix, v.pol, v.tok)
+			return fmt.Sprintf("func scanTokenBuffer%s(l *L, p %s) %s {", v.suffix, v.pol, v.tok)
+		},
+	},
+	{
+		name:     "scanTokenStreamG",
+		genSig:   "func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {",
+		concName: func(v variant) string { return "scanTokenStream" + v.suffix },
+		concSig: func(v variant) string {
+			return fmt.Sprintf("func scanTokenStream%s(l *L, p %s) %s {", v.suffix, v.pol, v.tok)
 		},
 	},
 	{

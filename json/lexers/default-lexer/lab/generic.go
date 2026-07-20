@@ -614,16 +614,22 @@ func consumeWhitespace(b []byte) (n int) {
 	return n
 }
 
-// scanTokenG is the generic, policy-parameterized pull core: it scans and
-// returns exactly one token, shared by L.NextToken and VL.NextToken. The cursor
-// lives in the struct (per-byte advance, readMore for streaming, deferred-error
-// semantics) and each token is emitted via the policy. When
-// l.trackBlanks is set (verbatim) it accumulates the preceding whitespace run
-// into l.blanks (byte-by-byte, so it survives streaming refills); the semantic
-// policy ignores blanks.
+// scanTokenStreamG is the generic, policy-parameterized pull core for STREAMING
+// input (io.Reader): it scans and returns exactly one token, dispatched from
+// L.NextToken / VL.NextToken when l.wholeBuffer is false. The cursor lives in the
+// struct (per-byte advance, readMore for refills, deferred-error semantics) and
+// each token is emitted via the policy. When l.trackBlanks is set (verbatim) it
+// accumulates the preceding whitespace run into l.blanks (byte-by-byte, so it
+// survives streaming refills); the semantic policy ignores blanks.
+//
+// The whole-buffer lane is scanTokenBufferG (no readMore, local cursor, zero-copy
+// blanks). Splitting the two (roadmap §10) lets us optimize the stream refill
+// path without perturbing the register-delicate whole-buffer core (§9.1). Here
+// l.wholeBuffer is always false, so numbers go straight to consumeNumberStreaming
+// (the whole-buffer inline fast path lives only in scanTokenBufferG).
 //
 //nolint:gocognit,gocyclo
-func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
+func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 	if l.err != nil {
 		return p.none()
 	}
@@ -906,92 +912,6 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 					return p.none()
 				}
 
-				if l.wholeBuffer && l.maxValueBytes == 0 {
-					buf := l.buffer[:l.bufferized]
-					numStart := l.consumed - 1
-					runFrom := l.consumed
-					var firstDigit byte
-					ok := true
-
-					switch {
-					case b >= '0' && b <= '9':
-						firstDigit = b
-					case b == minusSign:
-						if uint(l.consumed) < uint(len(buf)) && buf[l.consumed] >= '0' && buf[l.consumed] <= '9' {
-							firstDigit = buf[l.consumed]
-							runFrom = l.consumed + 1
-						} else {
-							ok = false
-						}
-					default:
-						ok = false
-					}
-
-					if ok {
-						n := runFrom
-						for uint(n) < uint(len(buf)) && '0' <= buf[n] && buf[n] <= '9' {
-							n++
-						}
-
-						leadingZero := firstDigit == '0' && n > runFrom
-						end := n
-						var term byte
-						if uint(end) < uint(len(buf)) {
-							term = buf[end]
-						}
-						// extend over a fractional part ('.' 1*DIGIT); a trailing dot
-						// leaves term==decimalPoint for the slow-path error.
-						if !leadingZero && term == decimalPoint {
-							m := end + 1
-							for uint(m) < uint(len(buf)) && '0' <= buf[m] && buf[m] <= '9' {
-								m++
-							}
-							if m > end+1 { // at least one fractional digit
-								end = m
-								term = 0
-								if uint(end) < uint(len(buf)) {
-									term = buf[end]
-								}
-							}
-						}
-						// extend over an exponent ((e|E) [+|-] 1*DIGIT); cheaper than
-						// bailing to consumeNumberWhole and re-scanning. A malformed
-						// exponent leaves term=='e'/'E' for the slow-path error.
-						if !leadingZero && (term == 'e' || term == 'E') {
-							m := end + 1
-							if uint(m) < uint(len(buf)) && (buf[m] == '+' || buf[m] == '-') {
-								m++
-							}
-							expStart := m
-							for uint(m) < uint(len(buf)) && '0' <= buf[m] && buf[m] <= '9' {
-								m++
-							}
-							if m > expStart { // at least one exponent digit
-								end = m
-								term = 0
-								if uint(end) < uint(len(buf)) {
-									term = buf[end]
-								}
-							}
-						}
-
-						if !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
-							l.offset += uint64(end - l.consumed)
-							l.consumed = end
-							l.current = token.MakeWithValue(token.Number, l.buffer[numStart:end:end])
-
-							return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
-						}
-					}
-
-					l.current = l.consumeNumberWhole(b)
-					if l.err != nil {
-						return p.none()
-					}
-
-					return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
-				}
-
 				l.current = l.consumeNumberStreaming(b)
 				if l.err != nil {
 					return p.none()
@@ -1026,4 +946,484 @@ func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {
 			}
 		}
 	}
+}
+
+// scanTokenBufferG is the generic, policy-parameterized pull core for WHOLE-BUFFER
+// input: it scans and returns exactly one token, dispatched from L.NextToken /
+// VL.NextToken when l.wholeBuffer is true. It is the yield→return counterpart of
+// scanPushG (roadmap §10) — the same proven whole-buffer shape: the cursor is a
+// pure local i (no readMore, no per-byte struct write), and the preceding blanks
+// are a zero-copy slice of the input (data[blankStart:i:i], as push does) rather
+// than the byte-by-byte l.blanks append the streaming core needs. It resumes from
+// l.consumed on the next call and only continues its loop past elided separators
+// and whitespace; every value/delimiter token returns immediately.
+//
+// Keeping this separate from scanTokenStreamG is the whole point of the split: the
+// register-delicate buffer loop (§9.1, source of the 16/18 corpus wins) is frozen
+// here, and stream-refill optimization happens next door without touching it.
+//
+//nolint:gocognit,gocyclo
+func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
+	if l.err != nil {
+		return p.none()
+	}
+
+	data := l.buffer[:l.bufferized]
+	i := l.consumed
+	// blankStart is the index right after the previous token: [blankStart:i] is the
+	// whitespace run the verbatim policy bakes into the token (zero-copy). It is
+	// only advanced past elided separators; every emit resets it via the next call's
+	// re-init from l.consumed.
+	blankStart := i
+
+	writeback := func(pos int) {
+		l.consumed = pos
+		l.offset = uint64(pos)
+	}
+
+	for i < len(data) {
+		b := data[i]
+
+		switch b {
+		case lineFeed:
+			if !p.tracksPosition() {
+				i += consumeWhitespace(data[i:]) // semantic batch-skip (citm bottleneck)
+
+				continue
+			}
+			i++
+			l.line++
+			l.lineStart = uint64(i)
+
+			continue
+		case blank, tab, carriageReturn:
+			if !p.tracksPosition() {
+				i += consumeWhitespace(data[i:])
+
+				continue
+			}
+			i++
+
+			continue
+		}
+
+		if p.tracksPosition() {
+			l.tokLine = l.line
+			l.tokCol = int(uint64(i+1) - l.lineStart)
+		}
+		// the whitespace run since the previous token (zero-copy); i is the token start.
+		blanks := data[blankStart:i:i]
+
+		// verbatim circuit breaker: bound the preceding-whitespace run. The stream
+		// core checks this per-byte as it appends; here blanks is a zero-copy slice,
+		// so one length check at the token boundary is equivalent (folded away in the
+		// semantic core, where tracksPosition() is a false constant).
+		if p.tracksPosition() && l.maxValueBytes > 0 && len(blanks) > l.maxValueBytes {
+			l.err = codes.ErrMaxValueBytes
+			writeback(i)
+
+			return p.none()
+		}
+
+		if l.afterKey {
+			l.afterKey = false
+			if b != colon {
+				l.err = codes.ErrKeyColon
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			i++
+			l.current = token.MakeDelimiter(token.Colon)
+			blankStart = i
+			if l.elideSeparator {
+				continue
+			}
+			writeback(i)
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+		}
+
+		switch b {
+		case colon:
+			if l.current.Kind() == token.String {
+				l.err = codes.ErrMissingObject
+			} else {
+				l.err = codes.ErrMissingKey
+			}
+			writeback(i + 1)
+
+			return p.none()
+
+		case closingBracket:
+			if l.current.IsComma() {
+				l.err = codes.ErrTrailingComma
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if !l.isInObject() {
+				l.err = codes.ErrNotInObject
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			i++
+			l.expectKey = false
+			l.popContainer()
+			l.current = token.MakeDelimiter(token.ClosingBracket)
+			writeback(i)
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case closingSquareBracket:
+			if l.current.IsComma() {
+				l.err = codes.ErrTrailingComma
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if !l.isInArray() {
+				l.err = codes.ErrNotInArray
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			i++
+			l.popContainer()
+			l.current = token.MakeDelimiter(token.ClosingSquareBracket)
+			writeback(i)
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case comma:
+			if l.current.IsComma() {
+				l.err = codes.ErrRepeatedComma
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if l.expectKey {
+				l.err = codes.ErrMissingKey
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if !l.isInContainer() {
+				l.err = codes.ErrCommaInContainer
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
+				l.err = codes.ErrMissingValue
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			if l.isInObject() {
+				l.expectKey = true
+			}
+
+			i++
+			l.current = token.MakeDelimiter(token.Comma)
+			blankStart = i
+			if l.elideSeparator {
+				continue
+			}
+			writeback(i)
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case openingBracket:
+			if l.current.IsKnown() {
+				if l.current.Kind() != token.Delimiter {
+					l.err = codes.ErrInvalidToken
+					writeback(i + 1)
+
+					return p.none()
+				}
+				if l.current.Delimiter().IsClosing() {
+					l.err = codes.ErrMissingComma
+					writeback(i + 1)
+
+					return p.none()
+				}
+				if l.isInArray() {
+					if l.current.Delimiter() != token.OpeningSquareBracket &&
+						l.current.Delimiter() != token.Comma {
+						l.err = codes.ErrMissingComma
+						writeback(i + 1)
+
+						return p.none()
+					}
+				} else if !l.current.IsColon() {
+					l.err = codes.ErrMissingKey
+					writeback(i + 1)
+
+					return p.none()
+				}
+			}
+			if l.expectKey {
+				l.err = codes.ErrMissingKey
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			i++
+			l.expectKey = true
+			l.pushObject()
+			if l.err != nil {
+				writeback(i)
+
+				return p.none()
+			}
+			l.current = token.MakeDelimiter(token.OpeningBracket)
+			writeback(i)
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case openingSquareBracket:
+			if l.current.IsKnown() {
+				if l.current.Kind() != token.Delimiter {
+					l.err = codes.ErrInvalidToken
+					writeback(i + 1)
+
+					return p.none()
+				}
+				if l.current.Delimiter().IsClosing() {
+					l.err = codes.ErrMissingComma
+					writeback(i + 1)
+
+					return p.none()
+				}
+			}
+			if l.expectKey {
+				l.err = codes.ErrMissingKey
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			i++
+			l.pushArray()
+			if l.err != nil {
+				writeback(i)
+
+				return p.none()
+			}
+			l.current = token.MakeDelimiter(token.OpeningSquareBracket)
+			writeback(i)
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case doubleQuote:
+			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+				l.err = codes.ErrDelimitedValue
+				l.current = token.None
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			writeback(i + 1)
+			l.current = l.consumeString()
+			if l.err != nil {
+				return p.none()
+			}
+			i = l.consumed
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case startOfTrue, startOfFalse:
+			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+				l.err = codes.ErrDelimitedValue
+				l.current = token.None
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if l.expectKey {
+				l.err = codes.ErrMissingKey
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			writeback(i + 1)
+			l.current = l.consumeBoolean(b)
+			if l.err != nil {
+				return p.none()
+			}
+			i = l.consumed
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case minusSign, decimalPoint, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+				l.err = codes.ErrDelimitedValue
+				l.current = token.None
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if l.expectKey {
+				l.err = codes.ErrMissingKey
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			// Bounded values (maxValueBytes) route to the streaming number consumer,
+			// which enforces the cap; the inline fast path + consumeNumberWhole below
+			// do not check it. In whole-buffer mode this gate reduces to maxValueBytes,
+			// so the unbounded common case keeps the full inline fast path (§10 keeps
+			// the champion shape; the old combined core gated it the same way).
+			if l.maxValueBytes > 0 {
+				writeback(i + 1)
+				l.current = l.consumeNumberStreaming(b)
+				if l.err != nil {
+					return p.none()
+				}
+				i = l.consumed
+
+				return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+			}
+
+			numStart := i
+			runFrom := i + 1
+			var firstDigit byte
+			ok := true
+
+			switch {
+			case b >= '0' && b <= '9':
+				firstDigit = b
+			case b == minusSign:
+				if uint(i+1) < uint(len(data)) && data[i+1] >= '0' && data[i+1] <= '9' {
+					firstDigit = data[i+1]
+					runFrom = i + 2
+				} else {
+					ok = false
+				}
+			default: // decimalPoint
+				ok = false
+			}
+
+			if ok {
+				n := runFrom
+				for uint(n) < uint(len(data)) && '0' <= data[n] && data[n] <= '9' {
+					n++
+				}
+
+				leadingZero := firstDigit == '0' && n > runFrom
+				end := n
+				var term byte
+				if uint(end) < uint(len(data)) {
+					term = data[end]
+				}
+				// extend over a fractional part ('.' 1*DIGIT); a trailing dot leaves
+				// term==decimalPoint for consumeNumberWhole's error.
+				if !leadingZero && term == decimalPoint {
+					m := end + 1
+					for uint(m) < uint(len(data)) && '0' <= data[m] && data[m] <= '9' {
+						m++
+					}
+					if m > end+1 { // at least one fractional digit
+						end = m
+						term = 0
+						if uint(end) < uint(len(data)) {
+							term = data[end]
+						}
+					}
+				}
+				// extend over an exponent ((e|E) [+|-] 1*DIGIT); cheaper than bailing to
+				// consumeNumberWhole and re-scanning. A malformed exponent leaves
+				// term=='e'/'E' for the slow-path error.
+				if !leadingZero && (term == 'e' || term == 'E') {
+					m := end + 1
+					if uint(m) < uint(len(data)) && (data[m] == '+' || data[m] == '-') {
+						m++
+					}
+					expStart := m
+					for uint(m) < uint(len(data)) && '0' <= data[m] && data[m] <= '9' {
+						m++
+					}
+					if m > expStart { // at least one exponent digit
+						end = m
+						term = 0
+						if uint(end) < uint(len(data)) {
+							term = data[end]
+						}
+					}
+				}
+
+				if !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
+					l.current = token.MakeWithValue(token.Number, data[numStart:end:end])
+					i = end
+					writeback(end)
+
+					return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+				}
+			}
+
+			writeback(i + 1)
+			l.current = l.consumeNumberWhole(b)
+			if l.err != nil {
+				return p.none()
+			}
+			i = l.consumed
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		case startOfNull:
+			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+				l.err = codes.ErrDelimitedValue
+				l.current = token.None
+				writeback(i + 1)
+
+				return p.none()
+			}
+			if l.expectKey {
+				l.err = codes.ErrMissingKey
+				writeback(i + 1)
+
+				return p.none()
+			}
+
+			writeback(i + 1)
+			l.current = l.consumeNull(b)
+			if l.err != nil {
+				return p.none()
+			}
+			i = l.consumed
+
+			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
+
+		default:
+			l.err = codes.ErrInvalidToken
+			writeback(i + 1)
+
+			return p.none()
+		}
+	}
+
+	// buffer exhausted: the trailing whitespace run [blankStart:i] is the verbatim
+	// EOF token's preceding blanks (zero-copy); the semantic policy ignores it.
+	l.blanks = data[blankStart:i:i]
+	writeback(i)
+
+	// verbatim circuit breaker on a trailing whitespace flood with no closing token
+	// (parity with the stream core's per-byte check); folded away in the semantic core.
+	if p.tracksPosition() && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+		l.err = codes.ErrMaxValueBytes
+
+		return p.none()
+	}
+
+	return errCheckG(l, p, io.EOF)
 }

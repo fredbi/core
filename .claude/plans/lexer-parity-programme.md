@@ -735,3 +735,72 @@ a necessity + a permanent amd64 asm/CPU-gate/fallback surface. PARKED; pull off 
 shelf only for a big-text-document-lexing consumer. Fred's adaptive gate (SWAR-
 probe first, AVX2 only if the first word finds no closing quote) is the right shape
 if revived. Experiment code was throwaway (avo examples dir).
+
+---
+
+## 10. Stream/buffer pull-core split ⏳ (2026-07-20 — streams catch-up)
+
+**Decision (Fred):** the semantic pull core `scanTokenG` is split into two
+policy-parameterized cores so the stream lane can be optimized *without perturbing
+the benchmarked whole-buffer champion*. The buffer speed-up from stripping the
+streaming-generality is expected to be *small* (the `l.wholeBuffer` runtime branches
+predict near-perfectly and are per-token, not per-byte); **the prize is decoupling /
+insulation**, not a buffer win. Sizing the buffer bonus is skipped — the decoupling
+alone justifies the split (§9.1 discipline: don't edit the delicate loop that
+produces the 16/18 wins).
+
+### 10.1 Shape
+Fork `scanTokenG` → two generic cores, both still fed through lexgen:
+
+- **`scanTokenBufferG[T,P]`** — whole-buffer lane. Modeled on `scanPushG` (the
+  proven buffer shape): **local cursor `i`, NO `readMore`**, whole-buffer value
+  consumers, inline number fast path *unconditional* (no `l.wholeBuffer &&` gate),
+  and **zero-copy preceding blanks** (`data[blankStart:i:i]`, like push) instead of
+  the byte-by-byte `l.blanks` append. Returns one token; resumes from `l.consumed`
+  next call; `continue`s only past elided separators + whitespace. Trailing blanks
+  for the verbatim EOF token are sliced zero-copy before `errCheckG(io.EOF)`.
+- **`scanTokenStreamG[T,P]`** — io.Reader lane = today's `scanTokenG`, but with the
+  dead whole-buffer number fast path removed (always `consumeNumberStreaming`), so
+  it is the small, clean surface we iterate on. Keeps the `for{ readMore(); … }`
+  outer loop, struct cursor, streaming consumers.
+
+`NextToken` (L) / `VL.NextToken` dispatch **once** on `l.wholeBuffer` — one
+predictable branch per token, one `L` type, pooling/Reset untouched.
+
+lexgen `cores`: `scanTokenG` entry → `scanTokenBufferG` + `scanTokenStreamG`
+(`scanPushG`, `errCheckG` unchanged) ⇒ generated `scanTokenBuffer{Semantic,Verbatim}`,
+`scanTokenStream{Semantic,Verbatim}`. `devirt_test.go::nextTokenGeneric` dispatches
+the same way so the generic↔devirt equivalence guard covers both lanes.
+
+### 10.2 Correctness net
+`TestDevirtEquivalencePull` already runs each input in **both** whole-buffer and
+tiny-buffer streaming mode; plus push/pull equivalence, conformance, security,
+zerocopy, race. The buffer core is a yield→return transform of `scanPushG`, so
+`TestDevirtEquivalencePush` (push vs whole-buffer pull) is an extra cross-check.
+
+### 10.3 Then — iterate on the stream lane (the actual gap)
+Once decoupled, close the stream-vs-buffer gap on the corpus (io.Reader over the
+same payloads). Candidate levers, each measured in isolation per §7: hoist
+`readMore` out of the byte loop; larger refills / buffer-growth policy;
+apply the §4 whole-buffer string/number fast paths to refilled buffers
+(token-spanning-boundary handling — study jsontext's `*Resumable`); reduce the
+per-byte struct-cursor cost. VL symmetry (§9.6) folds in naturally — the buffer
+core already gives verbatim zero-copy blanks; the stream core keeps the append.
+
+**Status:** ✅ split landed in the lab (build/vet/test/-race green, generate
+idempotent, all equivalence guards pass — buffer-pull vs generic vs push, both
+lanes in `TestDevirtEquivalencePull`). `maxValueBytes` parity restored in the
+buffer core (numbers route to the bound-enforcing streaming consumer; verbatim
+blanks-flood checked once at the token boundary + at EOF — the zero-copy-blanks
+equivalents of the stream core's per-byte checks).
+
+**Measured (unexpected upside):** the buffer-pull lane came out *faster* than the
+old combined core, not merely insulated — interleaved+warmed A/B (lab devirt/pull
+vs reference devirt/pull, Micro workloads): ints_pos −8.6%, decimals −7.0%,
+strings_unicode −2.8%, strings_plain −2.1%, nulls +0.9% (noise). The number wins
+exceed the ~6% cross-package alignment floor and match the mechanism (buffer lane
+drops the per-token readMore + the `l.wholeBuffer` runtime gate + the per-byte
+struct cursor); strings within noise. 0 allocs throughout. Push path unchanged.
+
+**Next:** iterate on the stream lane (§10.3) — first size the actual stream-vs-buffer
+gap on the corpus, then apply refill-side levers there without touching this core.

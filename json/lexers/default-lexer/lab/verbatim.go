@@ -77,8 +77,14 @@ func verbatimOpts(opts []Option) []Option {
 // the memory backing the previous token's value is reused. To keep a token, use
 // its Clone() method.
 func (l *VL) NextToken() token.VT {
-	// devirtualized pull core (adopted 2026-06-27); see [L.NextToken].
-	return scanTokenVerbatim(l.L, verbatimPolicy{})
+	// devirtualized pull core (adopted 2026-06-27); see [L.NextToken]. Same
+	// wholeBuffer lane dispatch (§10): the buffer lane gives VL zero-copy blanks,
+	// the stream lane keeps the byte-by-byte blanks append across refills.
+	if l.wholeBuffer {
+		return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
+	}
+
+	return scanTokenStreamVerbatim(l.L, verbatimPolicy{})
 }
 
 // Line yields the 1-based line number at which the most recently returned token

@@ -152,9 +152,16 @@ func (l *L) Offset() uint64 {
 // using its [T.Clone] method.
 func (l *L) NextToken() token.T {
 	// devirtualized pull core (adopted 2026-06-27: +4.23% geomean over the generic
-	// core, no regressions; see plan §5.1 + devirt_bench_test). The generic
-	// scanTokenG is retained as lexgen's source-of-truth and the A/B baseline.
-	return scanTokenSemantic(l, semanticPolicy{})
+	// core, no regressions; see plan §5.1 + devirt_bench_test). Dispatch once per
+	// token on wholeBuffer (§10): the whole-buffer lane (local cursor, no readMore,
+	// zero-copy blanks) is the frozen champion; the stream lane is optimized
+	// separately. The generic scanTokenBufferG / scanTokenStreamG are lexgen's
+	// source-of-truth and the A/B baseline.
+	if l.wholeBuffer {
+		return scanTokenBufferSemantic(l, semanticPolicy{})
+	}
+
+	return scanTokenStreamSemantic(l, semanticPolicy{})
 }
 
 // readMore provides more input from the internal buffer or
