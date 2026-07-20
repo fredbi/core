@@ -778,14 +778,96 @@ tiny-buffer streaming mode; plus push/pull equivalence, conformance, security,
 zerocopy, race. The buffer core is a yield→return transform of `scanPushG`, so
 `TestDevirtEquivalencePush` (push vs whole-buffer pull) is an extra cross-check.
 
-### 10.3 Then — iterate on the stream lane (the actual gap)
-Once decoupled, close the stream-vs-buffer gap on the corpus (io.Reader over the
-same payloads). Candidate levers, each measured in isolation per §7: hoist
-`readMore` out of the byte loop; larger refills / buffer-growth policy;
-apply the §4 whole-buffer string/number fast paths to refilled buffers
-(token-spanning-boundary handling — study jsontext's `*Resumable`); reduce the
-per-byte struct-cursor cost. VL symmetry (§9.6) folds in naturally — the buffer
-core already gives verbatim zero-copy blanks; the stream core keeps the append.
+### 10.3 Stream lane optimization — DESIGN AGREED (2026-07-20, debated w/ Fred)
+
+**End state:** *streaming = the same fast scanner run over a sliding window.* The
+byte-by-byte streaming consumers become the thing we delete, not maintain.
+
+**Cost model.** Two copies today: (1) the Read copy (reader→buffer) — unavoidable;
+(2) the value copy (buffer→currentValue, byte-by-byte in
+`consumeStringStreaming`/`consumeNumberStreaming`) — avoidable for most tokens. Plus
+two speed gaps vs buffer mode: per-byte end-of-buffer checks + struct cursor, and no
+SWAR/AVX2/bulk-copy on the value consumers. Key fact: most tokens sit entirely inside
+the current buffer (token ≪ window), so for them streaming should behave *identically*
+to buffer mode.
+
+**Central lever — optimistic in-buffer scan.** Scan `l.buffer[:l.bufferized]` with a
+local cursor and the buffer-mode fast paths. The ONLY difference from buffer mode is
+the terminal condition: reaching `bufferized` means *"maybe need more"* (refill+
+resume), not end-of-input. Tokens that complete in-buffer take the fast path and
+ALIAS `l.buffer` zero-copy (valid until next refill — same lifespan as the
+currentValue-reuse contract; Fred confirmed aliasing is within the contract). End-of-
+buffer is then checked once per SWAR word + once per token, not per byte. This is
+jsontext's `*Resumable` idea (§6 flagged it). The subtlety: `bufferized ≠ EOF`, so we
+canNOT reuse `consumeStringWhole` verbatim (it errors ErrUnterminatedString at buffer
+end) — the fast path needs a "reached bufferized → refill/delegate" branch.
+
+**Buffer-size guard rail (Fred):** round `WithBufferSize` capacity UP to a multiple of
+the max scan horizon (32 B — covers the 8 B SWAR word and the 32 B AVX2 stride) for
+clean tiling + horizon-aligned slide arithmetic. Note: this pins CAPACITY; `bufferized`
+(what a given Read returned) is reader-decided and not horizon-aligned, so the fast-path
+scalar tail stays.
+
+**Two models for a token that spans a refill (starts at `s`, scan hits `bufferized`):**
+- *copy-into-current (A, today):* copy `buffer[s:bufferized]` OUT into currentValue,
+  refill from 0, continue BYTE-BY-BYTE appending; value = a copy in currentValue. Two
+  scanners (fast + streaming). Spanning tokens never zero-copy, never fast. Trivial refill.
+- *slide+grow (B, chosen end state):* memmove `buffer[s:bufferized]` to the FRONT
+  (overwriting already-emitted `[0:s]`), Read AFTER it, continue the SAME fast scan over
+  the now-contiguous token; value = buffer alias (zero copy), fast-path throughout, even
+  a `\uXXXX` split across the boundary becomes contiguous. ONE scanner. Grow only when a
+  single token exceeds capacity. Per-spanning move cost ≈ same as A (both move the partial
+  once); B's prize is architectural (one scanner; retire the streaming consumers) + stays
+  fast on small buffers.
+
+**THE INVARIANT (Fred — prevents an unbounded/ratcheting buffer):** capacity and read
+size are INDEPENDENT. Read/window size stays = `bufferSize` (what we request per Read,
+the working set between tokens). Capacity = spare headroom that grows ONLY when one
+token's contiguous span outruns it, retained across refills/Reset, NEVER the amount we
+read to fill. **Grow is triggered by a token outrunning capacity — never by the buffer
+merely being full after a read** (else "full" fires every refill → unbounded). Windowing
+reads to `bufferSize` is what makes "full" a reliable "this token needs more room" signal.
+⇒ steady-state residency ≈ `bufferSize` + at most one in-flight oversized token; capacity
+converges to the LARGEST SINGLE TOKEN, not the stream length. During a normal refill:
+slide the small unconsumed remainder to front, read `bufferSize` into the free space;
+only while consuming one over-window token does the window extend into spare (grow if it
+exceeds cap); on token completion the window snaps back to `bufferSize`.
+
+**Phasing:**
+- **Phase 1 (delegation, low risk, ship+measure):** add the optimistic in-buffer fast
+  path; fast-path only the CLEAN, in-buffer common case (plain string w/ closing quote in
+  buffer → SWAR/AVX2 + alias; number terminated in buffer → inline + alias; true/false/
+  null via existing consumeN). ANY escape, or scan reaches `bufferized` → delegate to the
+  EXISTING streaming consumers (Model A). No rewrite of the hard spanning logic.
+- **Phase 2 (slide+grow, Model B, under the invariant):** replace the delegation fallback
+  with slide+grow so spanning tokens stay fast+zero-copy; then retire
+  `consumeStringStreaming`/`consumeNumberStreaming`. Earns its way in only if measured
+  spanning / small-buffer cost is real.
+
+VL symmetry (§9.6) folds in — buffer core already gives verbatim zero-copy blanks; a
+spanning blank run is the verbatim analogue of a spanning value (slide handles it too).
+
+**Baseline gap (measured 2026-07-20, BenchmarkStreamGap, L.NextToken, stream as % of
+buffer throughput — lower = bigger gap):**
+
+    STRING-HEAVY (the prize, = go-openapi target):
+      gsoc-2018       6.9%  (14.5x slower!)   update-center  25%   github_events 29%
+      azure_swagger   29%   azure.pretty      32%   numbers 32%   apache 37%
+    STRUCTURE/NUMBER (less bad, still ~2x):
+      citm 60%   marine_ik 52%   instruments 50%   mesh 42%   canada 40%   twitter 37%
+
+**Two diagnoses that sharpen the plan:**
+1. **4 KB ≈ 64 KB throughput everywhere** (e.g. azure 29% vs 28%, citm 60% vs 61%). The
+   gap is NOT refill frequency — it is the PER-TOKEN in-buffer work (byte-by-byte value
+   consumers + struct cursor + the avoidable copy), which is paid regardless of buffer
+   size. ⇒ **Phase 1 (optimistic in-buffer fast path) is the prize; bigger buffers and
+   Phase 2 slide+grow are secondary** (spanning tokens are not the main cost).
+2. **String-heavy bleeds most** — buffer mode runs SWAR/AVX2 + zero-copy alias; streaming
+   crawls byte-by-byte + copy. gsoc buffer 2631 MB/s → stream 181. Phase 1 fast-pathing
+   clean in-buffer strings should recover the bulk, exactly on the azure/go-openapi target.
+
+Measurement harness: `json/lexers/benchmark/streamgap_bench_test.go` (THROWAWAY, imports
+the lab; kept to measure Phase 1 before/after; delete before any retrofit to reference).
 
 **Status:** ✅ split landed in the lab (build/vet/test/-race green, generate
 idempotent, all equivalence guards pass — buffer-pull vs generic vs push, both
