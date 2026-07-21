@@ -1172,6 +1172,30 @@ refill contract = the Phase-1a contract). Reader-mode geomean, VS as % of L, 0 a
 random 61%→94%, golang 67%→86%, payload 55%→86%. RESIDUAL laggards now = whitespace-heavy /
 object payloads (citm ~48%, *.pretty 55–63%): the per-byte whitespace walk in the verbatim
 stream core (tracksPosition path accumulates blanks + counts lines byte-by-byte, vs semantic's
-batch-skip). NEXT lever: batch-skip whitespace in the state/verbatim stream core (zero-copy
-blank slice when the run is in-window + newline count), gated for statePolicy so VL's frozen
-core is untouched.
+batch-skip).
+
+### 10.5d WHITESPACE BATCH-SKIP in the verbatim/state stream core (2026-07-21, commit 0f9d8b4)
+
+Propagated the semantic core's consumeWhitespace batch-skip to the position-tracking
+(verbatim/state) stream path (which still walked whitespace byte-by-byte: per-byte
+offset++/consumed++ + per-byte l.blanks append + per-byte line track). Design that matters:
+the first whitespace byte is handled INLINE (append + line-track), then a cheap inline peek
+(isBlank of the next byte) decides whether to call skipBlanksRestStream — which scans the run's
+continuation once (consumeWhitespaceTracked = length + newline count + last-NL index), advances
+in one step, and BULK-appends the rest into l.blanks. GOTCHA (measured): a naive always-call
+batch REGRESSED mesh 84%→72% — mesh has 73k SINGLE-byte whitespace runs (avg run len 1.0), so
+the per-run call overhead dominated. The inline-first-byte + peek keeps 1-byte runs call-free
+(mesh restored to 82%) while long runs (pretty, avg 10 bytes) pay one call + one memcpy. Semantic
+core untouched (the !tracksPosition() branch unchanged; new code folds away where
+tracksPosition/trackBlanks are false — L reader unregressed at ~674 geomean). maxValueBytes still
+bounded (per run/window). build/vet/test/-race green, generate idempotent.
+
+RESULT reader/pull VS as % of L (§10.5c→§10.5d, 0 allocs): citm 48→64, mesh.pretty 55→65,
+azure.pretty 63→70, gsoc 74→82, instruments 62→68; compact NEUTRAL (mesh 82/86, numbers 79/88),
+no regressions. Full-corpus reader geomean VS/L: **pull 72→78%, push 71→76%** (every workload
+65–91%: canada 91, numbers 88, gsoc 87, mesh 86, azure 85; worst mesh.pretty/citm 65). Combined
+with §10.5c, VS reader went **55→78% of L (pull)**. Buffer mode was 79% pull / 88% push (§10.5b),
+so reader has essentially caught buffer on pull. Remaining reader gap = per-token verbatim core
+overhead (position snapshot + storesBlanks + raw string vs semantic decoded scan on short
+strings) — diminishing returns; the big levers (raw-string fast path §10.5c, whitespace
+batch-skip §10.5d) are done. GOAL "VS reader catch up with L" essentially MET.
