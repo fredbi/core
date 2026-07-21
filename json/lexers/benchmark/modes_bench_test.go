@@ -109,76 +109,9 @@ func BenchmarkLexerModes(b *testing.B) {
 				}
 			})
 
-			// --- verbatim lexer VL ---
-
-			b.Run("VL/buffer/push", func(b *testing.B) {
-				lx := lab.NewVerbatimWithBytes(data)
-				b.SetBytes(int64(len(data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-				for b.Loop() {
-					lx.ResetWithBytes(data)
-					for t := range lx.Tokens() {
-						modeSink += int(t.Kind())
-					}
-				}
-			})
-
-			b.Run("VL/buffer/pull", func(b *testing.B) {
-				lx := lab.NewVerbatimWithBytes(data)
-				b.SetBytes(int64(len(data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-				for b.Loop() {
-					lx.ResetWithBytes(data)
-					for {
-						t := lx.NextToken()
-						if !lx.Ok() || t.Kind() == token.EOF {
-							break
-						}
-						modeSink += int(t.Kind())
-					}
-				}
-			})
-
-			b.Run("VL/reader/push", func(b *testing.B) {
-				var br bytes.Reader
-				br.Reset(data)
-				lx := lab.NewVerbatim(&br)
-				b.SetBytes(int64(len(data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-				for b.Loop() {
-					br.Reset(data)
-					lx.ResetWithReader(&br)
-					for t := range lx.Tokens() {
-						modeSink += int(t.Kind())
-					}
-				}
-			})
-
-			b.Run("VL/reader/pull", func(b *testing.B) {
-				var br bytes.Reader
-				br.Reset(data)
-				lx := lab.NewVerbatim(&br)
-				b.SetBytes(int64(len(data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-				for b.Loop() {
-					br.Reset(data)
-					lx.ResetWithReader(&br)
-					for {
-						t := lx.NextToken()
-						if !lx.Ok() || t.Kind() == token.EOF {
-							break
-						}
-						modeSink += int(t.Kind())
-					}
-				}
-			})
-
-			// --- prototype state-based verbatim lexer VS (§10.5b): same verbatim
-			// feature (raw values + blanks + position via accessors), light token.T ---
+			// --- state-based verbatim lexer VS (§10.5b): the future VL. Same verbatim
+			// feature (raw values + blanks + position via accessors), light token.T.
+			// The old token.VT-based VL is no longer measured (on death row, §10.5b). ---
 
 			b.Run("VS/buffer/push", func(b *testing.B) {
 				lx := lab.NewVerbatimStateWithBytes(data)
