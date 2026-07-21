@@ -39,6 +39,7 @@ func (scanCostPolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
 func (scanCostPolicy) none() token.T                              { return token.None }
 func (scanCostPolicy) eof(_ []byte) token.T                       { return token.EOFToken }
 func (scanCostPolicy) tracksPosition() bool                       { return true }
+func (scanCostPolicy) storesBlanks() bool                         { return false }
 
 // verbatimStatePolicy is the PROSPECTIVE state-based VL candidate (Fred's token-vs-
 // state arbitrage): drop the heavy token.VT entirely and emit the light token.T,
@@ -57,6 +58,7 @@ func (p verbatimStatePolicy) emit(t token.T, blanks []byte, _, _ int) token.T {
 func (verbatimStatePolicy) none() token.T        { return token.None }
 func (verbatimStatePolicy) eof(_ []byte) token.T { return token.EOFToken }
 func (verbatimStatePolicy) tracksPosition() bool { return true }
+func (verbatimStatePolicy) storesBlanks() bool   { return false }
 
 var vlCostSink int
 

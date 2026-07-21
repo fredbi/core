@@ -44,12 +44,19 @@ type emitPolicy[T any] interface {
 	// blanks, the semantic policy ignores them.
 	eof(blanks []byte) T
 	// tracksPosition reports whether the core must maintain line/column accounting.
-	// Only the verbatim lexer needs it (it bakes line/col into token.VT); the
-	// semantic lexer drops it. Returning a constant lets the devirtualized cores
-	// (scan_gen.go) constant-fold and dead-code-eliminate the accounting entirely
-	// in the semantic core, so its hot loop does no per-newline / per-token position
-	// bookkeeping — matching jsontext's offset-only model.
+	// Only the verbatim lexers need it (it bakes line/col into token.VT, or exposes
+	// it as lexer state); the semantic lexer drops it. Returning a constant lets the
+	// devirtualized cores (scan_gen.go) constant-fold and dead-code-eliminate the
+	// accounting entirely in the semantic core, so its hot loop does no per-newline /
+	// per-token position bookkeeping — matching jsontext's offset-only model.
 	tracksPosition() bool
+	// storesBlanks reports whether the core must stash the preceding-blanks slice into
+	// lexer state (l.blanks) at each token boundary. True only for the state-based
+	// verbatim lexer [VS] (§10.5b), which emits a light token.T and exposes the blanks
+	// via an accessor instead of baking them into the token. verbatimPolicy returns
+	// false: it carries the blanks IN the token (token.VT), and adding a redundant
+	// store would perturb VL's frozen core. Constant-folds away where false.
+	storesBlanks() bool
 }
 
 // semanticPolicy is the policy for the semantic lexer L: the emitted token IS
@@ -61,6 +68,7 @@ func (semanticPolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
 func (semanticPolicy) none() token.T                              { return token.None }
 func (semanticPolicy) eof(_ []byte) token.T                       { return token.EOFToken }
 func (semanticPolicy) tracksPosition() bool                       { return false }
+func (semanticPolicy) storesBlanks() bool                         { return false }
 
 // verbatimPolicy is the policy for the verbatim lexer VL: it wraps the
 // grammar/value token.T into a token.VT, attaching the preceding blanks and the
@@ -73,6 +81,24 @@ func (verbatimPolicy) emit(t token.T, blanks []byte, line, col int) token.VT {
 func (verbatimPolicy) none() token.VT             { return token.VNone }
 func (verbatimPolicy) eof(blanks []byte) token.VT { return token.MakeVerbatimEOF(blanks) }
 func (verbatimPolicy) tracksPosition() bool       { return true }
+func (verbatimPolicy) storesBlanks() bool         { return false }
+
+// statePolicy is the policy for the PROTOTYPE state-based verbatim lexer [VS]
+// (§10.5b): the "token-vs-state arbitrage". It emits the LIGHT token.T (identity,
+// like the semantic policy) instead of the 72B token.VT, and keeps the verbatim
+// feature as LEXER STATE — the preceding-blanks slice is stashed in l.blanks (via
+// storesBlanks, read back through [VS.LeadingSpace]) and the position stays in
+// l.tokLine / l.tokCol (the core writes it since tracksPosition is true, read back
+// through [VS.Line] / [VS.Column]). The sizing in §10.5a proved this recovers
+// ~85–93% of the semantic throughput vs VL's ~27% — the per-token 72B VT
+// construct-and-return-by-value was the whole tax.
+type statePolicy struct{}
+
+func (statePolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
+func (statePolicy) none() token.T                              { return token.None }
+func (statePolicy) eof(_ []byte) token.T                       { return token.EOFToken }
+func (statePolicy) tracksPosition() bool                       { return true }
+func (statePolicy) storesBlanks() bool                         { return true }
 
 // scanPushG is the generic, policy-parameterized push core backing Tokens() for
 // both L and VL in whole-buffer mode. The per-byte hot loop keeps the cursor in
@@ -162,6 +188,9 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 		// the whitespace run since the previous token (zero-copy); i is the index
 		// of the first significant byte (the token start).
 		blanks := data[blankStart:i:i]
+		if p.storesBlanks() {
+			l.blanks = blanks // state-based VL: stash the leading blanks in lexer state
+		}
 
 		if l.afterKey {
 			l.afterKey = false
@@ -1015,6 +1044,9 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 		}
 		// the whitespace run since the previous token (zero-copy); i is the token start.
 		blanks := data[blankStart:i:i]
+		if p.storesBlanks() {
+			l.blanks = blanks // state-based VL: stash the leading blanks in lexer state
+		}
 
 		// verbatim circuit breaker: bound the preceding-whitespace run. The stream
 		// core checks this per-byte as it appends; here blanks is a zero-copy slice,

@@ -29,3 +29,12 @@ func (l *L) scanPushVerbatimDevirt(yield func(token.VT) bool) {
 	scanPushVerbatimCore(l, verbatimPolicy{}, yield)
 }
 
+// scanPushStateDevirt is the push shim for the prototype state-based verbatim lexer
+// [VS] (§10.5b): emits the light token.T while the core stashes blanks/position in
+// lexer state. Same //go:noinline discipline as the others.
+//
+//go:noinline
+func (l *L) scanPushStateDevirt(yield func(token.T) bool) {
+	scanPushStateCore(l, statePolicy{}, yield)
+}
+

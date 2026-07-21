@@ -46,6 +46,9 @@ type variant struct{ suffix, tok, pol string }
 var variants = []variant{
 	{suffix: "Semantic", tok: "token.T", pol: "semanticPolicy"},
 	{suffix: "Verbatim", tok: "token.VT", pol: "verbatimPolicy"},
+	// State is the prototype state-based verbatim lexer VS (§10.5b): emits the light
+	// token.T (like Semantic) but tracks position and stashes blanks in lexer state.
+	{suffix: "State", tok: "token.T", pol: "statePolicy"},
 }
 
 // core describes a generic function to monomorphize: its name, the exact generic
