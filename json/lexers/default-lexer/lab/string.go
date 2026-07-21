@@ -53,7 +53,7 @@ func (l *L) consumeString() token.T {
 			return l.consumeStringRawWhole()
 		}
 
-		return l.consumeStringRawStreaming()
+		return l.consumeStringRawStreamFast()
 	}
 
 	if l.wholeBuffer {
