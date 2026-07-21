@@ -210,6 +210,7 @@ import (
 	"io"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
+	scan "github.com/fredbi/core/json/lexers/internal/scan"
 	"github.com/fredbi/core/json/lexers/token"
 )
 `

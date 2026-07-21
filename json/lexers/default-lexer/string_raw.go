@@ -7,9 +7,10 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/default-lexer/internal/strscan"
 	"github.com/fredbi/core/json/lexers/default-lexer/internal/swar"
+	codes "github.com/fredbi/core/json/lexers/error-codes"
+	scan "github.com/fredbi/core/json/lexers/internal/scan"
 	"github.com/fredbi/core/json/lexers/token"
 )
 
@@ -396,7 +397,7 @@ func (l *L) rawUnicodeStreaming() error {
 	if err := l.consumeN(buf[:]); err != nil {
 		return codes.ErrUnicodeEscape
 	}
-	code, ok := parseHex4(buf[0], buf[1], buf[2], buf[3])
+	code, ok := scan.Hex4(buf[0], buf[1], buf[2], buf[3])
 	if !ok {
 		return codes.ErrUnicodeEscape
 	}
@@ -411,7 +412,7 @@ func (l *L) rawUnicodeStreaming() error {
 		if nb[0] != escape || nb[1] != 'u' {
 			return codes.ErrSurrogateEscape
 		}
-		code2, ok2 := parseHex4(nb[2], nb[3], nb[4], nb[5])
+		code2, ok2 := scan.Hex4(nb[2], nb[3], nb[4], nb[5])
 		if !ok2 {
 			return codes.ErrUnicodeEscape
 		}
@@ -433,7 +434,7 @@ func validateUnicodeWhole(data []byte, pos, n int) (int, error) {
 	if pos+4 > n {
 		return pos, codes.ErrUnicodeEscape
 	}
-	code, ok := parseHex4(data[pos], data[pos+1], data[pos+2], data[pos+3])
+	code, ok := scan.Hex4(data[pos], data[pos+1], data[pos+2], data[pos+3])
 	if !ok {
 		return pos, codes.ErrUnicodeEscape
 	}
@@ -444,7 +445,7 @@ func validateUnicodeWhole(data []byte, pos, n int) (int, error) {
 		if pos+6 > n || data[pos] != escape || data[pos+1] != 'u' {
 			return pos, codes.ErrSurrogateEscape
 		}
-		code2, ok2 := parseHex4(data[pos+2], data[pos+3], data[pos+4], data[pos+5])
+		code2, ok2 := scan.Hex4(data[pos+2], data[pos+3], data[pos+4], data[pos+5])
 		if !ok2 {
 			return pos, codes.ErrUnicodeEscape
 		}
@@ -457,18 +458,4 @@ func validateUnicodeWhole(data []byte, pos, n int) (int, error) {
 	}
 
 	return pos, nil
-}
-
-// parseHex4 decodes four hex-digit bytes into a codepoint value, reporting
-// whether every byte was a valid hex digit.
-func parseHex4(a, b, c, d byte) (uint32, bool) {
-	h1, ok1 := unhex(a)
-	l1, ok2 := unhex(b)
-	h2, ok3 := unhex(c)
-	l2, ok4 := unhex(d)
-	if !ok1 || !ok2 || !ok3 || !ok4 {
-		return 0, false
-	}
-
-	return uint32(h1)<<12 | uint32(l1)<<8 | uint32(h2)<<4 | uint32(l2), true
 }

@@ -13,6 +13,7 @@ import (
 	"io"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
+	scan "github.com/fredbi/core/json/lexers/internal/scan"
 	"github.com/fredbi/core/json/lexers/token"
 )
 
@@ -44,7 +45,7 @@ func scanTokenBufferSemantic(l *L, p semanticPolicy) token.T {
 		switch b {
 		case lineFeed:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:]) // semantic batch-skip (citm bottleneck)
+				i += scan.ConsumeWhitespace(data[i:]) // semantic batch-skip (citm bottleneck)
 
 				continue
 			}
@@ -55,7 +56,7 @@ func scanTokenBufferSemantic(l *L, p semanticPolicy) token.T {
 			continue
 		case blank, tab, carriageReturn:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:])
+				i += scan.ConsumeWhitespace(data[i:])
 
 				continue
 			}
@@ -518,7 +519,7 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 					// cursor (no line/col, no blanks) — folds to the only path in the
 					// devirtualized semantic core. This kills the per-byte struct-cursor
 					// cost over whitespace (the citm bottleneck).
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -532,7 +533,7 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -545,7 +546,7 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -556,7 +557,7 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -853,7 +854,7 @@ func scanPushSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool) {
 				// which must walk each blank to accumulate the preceding-blanks
 				// slice and count lines, keeps its per-byte path below. Register-
 				// safe: the semantic core has headroom since it dropped line/col.
-				i += consumeWhitespace(data[i:])
+				i += scan.ConsumeWhitespace(data[i:])
 
 				continue
 			}
@@ -864,7 +865,7 @@ func scanPushSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool) {
 			continue
 		case blank, tab, carriageReturn:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
+				i += scan.ConsumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
 
 				continue
 			}
@@ -1316,7 +1317,7 @@ func scanPushStreamSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool
 			switch b {
 			case lineFeed:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -1328,7 +1329,7 @@ func scanPushStreamSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -1341,7 +1342,7 @@ func scanPushStreamSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -1350,7 +1351,7 @@ func scanPushStreamSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -1714,7 +1715,7 @@ func scanTokenBufferVerbatim(l *L, p verbatimPolicy) token.T {
 		switch b {
 		case lineFeed:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:]) // semantic batch-skip (citm bottleneck)
+				i += scan.ConsumeWhitespace(data[i:]) // semantic batch-skip (citm bottleneck)
 
 				continue
 			}
@@ -1725,7 +1726,7 @@ func scanTokenBufferVerbatim(l *L, p verbatimPolicy) token.T {
 			continue
 		case blank, tab, carriageReturn:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:])
+				i += scan.ConsumeWhitespace(data[i:])
 
 				continue
 			}
@@ -2188,7 +2189,7 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.T {
 					// cursor (no line/col, no blanks) — folds to the only path in the
 					// devirtualized semantic core. This kills the per-byte struct-cursor
 					// cost over whitespace (the citm bottleneck).
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -2202,7 +2203,7 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.T {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -2215,7 +2216,7 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.T {
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -2226,7 +2227,7 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.T {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -2523,7 +2524,7 @@ func scanPushVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool) {
 				// which must walk each blank to accumulate the preceding-blanks
 				// slice and count lines, keeps its per-byte path below. Register-
 				// safe: the semantic core has headroom since it dropped line/col.
-				i += consumeWhitespace(data[i:])
+				i += scan.ConsumeWhitespace(data[i:])
 
 				continue
 			}
@@ -2534,7 +2535,7 @@ func scanPushVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool) {
 			continue
 		case blank, tab, carriageReturn:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
+				i += scan.ConsumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
 
 				continue
 			}
@@ -2986,7 +2987,7 @@ func scanPushStreamVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool
 			switch b {
 			case lineFeed:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -2998,7 +2999,7 @@ func scanPushStreamVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -3011,7 +3012,7 @@ func scanPushStreamVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -3020,7 +3021,7 @@ func scanPushStreamVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {

@@ -7,9 +7,10 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/default-lexer/internal/strscan"
 	"github.com/fredbi/core/json/lexers/default-lexer/internal/swar"
+	codes "github.com/fredbi/core/json/lexers/error-codes"
+	scan "github.com/fredbi/core/json/lexers/internal/scan"
 	"github.com/fredbi/core/json/lexers/token"
 )
 
@@ -552,10 +553,10 @@ func (l *L) unescapeUnicodeSequence() (rune, error) {
 		return utf8.RuneError, codes.ErrUnicodeEscape
 	}
 
-	high1, highOK1 := unhex(buf[0])
-	low1, lowOK1 := unhex(buf[1])
-	high2, highOK2 := unhex(buf[2])
-	low2, lowOK2 := unhex(buf[3])
+	high1, highOK1 := scan.Unhex(buf[0])
+	low1, lowOK1 := scan.Unhex(buf[1])
+	high2, highOK2 := scan.Unhex(buf[2])
+	low2, lowOK2 := scan.Unhex(buf[3])
 	if !lowOK1 || !highOK1 || !lowOK2 || !highOK2 {
 		return utf8.RuneError, codes.ErrUnicodeEscape
 	}
@@ -574,10 +575,10 @@ func (l *L) unescapeUnicodeSequence() (rune, error) {
 			return utf8.RuneError, codes.ErrSurrogateEscape
 		}
 
-		high1, highOK1 = unhex(nextBuf[2])
-		low1, lowOK1 = unhex(nextBuf[3])
-		high2, highOK2 = unhex(nextBuf[4])
-		low2, lowOK2 = unhex(nextBuf[5])
+		high1, highOK1 = scan.Unhex(nextBuf[2])
+		low1, lowOK1 = scan.Unhex(nextBuf[3])
+		high2, highOK2 = scan.Unhex(nextBuf[4])
+		low2, lowOK2 = scan.Unhex(nextBuf[5])
 		if !lowOK1 || !highOK1 || !lowOK2 || !highOK2 {
 			return utf8.RuneError, codes.ErrUnicodeEscape
 		}
@@ -594,18 +595,4 @@ func (l *L) unescapeUnicodeSequence() (rune, error) {
 	}
 
 	return r, nil
-}
-
-func unhex(c byte) (byte, bool) {
-	const asciiOffset = 10
-	switch {
-	case '0' <= c && c <= '9':
-		return c - '0', true
-	case 'a' <= c && c <= 'f':
-		return c - 'a' + asciiOffset, true
-	case 'A' <= c && c <= 'F':
-		return c - 'A' + asciiOffset, true
-	default:
-		return 0, false
-	}
 }

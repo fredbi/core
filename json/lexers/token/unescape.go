@@ -2,6 +2,7 @@ package token
 
 import (
 	"bytes"
+	scan "github.com/fredbi/core/json/lexers/internal/scan"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -108,14 +109,16 @@ func decodeUnicode(raw []byte, pos int) (rune, int) {
 	if pos+4 > len(raw) {
 		return utf8.RuneError, len(raw)
 	}
-	r := rune(hex4(raw, pos))
+	// input was validated at scan time, so the hex digits are known-good (ok ignored).
+	c1, _ := scan.Hex4(raw[pos], raw[pos+1], raw[pos+2], raw[pos+3])
+	r := rune(c1)
 	pos += 4
 
 	if utf16.IsSurrogate(r) {
 		// a validated high surrogate is followed by "\uYYYY"
 		if pos+6 <= len(raw) && raw[pos] == '\\' && raw[pos+1] == 'u' {
-			r2 := rune(hex4(raw, pos+2))
-			if dec := utf16.DecodeRune(r, r2); dec != utf8.RuneError {
+			c2, _ := scan.Hex4(raw[pos+2], raw[pos+3], raw[pos+4], raw[pos+5])
+			if dec := utf16.DecodeRune(r, rune(c2)); dec != utf8.RuneError {
 				return dec, pos + 6
 			}
 		}
@@ -124,27 +127,4 @@ func decodeUnicode(raw []byte, pos int) (rune, int) {
 	}
 
 	return r, pos
-}
-
-// hex4 decodes 4 hex digits at pos into a uint16-range value. Input is assumed
-// validated (each byte a hex digit).
-func hex4(raw []byte, pos int) uint32 {
-	return uint32(unhexDigit(raw[pos]))<<12 |
-		uint32(unhexDigit(raw[pos+1]))<<8 |
-		uint32(unhexDigit(raw[pos+2]))<<4 |
-		uint32(unhexDigit(raw[pos+3]))
-}
-
-func unhexDigit(c byte) byte {
-	const asciiOffset = 10
-	switch {
-	case '0' <= c && c <= '9':
-		return c - '0'
-	case 'a' <= c && c <= 'f':
-		return c - 'a' + asciiOffset
-	case 'A' <= c && c <= 'F':
-		return c - 'A' + asciiOffset
-	default:
-		return 0
-	}
 }

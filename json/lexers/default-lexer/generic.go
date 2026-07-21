@@ -27,6 +27,7 @@ import (
 	"io"
 
 	codes "github.com/fredbi/core/json/lexers/error-codes"
+	scan "github.com/fredbi/core/json/lexers/internal/scan"
 	"github.com/fredbi/core/json/lexers/token"
 )
 
@@ -146,7 +147,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				// which must walk each blank to accumulate the preceding-blanks
 				// slice and count lines, keeps its per-byte path below. Register-
 				// safe: the semantic core has headroom since it dropped line/col.
-				i += consumeWhitespace(data[i:])
+				i += scan.ConsumeWhitespace(data[i:])
 
 				continue
 			}
@@ -157,7 +158,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			continue
 		case blank, tab, carriageReturn:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
+				i += scan.ConsumeWhitespace(data[i:]) // semantic batch-skip; see lineFeed
 
 				continue
 			}
@@ -612,46 +613,8 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 	return p.none()
 }
 
-// consumeWhitespace returns the count of leading insignificant JSON whitespace in
-// b (space, tab, LF, CR). Kept tiny and scalar so it inlines — mirrors jsontext's
-// ConsumeWhitespace. Used by the semantic pull path to batch-skip a whitespace run
-// with a local cursor (one struct write-back) instead of the per-byte
-// l.offset++/l.consumed++ the main loop does; the semantic lexer tracks no
-// line/column, so the skip needs no per-newline bookkeeping. (Inline beats
-// //go:noinline here: noinline cost citm ~6% per-run-call overhead, more than the
-// ~3% number-arm perturbation inlining causes.)
-func consumeWhitespace(b []byte) (n int) {
-	for n < len(b) && (b[n] == blank || b[n] == tab || b[n] == lineFeed || b[n] == carriageReturn) {
-		n++
-	}
-
-	return n
-}
-
-// consumeWhitespaceTracked is consumeWhitespace for the position-tracking cores: it
-// also counts newlines and reports afterLastNL, the index just past the last '\n' in
-// the run (0 if none), so the caller can update line/lineStart from a single scan
-// instead of a per-byte walk.
-func consumeWhitespaceTracked(b []byte) (n, lines, afterLastNL int) {
-	for n < len(b) {
-		c := b[n]
-		if c != blank && c != tab && c != lineFeed && c != carriageReturn {
-			break
-		}
-		if c == lineFeed {
-			lines++
-			afterLastNL = n + 1
-		}
-		n++
-	}
-
-	return n, lines, afterLastNL
-}
-
-// isBlank reports whether c is JSON insignificant whitespace. Tiny so it inlines.
-func isBlank(c byte) bool {
-	return c == blank || c == tab || c == lineFeed || c == carriageReturn
-}
+// whitespace scanning + hex/\u decoding are stateless primitives shared with the
+// token package; they live in internal/scan (still inline into the hot cores).
 
 // skipBlanksRestStream batch-skips the CONTINUATION of a whitespace run in the current
 // window for the position-tracking stream cores (§10.5d) — the verbatim/state analogue
@@ -667,7 +630,7 @@ func isBlank(c byte) bool {
 func (l *L) skipBlanksRestStream() {
 	base := l.offset - uint64(l.consumed) // absolute offset of buffer index 0 this window
 	start := l.consumed
-	n, lines, afterNL := consumeWhitespaceTracked(l.buffer[start:l.bufferized])
+	n, lines, afterNL := scan.ConsumeWhitespaceTracked(l.buffer[start:l.bufferized])
 
 	if lines > 0 {
 		l.line += lines
@@ -725,7 +688,7 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 					// cursor (no line/col, no blanks) — folds to the only path in the
 					// devirtualized semantic core. This kills the per-byte struct-cursor
 					// cost over whitespace (the citm bottleneck).
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -739,7 +702,7 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -752,7 +715,7 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -763,7 +726,7 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -1068,7 +1031,7 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			switch b {
 			case lineFeed:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -1080,7 +1043,7 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -1093,7 +1056,7 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					ws := scan.ConsumeWhitespace(l.buffer[l.consumed:l.bufferized])
 					l.consumed += ws
 					l.offset += uint64(ws)
 
@@ -1102,7 +1065,7 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+				if l.consumed < l.bufferized && scan.IsBlank(l.buffer[l.consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
@@ -1445,7 +1408,7 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 		switch b {
 		case lineFeed:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:]) // semantic batch-skip (citm bottleneck)
+				i += scan.ConsumeWhitespace(data[i:]) // semantic batch-skip (citm bottleneck)
 
 				continue
 			}
@@ -1456,7 +1419,7 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 			continue
 		case blank, tab, carriageReturn:
 			if !p.tracksPosition() {
-				i += consumeWhitespace(data[i:])
+				i += scan.ConsumeWhitespace(data[i:])
 
 				continue
 			}
