@@ -1021,7 +1021,53 @@ loop overhead is simply not a meaningful fraction of stream cost.
 
 REVERTED (git checkout generic.go scan_gen.go; HEAD = fc97beb, guard rail only). The
 remaining gap is NOT the main loop — it lives in the value-body consumers (spanning/escape
-copies into currentValue), the per-stream buffer allocation (5–9 allocs, ~4–5KB B/op vs
-buffer's 2–5 / ~300B — pooling via BorrowLexerWithReader amortizes it), and the alias-check
-in the fast paths. Phase 2 (slide+grow) remains the standing lever; a pooling-focused pass
-is the untried one.
+copies into currentValue) and the alias-check in the fast paths.
+
+CORRECTION (Fred): the "5–9 allocs / ~4–5KB B/op" the streamgap harness charged to stream
+mode was the per-CONSTRUCTION window buffer (make([]byte, bufferSize)), allocated once per
+lexer and reused across every refill of a real stream — a benchmark-loop artifact, NOT a
+per-token cost. Pooling BOTH lanes in the harness (commit 814bbe4: borrow+redeem, or
+allocate-once + Reset) drops buffer to 0 allocs and stream to 1/~60B (the harness
+bytes.Reader). Pooling is a MEASUREMENT fix (removes construction + GC noise — the noise
+that buried lever A), not a lexer lever. De-noised gap: geomean ~78%, range 69–94%;
+laggards are the value-body-dominated corpora (canada 69% / numbers 73% spanning numbers;
+gsoc 73% / mesh 75% byte-by-byte bodies). Phase 2 (slide+grow) is the only substantive
+lever left for the stream gap.
+
+### 10.5 COMPASS — fair 8-mode matrix ({L,VL} × {buffer,reader} × {push,pull}) (2026-07-21, commit d1a00cf)
+
+Instrument: json/lexers/benchmark/modes_bench_test.go (THROWAWAY). Each lexer built ONCE
+and Reset per iteration; single bytes.Reader rewound → 0 allocs, steady-state scanning only.
+Purpose (Fred): now that construction is out of the loop, establish the compass — which
+usage laggards on which payloads. Geomean MB/s (200ms×5):
+
+```
+                 L/buf/push  L/buf/pull  L/rdr/push  L/rdr/pull  VL/buf/push VL/buf/pull VL/rdr/push VL/rdr/pull
+GEOMEAN             886.9       852.6       657.3       678.3       404.7       228.4       160.9       181.9
+```
+
+Four findings:
+1. **L push ≈ pull** (+4% push in buffer): the pull core scanTokenBufferG (§10 split) caught
+   the whole-buffer push champion. Split cost nothing.
+2. **reader/push is a TRAP.** Over a reader, Tokens() has no native streaming push — it falls
+   through to the NextToken loop (iterator.go:47) wrapped in a range-over-func closure, so it
+   is SLOWER than reader/pull everywhere (L −3.1%, VL −12%). Streaming callers should use
+   NextToken, not Tokens(). Candidate fix: a native streaming push loop for Tokens()-over-reader
+   (route to scanPushG's stream analogue), or at least a doc note. Cheap win / doc.
+3. **Streaming ~20% is UNIFORM:** reader = 80% of buffer for BOTH L and VL (pull). The stream
+   machinery scales proportionally; nothing VL-specific there.
+4. **VL/pull is the worst cell of the matrix — 27% of L/pull (3.7×), recovering to 46% of L
+   under push.** So VL pays a large PER-NextToken-CALL price: returning the ~48B token.VT
+   (embedded T + blanks []byte header + line/col ints) BY VALUE through a non-inlined method
+   call, once per token. Push amortizes the VT construct inside the yield loop; pull eats it
+   per call (VL push 405 vs VL pull 228 = +77%). Token-dense payloads hurt most (mesh 125 /
+   marine 119 / numbers 201 ≈ 25% of L); string-heavy gsoc least (1022 = 38% of L) — a
+   per-token cost, same signature as the semantic tiny-token floor (§9.4d mesh), amplified
+   for VL. THIS is the §9.6 VT-de-pressuring arc, and pull is where it concentrates.
+
+**RE-PRIORITIZED:** the biggest prize is no longer the stream gap (~20%, uniform, Phase 2) —
+it is **VL/pull (§9.6): a 3.7× gap in one cell**, driven by per-call VT-by-value return. Next
+candidate levers (unmeasured): shrink token.VT / return VT by pointer-into-lexer (breaks
+zero-alloc? — the semantic side rejected by-pointer for heap escape, but VL already carries a
+blanks slice, so re-measure) / make VL.NextToken inlinable / a VL-specific pull core that
+defers position+blanks materialization. Also the cheap reader/push doc-or-fix from finding 2.
