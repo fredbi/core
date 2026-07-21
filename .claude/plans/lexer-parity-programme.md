@@ -1104,3 +1104,43 @@ larger call — prototype in the lab, prove end-to-end (tests: verbatim round-tr
 instead of VT.Blanks/Unescaped), THEN decide on migration. Secondary/independent: batch-skip
 whitespace in the verbatim core (claws back the pretty +16% M−S while still tracking blank
 boundaries) and the cheap reader/push doc-or-fix from §10.5 finding 2.
+
+### 10.5b PROTOTYPE — state-based verbatim lexer VS, PROVEN on the corpus (2026-07-21, commit 08e13f6)
+
+Built the state-based verbatim lexer as a real lab prototype. Mechanism: a third policy
+**statePolicy** (emits the light token.T like semantic, but tracksPosition=true + a new
+**storesBlanks()** policy hook = true), wired through lexgen as a "State" variant →
+scanTokenBufferState / scanTokenStreamState / scanPushStateCore / errCheckState. storesBlanks
+gates ONE `l.blanks = blanks` store at the token boundary in the whole-buffer cores
+(scanTokenBufferG + scanPushG); it folds away for semantic/verbatim (false constant), so L and
+VL stay byte-identical and UNREGRESSED (measured: VL/buffer/pull geomean 228.4 identical to
+§10.5). Raw string values come free from consumeString's existing trackBlanks branch, so
+round-trip is faithful. New **VS** type (verbatim_state.go): NextToken()/Tokens() emit token.T;
+LeadingSpace() []byte / Line() / Column() expose the verbatim info as lexer state (valid until
+the next token). VT is NOT touched — VS is additive; the shipped-API migration is a separate,
+later call.
+
+CORRECTNESS (vs_test.go): VS is token-for-token equivalent to VL — kind, RAW value, blanks,
+line/col — across whole-buffer + 5 stream window sizes, and reconstructs the source byte-for-
+byte (round-trip). EOF position exempted (token.VT bakes (0,0) via MakeVerbatimEOF; the
+accessor keeps the last real token's position — VL's own accessor does the same, so the two
+representations disagree there by design). build/vet/test/-race green; generate idempotent.
+
+CORPUS PAYOFF (compass with VS folded in, geomean MB/s, 0 allocs):
+```
+              L/b-pull  VL/b-pull  VS/b-pull | L/r-pull VL/r-pull VS/r-pull | VL/b-push VS/b-push
+GEOMEAN         831.4     228.4      655.9   |  683.1    182.1     377.3    |   409.0     778.1
+```
+- **VS/buffer/pull = 2.87× VL/buffer/pull, and 79% of L** (VL was 27%): the 3.7× worst cell of
+  the matrix is essentially closed. Every workload 2.0–3.5×; string-heavy gsoc reaches 93% of L.
+- **VS/reader/pull = 2.07× VL/reader/pull, 55% of L**: streaming keeps more residual overhead
+  (the stream core still accumulates blanks byte-by-byte + per-byte position) — the secondary
+  "batch-skip ws in the verbatim core" lever bites hardest here.
+- **VS/buffer/push = 1.90× VL/buffer/push (~88% of L/push)** — push amortizes even better.
+
+Theory CONFIRMED end-to-end: token SIZE was the tax; moving the verbatim feature to lexer
+state recovers ~2–3× at zero alloc while SIMPLIFYING the API to one token type. Remaining gap
+to L is the verbatim core overhead (position + per-byte whitespace walk + raw-string scan),
+not the token — the next lever if VS is pursued. OPEN DECISION: promote VS toward the shipped
+API (retire/relegate token.VT — public-API change, needs writer + consumer story) vs keep it a
+lab result. Not yet retrofit to reference.
