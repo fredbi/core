@@ -1066,8 +1066,41 @@ Four findings:
    for VL. THIS is the §9.6 VT-de-pressuring arc, and pull is where it concentrates.
 
 **RE-PRIORITIZED:** the biggest prize is no longer the stream gap (~20%, uniform, Phase 2) —
-it is **VL/pull (§9.6): a 3.7× gap in one cell**, driven by per-call VT-by-value return. Next
-candidate levers (unmeasured): shrink token.VT / return VT by pointer-into-lexer (breaks
-zero-alloc? — the semantic side rejected by-pointer for heap escape, but VL already carries a
-blanks slice, so re-measure) / make VL.NextToken inlinable / a VL-specific pull core that
-defers position+blanks materialization. Also the cheap reader/push doc-or-fix from finding 2.
+it is **VL/pull (§9.6): a 3.7× gap in one cell**, driven by per-call VT-by-value return.
+
+### 10.5a SIZING + PROOF — the token.VT cost, and the state-based VL candidate (2026-07-21, commit e35cbf5)
+
+Instrument: json/lexers/default-lexer/lab/vlcost_bench_test.go (THROWAWAY). One generic
+buffer core scanTokenBufferG, four policies over synthetic payloads (dense_ints / dense_strs
+/ long_strs / pretty_kv) so the generics-dict emit cost is constant and cancels in deltas:
+- **S** semanticPolicy (token.T, tracksPosition=false) — baseline.
+- **M** scanCostPolicy (token.T, tracksPosition=true) — verbatim CORE work, cheap 32B emit.
+- **V** verbatimPolicy (token.VT) — the current approach.
+- **C** verbatimStatePolicy (token.T + blanks stashed in l.blanks) — the state-based candidate.
+
+sizeof token.T = 32B, token.VT = 72B (blanks []byte 24 + embedded T 32 + line/col 16).
+
+SIZING (S→V decomposition, per-token ns): V−M (the 72B VT construct + return-by-value chain)
+is **84–100% of the whole tax**, nearly DOUBLING per-token time on every payload; the
+verbatim CORE overhead M−S is ≤16% and only on whitespace-heavy pretty (the per-byte ws
+walk — the one thing the verbatim core does that semantic's batch-skip doesn't). The tax is
+the TOKEN, not the scan.
+
+PROOF (Fred's token-vs-state arbitrage): drop token.VT, emit the light token.T, keep the
+"verbatim feature" as LEXER STATE (leading-blanks alias in l.blanks → a LeadingSpace()-style
+accessor; position already in l.tokLine/l.tokCol from the core). Candidate **C** runs within
+±3% of M and **1.74–1.96× faster than V**, at **84–93% of the semantic ceiling S** (MB/s:
+dense_ints C 181.9 vs V 93.5; dense_strs 206.7 vs 105.6; long_strs 6273 vs 3611; pretty 374
+vs 197). Projected: **VL/pull 27% → ~85–93% of L (~3×)** while collapsing two token types to
+one and SIMPLIFYING the API. The generic-core caveat makes it conservative: production L/pull
+is devirtualized (dict-free) and a real state-VL would be too, while VT's 72B copies don't
+benefit from devirt — so the production win is at least this large. Beats the by-pointer-VT
+alternative (faster-proven AND simpler API).
+
+**DECISION DIRECTION (lab, prototype first):** build a state-based verbatim lexer that emits
+token.T and exposes leading-blanks + line/col via accessors reading lexer state, replacing
+VT emission. VT is public API in the token package (external consumers), so shipping it is a
+larger call — prototype in the lab, prove end-to-end (tests: verbatim round-trip via accessor
+instead of VT.Blanks/Unescaped), THEN decide on migration. Secondary/independent: batch-skip
+whitespace in the verbatim core (claws back the pretty +16% M−S while still tracking blank
+boundaries) and the cheap reader/push doc-or-fix from §10.5 finding 2.
