@@ -24,9 +24,7 @@ use (
 	./json/benchmarks
 	./json/lexers/benchmark
 	./json/lexers/contrib
-	./json/lexers/default-lexer/benchmarks/comparative
-	./json/lexers/default-lexer/benchmarks/extras
-	./json/lexers/default-lexer/examples
+	./json/lexers/examples
 	./json/writers/benchmark
 	./json/writers/contrib
 	./jsonschema
