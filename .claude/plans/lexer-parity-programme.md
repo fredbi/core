@@ -1141,6 +1141,37 @@ GEOMEAN         831.4     228.4      655.9   |  683.1    182.1     377.3    |   
 Theory CONFIRMED end-to-end: token SIZE was the tax; moving the verbatim feature to lexer
 state recovers ~2–3× at zero alloc while SIMPLIFYING the API to one token type. Remaining gap
 to L is the verbatim core overhead (position + per-byte whitespace walk + raw-string scan),
-not the token — the next lever if VS is pursued. OPEN DECISION: promote VS toward the shipped
-API (retire/relegate token.VT — public-API change, needs writer + consumer story) vs keep it a
-lab result. Not yet retrofit to reference.
+not the token — the next lever if VS is pursued.
+
+**DECISION (Fred, 2026-07-21): VS IS the new target.** Retire the token.VT-based VL, promote
+lab-VS to become VL, rework the interface (no VT token; add LeadingSpace() string to the lexer
+interface, etc.). Little existing code depends on VL/VT, so the churn is small. Scheduled for
+"when the lab is over"; for now VS stays additive and VL is kept as-is BUT no longer a
+measurement target (dropped from the compass, commit a082788 — measure L vs VS only).
+NEAR-TERM GOAL: make VS reader mode (pull + push) catch up with L.
+
+### 10.5c RAW-STRING STREAMING FAST PATH — VS reader catch-up (2026-07-21, commit 80a8df9)
+
+The compass showed VS reader mode collapsing on string-heavy payloads (gsoc 27% of L, azure
+50%, github 39%) while number-heavy stayed ~90% (numbers share consumeNumberStreamFast with L).
+Root cause: the raw string scanner the verbatim lexers use in streaming mode
+(consumeStringRawStreaming, via consumeString's trackBlanks branch) was a pure byte-by-byte
+loop — it never got the §10.3 Phase-1 fast path the SEMANTIC streaming scanner has. Added the
+raw analogues:
+- **consumeStringRawStreamFast** (Phase-1a-raw): optimistic in-window SWAR/AVX2 scan; a clean
+  string completing inside the window ALIASES l.buffer zero-copy (clean raw string IS its
+  value), delegating to byte-by-byte only on escape / window-span. Wired into consumeString.
+- **bulk clean-run copy** in consumeStringRawStreaming's clean-byte case (Phase-1c-raw): long
+  clean stretches between escapes / spilling past the window copied in one shot (scalar-probe →
+  SWAR → AVX2). This is what closes gsoc-style escaped-long-string reader mode.
+
+Both VS and VL use these (shared scanner) — pure improvement, no VL rework. No core change
+(scan_gen untouched); build/vet/test/-race green (VS round-trip + VL tests pass, alias-until-
+refill contract = the Phase-1a contract). Reader-mode geomean, VS as % of L, 0 allocs:
+**pull 55%→72%, push 54%→71%.** gsoc 27%→74% (VS 544→1491), azure 50%→82%, github 39%→72%,
+random 61%→94%, golang 67%→86%, payload 55%→86%. RESIDUAL laggards now = whitespace-heavy /
+object payloads (citm ~48%, *.pretty 55–63%): the per-byte whitespace walk in the verbatim
+stream core (tracksPosition path accumulates blanks + counts lines byte-by-byte, vs semantic's
+batch-skip). NEXT lever: batch-skip whitespace in the state/verbatim stream core (zero-copy
+blank slice when the run is in-window + newline count), gated for statePolicy so VL's frozen
+core is untouched.
