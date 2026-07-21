@@ -1041,6 +1041,386 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 	}
 }
 
+// scanPushStreamG is the generic, policy-parameterized PUSH core for STREAMING input
+// (io.Reader): the yield→loop counterpart of scanTokenStreamG (§10.5g). It backs
+// Tokens() over a reader, replacing the previous fallthrough to a NextToken loop
+// wrapped in a range-over-func closure (iterator.go): that fallthrough paid per-token
+// NextToken call overhead PLUS the closure, running BELOW the streaming pull core. Here
+// the cursor and scan state stay put across the whole scan and each token is delivered
+// inline via yield(...) — the same win the whole-buffer push core scanPushG has over
+// its pull twin, now on the streaming lane.
+//
+// Structurally it is scanTokenStreamG with `return p.emit(...)` replaced by
+// `if !yield(p.emit(...)) { return }` and, for the position-tracking policies, an
+// l.blanks reset so the next token's preceding-blanks run starts fresh (gated on the
+// compile-time tracksPosition() so it folds away in the semantic core). A grammar error
+// stops the range (bare return, l.err already set); readMore's EOF is classified by
+// errCheckG (no EOF token is yielded, matching scanPushG). Must be reached only through
+// the //go:noinline devirt shim so the yield closure stays on the stack.
+//
+//nolint:gocognit,gocyclo
+func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
+	if l.err != nil {
+		return
+	}
+
+	if l.trackBlanks {
+		l.blanks = l.blanks[:0]
+	}
+
+	for {
+		if err := l.readMore(); err != nil {
+			_ = errCheckG(l, p, err) // classify EOF/error; push yields no EOF token
+
+			return
+		}
+
+		for l.consumed < l.bufferized {
+			b := l.buffer[l.consumed]
+			l.offset++
+			l.consumed++
+
+			switch b {
+			case lineFeed:
+				if !p.tracksPosition() {
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
+				// verbatim/state (§10.5d): first byte inline (newline), batch-skip the rest.
+				l.line++
+				l.lineStart = l.offset
+				if l.trackBlanks {
+					l.blanks = append(l.blanks, b)
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
+
+					return
+				}
+
+				continue
+
+			case blank, tab, carriageReturn:
+				if !p.tracksPosition() {
+					ws := consumeWhitespace(l.buffer[l.consumed:l.bufferized])
+					l.consumed += ws
+					l.offset += uint64(ws)
+
+					continue
+				}
+				if l.trackBlanks {
+					l.blanks = append(l.blanks, b)
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
+
+					return
+				}
+
+				continue
+			}
+
+			if p.tracksPosition() {
+				l.tokLine = l.line
+				l.tokCol = int(l.offset - l.lineStart)
+			}
+
+			if l.afterKey {
+				l.afterKey = false
+				if b != colon {
+					l.err = codes.ErrKeyColon
+
+					return
+				}
+
+				l.current = token.MakeDelimiter(token.Colon)
+				if l.elideSeparator {
+					continue
+				}
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+				continue
+			}
+
+			switch b {
+			case colon:
+				if l.current.Kind() == token.String {
+					l.err = codes.ErrMissingObject
+				} else {
+					l.err = codes.ErrMissingKey
+				}
+
+				return
+
+			case closingBracket:
+				if l.current.IsComma() {
+					l.err = codes.ErrTrailingComma
+
+					return
+				}
+				if !l.isInObject() {
+					l.err = codes.ErrNotInObject
+
+					return
+				}
+
+				l.expectKey = false
+				l.popContainer()
+				l.current = token.MakeDelimiter(token.ClosingBracket)
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case closingSquareBracket:
+				if l.current.IsComma() {
+					l.err = codes.ErrTrailingComma
+
+					return
+				}
+				if !l.isInArray() {
+					l.err = codes.ErrNotInArray
+
+					return
+				}
+
+				l.popContainer()
+				l.current = token.MakeDelimiter(token.ClosingSquareBracket)
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case comma:
+				if l.current.IsComma() {
+					l.err = codes.ErrRepeatedComma
+
+					return
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return
+				}
+				if !l.isInContainer() {
+					l.err = codes.ErrCommaInContainer
+
+					return
+				}
+				if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
+					l.err = codes.ErrMissingValue
+
+					return
+				}
+
+				if l.isInObject() {
+					l.expectKey = true
+				}
+
+				l.current = token.MakeDelimiter(token.Comma)
+				if l.elideSeparator {
+					continue
+				}
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case openingBracket:
+				if l.current.IsKnown() {
+					if l.current.Kind() != token.Delimiter {
+						l.err = codes.ErrInvalidToken
+
+						return
+					}
+					if l.current.Delimiter().IsClosing() {
+						l.err = codes.ErrMissingComma
+
+						return
+					}
+					if l.isInArray() {
+						if l.current.Delimiter() != token.OpeningSquareBracket &&
+							l.current.Delimiter() != token.Comma {
+							l.err = codes.ErrMissingComma
+
+							return
+						}
+					} else if !l.current.IsColon() {
+						l.err = codes.ErrMissingKey
+
+						return
+					}
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return
+				}
+
+				l.expectKey = true
+				l.pushObject()
+				if l.err != nil {
+					return
+				}
+				l.current = token.MakeDelimiter(token.OpeningBracket)
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case openingSquareBracket:
+				if l.current.IsKnown() {
+					if l.current.Kind() != token.Delimiter {
+						l.err = codes.ErrInvalidToken
+
+						return
+					}
+					if l.current.Delimiter().IsClosing() {
+						l.err = codes.ErrMissingComma
+
+						return
+					}
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return
+				}
+
+				l.pushArray()
+				if l.err != nil {
+					return
+				}
+				l.current = token.MakeDelimiter(token.OpeningSquareBracket)
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case doubleQuote:
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return
+				}
+
+				l.current = l.consumeString()
+				if l.err != nil {
+					return
+				}
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case startOfTrue, startOfFalse:
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return
+				}
+
+				l.current = l.consumeBoolean(b)
+				if l.err != nil {
+					return
+				}
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case minusSign, decimalPoint, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return
+				}
+
+				l.current = l.consumeNumberStreamFast(b)
+				if l.err != nil {
+					return
+				}
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			case startOfNull:
+				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
+					l.err = codes.ErrDelimitedValue
+					l.current = token.None
+
+					return
+				}
+				if l.expectKey {
+					l.err = codes.ErrMissingKey
+
+					return
+				}
+
+				l.current = l.consumeNull(b)
+				if l.err != nil {
+					return
+				}
+				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
+					return
+				}
+				if p.tracksPosition() {
+					l.blanks = l.blanks[:0]
+				}
+
+			default:
+				l.err = codes.ErrInvalidToken
+
+				return
+			}
+		}
+	}
+}
+
 // scanTokenBufferG is the generic, policy-parameterized pull core for WHOLE-BUFFER
 // input: it scans and returns exactly one token, dispatched from L.NextToken /
 // VL.NextToken when l.wholeBuffer is true. It is the yield→return counterpart of

@@ -45,6 +45,15 @@ func (l *L) Tokens() iter.Seq[token.T] {
 			return
 		}
 
+		// streaming (§10.5g): the NATIVE streaming push core, instead of looping over
+		// NextToken (which paid per-token call overhead PLUS this closure). Whole-buffer
+		// with a value cap still falls through to the NextToken loop below.
+		if !l.wholeBuffer {
+			l.scanPushStreamSemanticDevirt(yield)
+
+			return
+		}
+
 		for {
 			tok := l.NextToken()
 			if l.err != nil {
@@ -70,6 +79,10 @@ func (l *VL) Tokens() iter.Seq[token.VT] {
 		if l.wholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushVerbatimDevirt(yield)
 
+			return
+		}
+		if !l.wholeBuffer {
+			l.scanPushStreamVerbatimDevirt(yield) // §10.5g native streaming push
 			return
 		}
 

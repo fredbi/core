@@ -88,6 +88,14 @@ var cores = []core{
 		},
 	},
 	{
+		name:     "scanPushStreamG",
+		genSig:   "func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {",
+		concName: func(v variant) string { return "scanPushStream" + v.suffix + "Core" },
+		concSig: func(v variant) string {
+			return fmt.Sprintf("func scanPushStream%sCore(l *L, p %s, yield func(%s) bool) {", v.suffix, v.pol, v.tok)
+		},
+	},
+	{
 		name:     "errCheckG",
 		genSig:   "func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {",
 		concName: func(v variant) string { return "errCheck" + v.suffix },

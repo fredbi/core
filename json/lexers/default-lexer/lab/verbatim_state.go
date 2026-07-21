@@ -92,6 +92,10 @@ func (l *VS) Tokens() iter.Seq[token.T] {
 
 			return
 		}
+		if !l.wholeBuffer {
+			l.scanPushStreamStateDevirt(yield) // §10.5g native streaming push
+			return
+		}
 
 		for {
 			tok := l.NextToken()
