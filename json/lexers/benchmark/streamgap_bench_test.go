@@ -15,8 +15,14 @@ import (
 
 var gapSink int
 
+// Both drains BORROW from the pool and redeem, so the per-iteration lexer struct —
+// and, crucially, the streaming window buffer (make([]byte, bufferSize), allocated
+// once per construction and reused across every refill of a real stream) — drop out
+// of the measurement. That buffer alloc is a construction cost, not a per-token
+// scanning cost, so measuring it per-op both inflates the stream gap and adds GC
+// noise (which buried the lever-A A/B). Pooling isolates pure scanning throughput.
 func drainBuffer(data []byte) {
-	lx := lab.NewWithBytes(data)
+	lx, redeem := lab.BorrowLexerWithBytes(data)
 	for {
 		t := lx.NextToken()
 		if !lx.Ok() || t.Kind() == token.EOF {
@@ -24,10 +30,11 @@ func drainBuffer(data []byte) {
 		}
 		gapSink += int(t.Kind())
 	}
+	redeem()
 }
 
 func drainStream(data []byte, bufSize int) {
-	lx := lab.New(bytes.NewReader(data), lab.WithBufferSize(bufSize))
+	lx, redeem := lab.BorrowLexerWithReader(bytes.NewReader(data), lab.WithBufferSize(bufSize))
 	for {
 		t := lx.NextToken()
 		if !lx.Ok() || t.Kind() == token.EOF {
@@ -35,6 +42,7 @@ func drainStream(data []byte, bufSize int) {
 		}
 		gapSink += int(t.Kind())
 	}
+	redeem()
 }
 
 func BenchmarkStreamGap(b *testing.B) {
