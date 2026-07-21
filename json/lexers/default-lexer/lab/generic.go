@@ -643,6 +643,60 @@ func consumeWhitespace(b []byte) (n int) {
 	return n
 }
 
+// consumeWhitespaceTracked is consumeWhitespace for the position-tracking cores: it
+// also counts newlines and reports afterLastNL, the index just past the last '\n' in
+// the run (0 if none), so the caller can update line/lineStart from a single scan
+// instead of a per-byte walk.
+func consumeWhitespaceTracked(b []byte) (n, lines, afterLastNL int) {
+	for n < len(b) {
+		c := b[n]
+		if c != blank && c != tab && c != lineFeed && c != carriageReturn {
+			break
+		}
+		if c == lineFeed {
+			lines++
+			afterLastNL = n + 1
+		}
+		n++
+	}
+
+	return n, lines, afterLastNL
+}
+
+// isBlank reports whether c is JSON insignificant whitespace. Tiny so it inlines.
+func isBlank(c byte) bool {
+	return c == blank || c == tab || c == lineFeed || c == carriageReturn
+}
+
+// skipBlanksRestStream batch-skips the CONTINUATION of a whitespace run in the current
+// window for the position-tracking stream cores (§10.5d) — the verbatim/state analogue
+// of the semantic core's consumeWhitespace batch-skip. The caller has already consumed
+// and captured the run's first byte and confirmed (a cheap inline peek) that l.consumed
+// points at another whitespace byte, so this scans the rest of the run in ONE step,
+// updates line/lineStart from a single scan, and — when trackBlanks — BULK-appends the
+// rest into l.blanks. Splitting it this way keeps SHORT runs (e.g. mesh's 73k
+// single-byte runs) on the cheap inline path — no call — while LONG runs (pretty) pay
+// one call and one memcpy instead of a per-byte walk. A run reaching the window end
+// stops at bufferized; the outer loop refills and re-enters, so a run spanning refills
+// accumulates across calls. The caller does the maxValueBytes check once afterwards.
+func (l *L) skipBlanksRestStream() {
+	base := l.offset - uint64(l.consumed) // absolute offset of buffer index 0 this window
+	start := l.consumed
+	n, lines, afterNL := consumeWhitespaceTracked(l.buffer[start:l.bufferized])
+
+	if lines > 0 {
+		l.line += lines
+		l.lineStart = base + uint64(start+afterNL) // just past the last newline in the run
+	}
+
+	l.consumed = start + n
+	l.offset = base + uint64(start+n)
+
+	if l.trackBlanks {
+		l.blanks = append(l.blanks, l.buffer[start:l.consumed]...)
+	}
+}
+
 // scanTokenStreamG is the generic, policy-parameterized pull core for STREAMING
 // input (io.Reader): it scans and returns exactly one token, dispatched from
 // L.NextToken / VL.NextToken when l.wholeBuffer is false. The cursor lives in the
@@ -692,17 +746,21 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 					continue
 				}
-				// verbatim: track line + accumulate the blank run byte-by-byte
+				// verbatim/state (§10.5d): handle the first byte inline (b is a newline),
+				// then batch-skip the REST only if the run actually continues — so a
+				// single-byte run stays as cheap as the old per-byte path (no call).
 				l.line++
-				l.lineStart = l.offset
+				l.lineStart = l.offset // just past the newline b
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue
@@ -715,14 +773,18 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 					continue
 				}
+				// verbatim/state (§10.5d): first byte inline; batch-skip the rest only
+				// if the run continues (b is not a newline).
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue

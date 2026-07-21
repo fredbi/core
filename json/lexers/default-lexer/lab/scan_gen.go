@@ -524,17 +524,21 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 
 					continue
 				}
-				// verbatim: track line + accumulate the blank run byte-by-byte
+				// verbatim/state (§10.5d): handle the first byte inline (b is a newline),
+				// then batch-skip the REST only if the run actually continues — so a
+				// single-byte run stays as cheap as the old per-byte path (no call).
 				l.line++
-				l.lineStart = l.offset
+				l.lineStart = l.offset // just past the newline b
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue
@@ -547,14 +551,18 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 
 					continue
 				}
+				// verbatim/state (§10.5d): first byte inline; batch-skip the rest only
+				// if the run continues (b is not a newline).
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue
@@ -1820,17 +1828,21 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.VT {
 
 					continue
 				}
-				// verbatim: track line + accumulate the blank run byte-by-byte
+				// verbatim/state (§10.5d): handle the first byte inline (b is a newline),
+				// then batch-skip the REST only if the run actually continues — so a
+				// single-byte run stays as cheap as the old per-byte path (no call).
 				l.line++
-				l.lineStart = l.offset
+				l.lineStart = l.offset // just past the newline b
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue
@@ -1843,14 +1855,18 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.VT {
 
 					continue
 				}
+				// verbatim/state (§10.5d): first byte inline; batch-skip the rest only
+				// if the run continues (b is not a newline).
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue
@@ -3116,17 +3132,21 @@ func scanTokenStreamState(l *L, p statePolicy) token.T {
 
 					continue
 				}
-				// verbatim: track line + accumulate the blank run byte-by-byte
+				// verbatim/state (§10.5d): handle the first byte inline (b is a newline),
+				// then batch-skip the REST only if the run actually continues — so a
+				// single-byte run stays as cheap as the old per-byte path (no call).
 				l.line++
-				l.lineStart = l.offset
+				l.lineStart = l.offset // just past the newline b
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue
@@ -3139,14 +3159,18 @@ func scanTokenStreamState(l *L, p statePolicy) token.T {
 
 					continue
 				}
+				// verbatim/state (§10.5d): first byte inline; batch-skip the rest only
+				// if the run continues (b is not a newline).
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
-					if l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-						// circuit breaker: also bound the verbatim whitespace buffer
-						l.err = codes.ErrMaxValueBytes
+				}
+				if l.consumed < l.bufferized && isBlank(l.buffer[l.consumed]) {
+					l.skipBlanksRestStream()
+				}
+				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
+					l.err = codes.ErrMaxValueBytes
 
-						return p.none()
-					}
+					return p.none()
 				}
 
 				continue
