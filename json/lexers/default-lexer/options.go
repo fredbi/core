@@ -44,8 +44,7 @@ func (o *options) applyWithDefaults(opts []Option) {
 	}
 }
 
-// WithStrictNumber abides by the definition
-// of numbers given by [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
+// WithStrictNumber abides by the definition of numbers given by [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
 //
 // This is true by default.
 //
