@@ -78,9 +78,26 @@ func streamFastInputs() []string {
 	return in
 }
 
+// newStreamLexerWindow builds a streaming lexer whose read window is EXACTLY bs
+// bytes wide, bypassing the WithBufferSize alignment floor by reslicing the buffer's
+// length (its capacity stays aligned). The public guard rail keeps a caller's window
+// at >= 32 bytes, but the internal refill/fast-path machinery must stay correct at
+// ANY window width — a sub-32 window is just the general case of a partial read
+// (every 4 KB buffer's final read leaves bufferized < cap), and Phase 2 slide+grow
+// may reintroduce narrow effective windows — so the equivalence sweep exercises
+// widths below the floor too.
+func newStreamLexerWindow(data []byte, bs int) *L {
+	l := New(bytes.NewReader(data), WithBufferSize(bs))
+	if bs < cap(l.buffer) {
+		l.buffer = l.buffer[:bs]
+	}
+
+	return l
+}
+
 // TestStreamFastEquivalence pins the core Phase-1 invariant: for ANY input and ANY
-// buffer size, streaming NextToken yields the exact same token stream (kinds AND
-// decoded values) and terminal error as whole-buffer NextToken. Small buffers drive
+// window width, streaming NextToken yields the exact same token stream (kinds AND
+// decoded values) and terminal error as whole-buffer NextToken. Small windows drive
 // the span/delegate path; large ones drive the zero-copy alias fast path; the sizes
 // between land the closing quote on either side of a window boundary.
 func TestStreamFastEquivalence(t *testing.T) {
@@ -92,7 +109,7 @@ func TestStreamFastEquivalence(t *testing.T) {
 		want, wantErr := collectPullValues(NewWithBytes(data))
 
 		for _, bs := range bufSizes {
-			got, gotErr := collectPullValues(New(bytes.NewReader(data), WithBufferSize(bs)))
+			got, gotErr := collectPullValues(newStreamLexerWindow(data, bs))
 
 			// For MALFORMED input the whole-buffer and streaming number consumers can
 			// differ in HOW a rejection surfaces: the whole-buffer scanner folds a
