@@ -542,20 +542,20 @@ func (w *commonWriter[T]) Token(tok token.T) {
 	}
 }
 
-// VerbatimToken writes a verbatim token [token.VT] from a verbatim lexer,
+// VerbatimToken writes a verbatim token [token.T] from a verbatim lexer,
 // reproducing the source byte-for-byte.
 //
 // Non-significant white-space preceding each token is written to the buffer.
 //
 // A verbatim string/key value is kept RAW by the lexer (escapes intact, see
-// [token.VT.Value]); it is emitted as-is between quotes. Re-escaping it through
+// [token.T.Value]); it is emitted as-is between quotes. Re-escaping it through
 // the normal string path would double-encode the backslashes.
-func (w *commonWriter[T]) VerbatimToken(tok token.VT) {
+func (w *commonWriter[T]) VerbatimToken(leadingSpace []byte, tok token.T) {
 	if !w.jw.Ok() {
 		return
 	}
 
-	w.jw.writeBinary(tok.Blanks())
+	w.jw.writeBinary(leadingSpace)
 
 	if k := tok.Kind(); k == token.String || k == token.Key {
 		w.jw.writeSingleByte(quote)
@@ -565,7 +565,7 @@ func (w *commonWriter[T]) VerbatimToken(tok token.VT) {
 		return
 	}
 
-	w.Token(tok.T)
+	w.Token(tok)
 }
 
 func (w *commonWriter[T]) VerbatimValue(value values.VerbatimValue) {

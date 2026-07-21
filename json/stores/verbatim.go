@@ -26,7 +26,7 @@ type VerbatimStore interface {
 	// Rather, the association is kept by the [VerbatimHandle], which is actually a pair of [Handle] s.
 	//
 	// This is similar in concept to the [Store] not keeping track of the structure of a JSON document, only values.
-	PutVerbatimToken(token.VT) VerbatimHandle
+	PutVerbatimToken(leadingSpace []byte, tok token.T) VerbatimHandle
 
 	// Put a [VerbatimValue] and return the inner [VerbatimHandle].
 	PutVerbatimValue(values.VerbatimValue) VerbatimHandle

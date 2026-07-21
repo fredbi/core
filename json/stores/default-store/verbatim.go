@@ -123,9 +123,9 @@ func (s *VerbatimStore) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 	}
 }
 
-func (s *VerbatimStore) PutVerbatimToken(tok token.VT) stores.VerbatimHandle {
-	blanks := s.putBlanks(tok.Blanks())
-	value := s.PutToken(tok.T)
+func (s *VerbatimStore) PutVerbatimToken(leadingSpace []byte, tok token.T) stores.VerbatimHandle {
+	blanks := s.putBlanks(leadingSpace)
+	value := s.PutToken(tok)
 
 	return stores.MakeVerbatimHandle(blanks, value)
 }

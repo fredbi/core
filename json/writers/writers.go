@@ -54,8 +54,8 @@ type TokenWriter interface {
 
 // VerbatimWriter is the interface for types that know how to write verbatim JSON tokens and values.
 type VerbatimWriter interface {
-	VerbatimToken(token.VT)             // write a verbatim token
-	VerbatimValue(values.VerbatimValue) // write a verbatim value
+	VerbatimToken(leadingSpace []byte, token token.T) // write a verbatim token
+	VerbatimValue(values.VerbatimValue)               // write a verbatim value
 
 	BaseWriter
 }

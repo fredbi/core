@@ -50,8 +50,8 @@ func checkBlanks(s stores.VerbatimStore, str string) func(*testing.T) {
 func checkVerbatimToken(s stores.VerbatimStore, str string) func(*testing.T) {
 	return func(t *testing.T) {
 		blanks := []byte(str)
-		input := token.MakeVerbatimBoolean(true, blanks)
-		vh := s.PutVerbatimToken(input)
+		input := token.MakeBoolean(true)
+		vh := s.PutVerbatimToken(blanks, input)
 		outcomeBlanks := s.Get(vh.Blanks())
 		expectedBlanks := values.MakeStringValue(str)
 		assert.Equal(t, expectedBlanks, outcomeBlanks)

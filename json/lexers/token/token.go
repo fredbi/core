@@ -230,6 +230,7 @@ func Make(kind Kind, value []byte, delimiter KindDelimiter, valueBool bool) T {
 	}
 }
 
+/*
 // MakeVerbatim builds a verbatim token [VT].
 func MakeVerbatim(
 	kind Kind,
@@ -243,6 +244,7 @@ func MakeVerbatim(
 		blanks: blanks,
 	}
 }
+*/
 
 // MakeDelimiter builds a delimiter token [T].
 func MakeDelimiter(delimiter KindDelimiter) T {
@@ -268,6 +270,7 @@ func MakeWithValue(kind Kind, value []byte) T {
 	}
 }
 
+/*
 // MakeVerbatimWithValue builds a verbatim scalar string or number token [VT].
 func MakeVerbatimWithValue(kind Kind, value, blanks []byte) VT {
 	return VT{
@@ -275,6 +278,7 @@ func MakeVerbatimWithValue(kind Kind, value, blanks []byte) VT {
 		blanks: blanks,
 	}
 }
+*/
 
 // MakeBoolean builds a scalar boolean token [T].
 func MakeBoolean(value bool) T {
@@ -284,6 +288,7 @@ func MakeBoolean(value bool) T {
 	}
 }
 
+/*
 // MakeVerbatimBoolean builds a scalar boolean token [VT].
 func MakeVerbatimBoolean(value bool, blanks []byte) VT {
 	return VT{
@@ -316,6 +321,7 @@ func (t T) AsVerbatim(blanks []byte) VT {
 		blanks: blanks,
 	}
 }
+*/
 
 // Value for String, Key and Number tokens.
 func (t T) Value() []byte {
