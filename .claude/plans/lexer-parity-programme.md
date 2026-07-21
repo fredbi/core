@@ -978,3 +978,50 @@ is structural per-token overhead (struct cursor + readMore-per-token) and spanni
 tokens (delegate to copy) — Phase 2 (slide+grow) territory, secondary per the 4k≈64k
 finding. Fast paths: consumeStringStreamFast, consumeNumberStreamFast, + bulk clean
 runs in consumeStringStreaming. All in the lab; not yet retrofit to reference.
+
+### 10.3.5 GUARD RAIL — WithBufferSize floored to a 32B multiple (2026-07-21, commit fc97beb)
+
+`WithBufferSize(n)` now rounds `n` up to the next multiple of 32 (one AVX2 stride,
+subsuming the 8B SWAR word) via `alignBufferSize`. The streaming window is therefore
+never narrower than one vector/SWAR step: keeps the in-window fast paths vectorized for
+any requested size and floors out the pathological sub-separator windows that stressed
+the byte-by-byte refill seam (the same edge the consumeN surplus-byte fix 585a777
+patched — now mooted at the source). Internal machinery stays correct at ANY width (a
+sub-32 window is just the general partial-read case: every 4KB buffer's final read leaves
+bufferized < cap), so `TestStreamFastEquivalence` forces the exact width via a
+length-reslice (`newStreamLexerWindow`) and still sweeps 1..33 below the floor. New
+`TestBufferSizeAlignment`. build/vet/test/-race green; generate idempotent.
+
+### 10.4 LEVER A — lean the stream core (local cursor + hoisted readMore): REJECTED-measured (2026-07-21)
+
+Hypothesis: the remaining ~20% stream gap is per-token STRUCTURAL loop overhead — the
+stream core advances a struct cursor (`l.offset++; l.consumed++`) per byte and re-reads
+`l.bufferized` in the loop condition, where the champion buffer core (scanTokenBufferG,
+16/18 wins) scans a resliced local `data` with a pure-local cursor `i` bounded by
+`len(data)`, touching the struct only at writeback. Lever A rebuilt scanTokenStreamG to
+that same shape within a window: local `i`, `len(data)` bound, semantic whitespace
+batch-skipped locally, refill hoisted to the window edge, struct written back only at
+token boundaries. The one extra live value streaming needs is `offsetBase` (maps window
+index → absolute offset), referenced only at writeback.
+
+RESULT — FALSIFIED. Buffer code is byte-identical before/after, so the clean signal is
+stream-4k absolute throughput. At noisy count (250ms×1 / 200ms×6) the deltas swung ±10%
+with mixed sign (mesh +10%, gsoc +4.4% "wins"); at 300ms×10 those wins EVAPORATED and
+the sign settled flat-to-NEGATIVE: apache −1.3%, azure −2.9% (the go-openapi target),
+azure.pretty −2.7%, gsoc −3.5%, mesh.pretty −2.9%, mesh +0.6%. The restructure is a net
+REGRESSION.
+
+WHY: the old core's per-byte `offset++/consumed++` is cheap (2 increments on cache-hot
+struct fields, and only ONCE per token in practice — whitespace was already batch-skipped
+in the old stream core too). Lever A replaces that with a `writeback(i+1)` closure that
+does the SAME two struct writes plus an `offsetBase + uint64(pos)` add at every value
+dispatch, AND keeps `offsetBase` live across the loop — extra register pressure on the
+delicate core (the §9.1 effect, in reverse). No structural win to bank; the per-token
+loop overhead is simply not a meaningful fraction of stream cost.
+
+REVERTED (git checkout generic.go scan_gen.go; HEAD = fc97beb, guard rail only). The
+remaining gap is NOT the main loop — it lives in the value-body consumers (spanning/escape
+copies into currentValue), the per-stream buffer allocation (5–9 allocs, ~4–5KB B/op vs
+buffer's 2–5 / ~300B — pooling via BorrowLexerWithReader amortizes it), and the alias-check
+in the fast paths. Phase 2 (slide+grow) remains the standing lever; a pooling-focused pass
+is the untried one.
