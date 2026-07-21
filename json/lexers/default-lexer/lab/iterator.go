@@ -31,6 +31,7 @@ import (
 // NextToken returns the following token, not a repeat.
 func (l *L) Tokens() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
+		l.primeStream() // §10.5f: resolve the whole-buffer short-circuit before choosing the core
 		// whole-buffer fast path: a native push scan loop that keeps the cursor
 		// in a local across the whole scan (no per-byte struct writes). Streaming
 		// and value-capped modes keep the proven NextToken loop.
@@ -65,6 +66,7 @@ func (l *L) Tokens() iter.Seq[token.T] {
 // proven NextToken loop. See [L.Tokens] for the semantics.
 func (l *VL) Tokens() iter.Seq[token.VT] {
 	return func(yield func(token.VT) bool) {
+		l.primeStream() // §10.5f: resolve the whole-buffer short-circuit before choosing the core
 		if l.wholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushVerbatimDevirt(yield)
 

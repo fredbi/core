@@ -27,6 +27,7 @@ func (p *poolOfLexers) borrowWithBytes(data []byte, opts ...Option) (*L, func())
 	l.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
 	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.needFirstFill = false
 	l.reset()
 
 	return l, redeem
@@ -37,7 +38,8 @@ func (p *poolOfLexers) borrowWithReader(r io.Reader, opts ...Option) (*L, func()
 	l.applyWithDefaults(opts)
 	l.r = r
 	l.bufferized = 0
-	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
+	l.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 	l.reset()
 
 	if cap(l.buffer) < l.bufferSize {

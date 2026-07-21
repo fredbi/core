@@ -2,6 +2,7 @@ package lab
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"slices"
 
@@ -47,9 +48,10 @@ type L struct {
 
 	expectKey   bool
 	afterKey    bool // the previous token was an object key: a ':' must follow
-	isAtEOF     bool
-	wholeBuffer bool // the buffer holds the entire input (no refills): values may alias it
-	trackBlanks bool // accumulate preceding blanks into l.blanks (verbatim lexer)
+	isAtEOF       bool
+	wholeBuffer   bool // the buffer holds the entire input (no refills): values may alias it
+	needFirstFill bool // streaming: the initial read (and whole-buffer short-circuit) is pending
+	trackBlanks   bool // accumulate preceding blanks into l.blanks (verbatim lexer)
 
 	options
 }
@@ -69,7 +71,8 @@ func New(r io.Reader, opts ...Option) *L {
 	l.r = r
 	l.buffer = make([]byte, l.bufferSize)
 	l.bufferized = 0
-	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
+	l.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 
 	l.reset()
 
@@ -91,6 +94,7 @@ func NewWithBytes(data []byte, opts ...Option) *L {
 	l.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
 	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.needFirstFill = false
 
 	l.reset()
 
@@ -160,8 +164,59 @@ func (l *L) NextToken() token.T {
 	if l.wholeBuffer {
 		return scanTokenBufferSemantic(l, semanticPolicy{})
 	}
+	if l.needFirstFill {
+		l.firstFill()
+		if l.wholeBuffer {
+			return scanTokenBufferSemantic(l, semanticPolicy{})
+		}
+	}
 
 	return scanTokenStreamSemantic(l, semanticPolicy{})
+}
+
+// firstFill performs the initial read for a streaming lexer and SHORT-CIRCUITS to
+// whole-buffer mode when the entire input fits in the buffer (§10.5f). It reads into
+// l.buffer until the buffer is full or the reader is exhausted; if EOF arrives before
+// the buffer fills, the whole input is now buffered, so the lexer flips to wholeBuffer
+// mode — thereafter the fast in-buffer cores run (and, for Tokens(), the native
+// whole-buffer push core instead of the NextToken+closure fallthrough) with no
+// per-token streaming overhead. Inputs larger than the buffer stay in streaming mode
+// with the first window pre-filled. A non-EOF read error is recorded in l.err.
+//
+// It is done LAZILY (first NextToken/Tokens, gated by needFirstFill) rather than at
+// construction, so a caller that reslices l.buffer to force a narrow window (tests)
+// still gets the window it asked for. Runs exactly once per bound input.
+func (l *L) firstFill() {
+	l.needFirstFill = false
+
+	n := 0
+	for n < len(l.buffer) {
+		m, err := l.r.Read(l.buffer[n:])
+		n += m
+		if err != nil {
+			l.bufferized = n
+			if errors.Is(err, io.EOF) {
+				l.wholeBuffer = true // whole input fits: run the fast in-buffer cores
+			} else {
+				l.err = err
+			}
+
+			return
+		}
+		if m == 0 {
+			break // reader returned (0, nil): don't spin — stay streaming
+		}
+	}
+	l.bufferized = n
+}
+
+// primeStream runs the pending first fill (see [L.firstFill]) if needed. Used by the
+// push paths (Tokens), which must resolve the whole-buffer short-circuit before they
+// choose the native push core vs the NextToken loop.
+func (l *L) primeStream() {
+	if l.needFirstFill {
+		l.firstFill()
+	}
 }
 
 // readMore provides more input from the internal buffer or
@@ -236,6 +291,7 @@ func (l *L) Reset() {
 	}
 	l.r = noopReader
 	l.wholeBuffer = false
+	l.needFirstFill = false // source-less until re-bound via ResetWith*
 	l.bufferized = 0
 	l.previousBuffer = l.previousBuffer[:0]
 	l.reset()
@@ -254,6 +310,7 @@ func (l *L) ResetWithBytes(data []byte) {
 	l.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
 	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.needFirstFill = false
 	l.reset()
 }
 
@@ -264,7 +321,8 @@ func (l *L) ResetWithBytes(data []byte) {
 func (l *L) ResetWithReader(r io.Reader) {
 	l.r = r
 	l.bufferized = 0
-	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
+	l.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 	l.reset()
 
 	if cap(l.buffer) < l.bufferSize {

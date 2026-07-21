@@ -70,6 +70,12 @@ func (l *VS) NextToken() token.T {
 	if l.wholeBuffer {
 		return scanTokenBufferState(l.L, statePolicy{})
 	}
+	if l.needFirstFill {
+		l.firstFill() // §10.5f: promote to whole-buffer if the input fits
+		if l.wholeBuffer {
+			return scanTokenBufferState(l.L, statePolicy{})
+		}
+	}
 
 	return scanTokenStreamState(l.L, statePolicy{})
 }
@@ -80,6 +86,7 @@ func (l *VS) NextToken() token.T {
 // iteration of the range, before the next token is produced.
 func (l *VS) Tokens() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
+		l.primeStream() // §10.5f: resolve the whole-buffer short-circuit before choosing the core
 		if l.wholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushStateDevirt(yield)
 

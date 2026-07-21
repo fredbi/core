@@ -83,6 +83,12 @@ func (l *VL) NextToken() token.VT {
 	if l.wholeBuffer {
 		return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
 	}
+	if l.needFirstFill {
+		l.firstFill() // §10.5f: promote to whole-buffer if the input fits
+		if l.wholeBuffer {
+			return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
+		}
+	}
 
 	return scanTokenStreamVerbatim(l.L, verbatimPolicy{})
 }
