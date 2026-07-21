@@ -1228,3 +1228,30 @@ LEVER (the one the data endorses): a NATIVE STREAMING PUSH core scanPushStream* 
 analogue of the whole-buffer scanPush*Core) for Tokens()-over-reader, so push gets its own
 optimized loop instead of NextToken+closure — should flip reader/push from below pull to at/above
 pull (marine ~63%→~80%+). The shared pull ~20% is rejected lever-A, leave it.
+
+### 10.5f WHOLE-BUFFER SHORT-CIRCUIT — streaming inputs that fit run the buffer cores (2026-07-21, commit 3c7cf13)
+
+Fred's short-circuit: if the reader is exhausted before the buffer fills, the WHOLE input is
+already in the buffer — so flip to whole-buffer mode and run the fast in-buffer cores (and, for
+Tokens(), the native whole-buffer push core) instead of streaming. Sidesteps BOTH structural
+costs (§10.5e) at once for inputs that fit.
+
+Mechanism: firstFill() reads into l.buffer until full or EOF; EOF-before-full → l.wholeBuffer =
+true. Done LAZILY on the first NextToken/Tokens (gated by a new needFirstFill flag), NOT at
+construction — so a caller that reslices l.buffer to force a narrow window (the stream_fast tests)
+still gets it, preserving streaming-core coverage for inputs > window. NextToken keeps the buffer
+CHAMPION path byte-identical (the `if l.wholeBuffer` check stays first; firstFill runs only in the
+streaming branch, once). Tokens primes once per range before choosing its core (so a fitting reader
+gets the native push core, not the NextToken+closure fallthrough). Wired for L, VL, VS + all
+constructors/Reset*/borrow* set needFirstFill. No core change (scan_gen untouched); build/vet/
+test/-race green. New TestFirstFillPromotion (fit→promote / overflow→stream / empty→promote).
+GOTCHA during impl: a python edit ran with cwd on the REFERENCE default-lexer (not lab) and wrote
+needFirstFill assignments into the package-lexer files that lack the field — reverted both the
+main-repo AND worktree reference copies; lab is the only touched package.
+
+PROOF (buffer-size sweep, reader as % of buffer, once WithBufferSize >= input): marine push
+63%→94%, twitter 67%→97%, canada 61%→99%; pull similar (canada 102%). Residual few % = the one
+whole-file copy from reader into l.buffer. Below filesize: streaming unchanged (§10.5c/d). NET: any
+streamed input that fits the buffer (most real payloads at the default 4KB, or any input with a
+sized buffer) now runs at buffer speed through the streaming API — no caller change. The large-
+stream push gap (input > buffer) still wants the native streaming push core (§10.5e lever) if pursued.
