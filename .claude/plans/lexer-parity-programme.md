@@ -1199,3 +1199,32 @@ so reader has essentially caught buffer on pull. Remaining reader gap = per-toke
 overhead (position snapshot + storesBlanks + raw string vs semantic decoded scan on short
 strings) — diminishing returns; the big levers (raw-string fast path §10.5c, whitespace
 batch-skip §10.5d) are done. GOAL "VS reader catch up with L" essentially MET.
+
+### 10.5e DIAGNOSIS — the streaming gap is STRUCTURAL, not refills (buffer-size sweep) (2026-07-21)
+
+Full compass geomean (L vs VS, MB/s, §10.5d): buffer/pull 848/637 (75%), buffer/push 885/754
+(85%), reader/pull 681/532 (78%), reader/push 656/495 (76%). L's OWN reader-vs-buffer
+degradation (geomean 18 workloads): **pull 19.6%, push 25.9%**. Question (Fred): is the
+push streaming gap refill copies + span fallbacks (→ bigger buffer should close it) or
+structural? Threw a buffer-size sweep (buffersize_bench_test.go, THROWAWAY) on the 3 largest-gap
+workloads (marine_ik 2.85MB deg 35% / canada 0.26MB 33% / twitter 0.6MB 31%), WithBufferSize
+4K→4M (4M = whole file in ONE read, zero refills/spanning).
+
+VERDICT: **bigger buffers do NOT close it — hypothesis REJECTED for push.** marine reader/push =
+65% of buffer at 4K and STILL 63% at 4M (whole file, one read). canada 62→67%, twitter 70→76% —
+tiny gains that plateau. Pull picks up ~5pp from larger buffers then plateaus (marine 78→83,
+canada 71→80), so a SMALL refill component exists for pull, but most is structural. The cause
+splits cleanly:
+1. **Stream core vs buffer core (~17–20%, shared pull+push):** even with one read, streaming uses
+   scanTokenStream* (outer readMore loop + per-byte offset++/consumed++) not the register-tight
+   scanTokenBuffer*. This is the §10.4 lever-A territory — already tried and REJECTED (local
+   cursor + hoisted readMore gave nothing). Hard to move.
+2. **Range-over-func closure (~15–20pp, PUSH ONLY):** the tell is the pull/push inversion — in
+   BUFFER mode push>pull (native push core wins: marine 616>529), in READER mode push<pull
+   (marine 390<441) because Tokens()-over-reader has NO native core (iterator.go:47 falls through
+   to NextToken + a closure). At 4M, reader/pull 83% but reader/push 63% → that 20pp IS the closure.
+
+LEVER (the one the data endorses): a NATIVE STREAMING PUSH core scanPushStream* (streaming
+analogue of the whole-buffer scanPush*Core) for Tokens()-over-reader, so push gets its own
+optimized loop instead of NextToken+closure — should flip reader/push from below pull to at/above
+pull (marine ~63%→~80%+). The shared pull ~20% is rejected lever-A, leave it.
