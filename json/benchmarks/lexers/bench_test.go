@@ -1,7 +1,6 @@
 package lexers
 
 import (
-	"iter"
 	"strings"
 	"testing"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/fredbi/core/json/benchmarks/lexers/workloads"
 	jlex "github.com/fredbi/core/json/lexers"
 	deflex "github.com/fredbi/core/json/lexers/default-lexer"
-	lab "github.com/fredbi/core/json/lexers/default-lexer/lab"
 	"github.com/fredbi/core/swag/pools"
 )
 
@@ -46,13 +44,6 @@ func factories() []factory {
 				l, redeem := deflex.BorrowLexerWithBytes(d)
 
 				return l, redeem
-			},
-		},
-		{
-			// lab: the unification sandbox, kept side by side with the reference.
-			name: "lab/bytes",
-			make: func(d []byte) (jlex.Lexer, func()) {
-				return lab.NewWithBytes(d), noRelease
 			},
 		},
 		{
@@ -173,35 +164,6 @@ func BenchmarkLexers(b *testing.B) {
 				}
 			})
 
-			// lab native push Tokens() — side-by-side with default-lexer/tokens
-			b.Run("lab/tokens", func(b *testing.B) {
-				b.SetBytes(int64(len(w.Data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				for range b.N {
-					lex := lab.NewWithBytes(w.Data)
-					for tok := range lex.Tokens() {
-						sink += int(tok.Kind())
-					}
-				}
-			})
-
-			// lab verbatim native push Tokens() — VL inheriting L's fast paths via
-			// the unified core; compare to default-lexer/verbatim (reference VL pull)
-			b.Run("lab/verbatim-tokens", func(b *testing.B) {
-				b.SetBytes(int64(len(w.Data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				for range b.N {
-					vl := lab.NewVerbatimWithBytes(w.Data)
-					for tok := range vl.Tokens() {
-						sink += int(tok.Kind())
-					}
-				}
-			})
-
 			// default-lexer reused across iterations via ResetWithBytes: the
 			// lexer is allocated once outside the loop, so steady-state scanning
 			// should report 0 allocs/op (the construction bias is amortized away).
@@ -302,40 +264,6 @@ func BenchmarkLexers(b *testing.B) {
 				})
 			}
 
-			// phase-2 push-core prototype (bytes mode, separators elided)
-			b.Run("push-proto/bytes", func(b *testing.B) {
-				b.SetBytes(int64(len(w.Data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				for range b.N {
-					p := deflex.NewPush(w.Data)
-					for tok := range p.Tokens() {
-						sink += int(tok.Kind())
-					}
-				}
-			})
-
-			// push core consumed through iter.Pull (the A-vs-B bridge cost for a
-			// pull NextToken built on a push core)
-			b.Run("push-proto-pull/bytes", func(b *testing.B) {
-				b.SetBytes(int64(len(w.Data)))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				for range b.N {
-					p := deflex.NewPush(w.Data)
-					next, stop := iter.Pull(p.Tokens())
-					for {
-						tok, ok := next()
-						if !ok {
-							break
-						}
-						sink += int(tok.Kind())
-					}
-					stop()
-				}
-			})
 		})
 	}
 }
