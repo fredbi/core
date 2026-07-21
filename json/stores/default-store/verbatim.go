@@ -124,10 +124,10 @@ func (s *VerbatimStore) WriteTo(writer writers.StoreWriter, h stores.Handle) {
 }
 
 func (s *VerbatimStore) PutVerbatimToken(leadingSpace []byte, tok token.T) stores.VerbatimHandle {
-	blanks := s.putBlanks(leadingSpace)
+	blanksHandle := s.putBlanks(leadingSpace)
 	value := s.PutToken(tok)
 
-	return stores.MakeVerbatimHandle(blanks, value)
+	return stores.MakeVerbatimHandle(blanksHandle, value)
 }
 
 func (s *VerbatimStore) PutVerbatimValue(v values.VerbatimValue) stores.VerbatimHandle {

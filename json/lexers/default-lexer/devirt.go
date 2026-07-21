@@ -24,18 +24,12 @@ func (l *L) scanPushSemanticDevirt(yield func(token.T) bool) {
 	scanPushSemanticCore(l, semanticPolicy{}, yield)
 }
 
-//go:noinline
-func (l *L) scanPushVerbatimDevirt(yield func(token.VT) bool) {
-	scanPushVerbatimCore(l, verbatimPolicy{}, yield)
-}
-
-// scanPushStateDevirt is the push shim for the prototype state-based verbatim lexer
-// [VS] (§10.5b): emits the light token.T while the core stashes blanks/position in
-// lexer state. Same //go:noinline discipline as the others.
+// scanPushVerbatimDevirt is the verbatim counterpart: the verbatim policy emits the
+// light token.T and stashes blanks/position in lexer state.
 //
 //go:noinline
-func (l *L) scanPushStateDevirt(yield func(token.T) bool) {
-	scanPushStateCore(l, statePolicy{}, yield)
+func (l *L) scanPushVerbatimDevirt(yield func(token.T) bool) {
+	scanPushVerbatimCore(l, verbatimPolicy{}, yield)
 }
 
 // Streaming push shims (§10.5g): the io.Reader counterparts of the whole-buffer push
@@ -50,12 +44,7 @@ func (l *L) scanPushStreamSemanticDevirt(yield func(token.T) bool) {
 }
 
 //go:noinline
-func (l *L) scanPushStreamVerbatimDevirt(yield func(token.VT) bool) {
+func (l *L) scanPushStreamVerbatimDevirt(yield func(token.T) bool) {
 	scanPushStreamVerbatimCore(l, verbatimPolicy{}, yield)
-}
-
-//go:noinline
-func (l *L) scanPushStreamStateDevirt(yield func(token.T) bool) {
-	scanPushStreamStateCore(l, statePolicy{}, yield)
 }
 

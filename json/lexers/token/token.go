@@ -36,35 +36,9 @@ type T struct {
 	valueBool      bool          // value for boolean tokens
 }
 
-// VT represents a verbatim JSON token.
-//
-// Like [T], verbatim tokens are immutable, short-lived objects.
-//
-// Like [T], it maintains strings and numbers as slices of bytes representing an UTF8 string.
-//
-// Unlike [T], [VT] maintains non-significant blank space and new lines, as well as
-// escaped unicode sequences. Blanks ahead of any token (including EOF) are stored in the token.
-//
-// Limitation: JSON data based on a non-UTF8 character set need to be converted beforehand.
-//
-// A [VT] also carries the source position (line and column, both 1-based) of the
-// start of the token's significant content, for tools that need exact positions
-// (linters, LSPs, formatters).
-type VT struct {
-	blanks []byte
-	T
-	line int
-	col  int
-}
-
 // None is a preallocated placeholder for any invalid or unrecognized JSON token.
 var None = T{ //nolint:gochecknoglobals
 	kind: Unknown,
-}
-
-// VNone is a preallocated placeholder for any invalid or unrecognized verbatim JSON token.
-var VNone = VT{ //nolint:gochecknoglobals
-	T: None,
 }
 
 // EOFToken is a preallocated placeholder returned whenever the lexer has reached
@@ -90,14 +64,14 @@ const (
 
 	// String token.
 	//
-	// [T.Value] is unescaped (decoded); [VT.Value] keeps the raw source bytes
-	// (escapes intact) for faithful round-tripping — decode on demand with
-	// [VT.Unescaped] / [VT.UnescapedString].
+	// From the semantic lexer [lexer.L], [T.Value] is unescaped (decoded); from the
+	// verbatim lexer [lexer.VL] it keeps the raw source bytes (escapes intact) for
+	// faithful round-tripping — decode on demand with [Unescape].
 	String
 
 	// Key string token.
 	//
-	// Like [String]: [T.Value] is decoded, [VT.Value] is raw (see [VT.Unescaped]).
+	// Like [String]: semantic value is decoded, verbatim value is raw (see [Unescape]).
 	Key
 
 	// Number JSON token.
@@ -230,35 +204,11 @@ func Make(kind Kind, value []byte, delimiter KindDelimiter, valueBool bool) T {
 	}
 }
 
-/*
-// MakeVerbatim builds a verbatim token [VT].
-func MakeVerbatim(
-	kind Kind,
-	value []byte,
-	delimiter KindDelimiter,
-	valueBool bool,
-	blanks []byte,
-) VT {
-	return VT{
-		T:      Make(kind, value, delimiter, valueBool),
-		blanks: blanks,
-	}
-}
-*/
-
 // MakeDelimiter builds a delimiter token [T].
 func MakeDelimiter(delimiter KindDelimiter) T {
 	return T{
 		kind:           Delimiter,
 		valueDelimiter: delimiter,
-	}
-}
-
-// MakeVerbatim builds a verbatim delimiter token [VT].
-func MakeVerbatimDelimiter(delimiter KindDelimiter, blanks []byte) VT {
-	return VT{
-		T:      MakeDelimiter(delimiter),
-		blanks: blanks,
 	}
 }
 
@@ -270,16 +220,6 @@ func MakeWithValue(kind Kind, value []byte) T {
 	}
 }
 
-/*
-// MakeVerbatimWithValue builds a verbatim scalar string or number token [VT].
-func MakeVerbatimWithValue(kind Kind, value, blanks []byte) VT {
-	return VT{
-		T:      MakeWithValue(kind, value),
-		blanks: blanks,
-	}
-}
-*/
-
 // MakeBoolean builds a scalar boolean token [T].
 func MakeBoolean(value bool) T {
 	return T{
@@ -288,42 +228,11 @@ func MakeBoolean(value bool) T {
 	}
 }
 
-/*
-// MakeVerbatimBoolean builds a scalar boolean token [VT].
-func MakeVerbatimBoolean(value bool, blanks []byte) VT {
-	return VT{
-		T:      MakeBoolean(value),
-		blanks: blanks,
-	}
-}
-
-// MakeVerbatimNull builds a verbatim null token [VT].
-func MakeVerbatimNull(blanks []byte) VT {
-	return VT{
-		T:      NullToken,
-		blanks: blanks,
-	}
-}
-
-func MakeVerbatimEOF(blanks []byte) VT {
-	return VT{
-		T:      EOFToken,
-		blanks: blanks,
-	}
-}
-
-// AsVerbatim wraps a semantic token [T] into a verbatim token [VT], attaching
-// the given leading blanks. Since VT embeds T this is a zero-cost wrap (no field
-// extraction). Stamp the position separately with [VT.WithPosition].
-func (t T) AsVerbatim(blanks []byte) VT {
-	return VT{
-		T:      t,
-		blanks: blanks,
-	}
-}
-*/
-
 // Value for String, Key and Number tokens.
+//
+// For a token produced by the verbatim lexer [lexer.VL], string/Key values are RAW
+// (escapes intact); decode on demand with [Unescape]. The semantic lexer [lexer.L]
+// returns already-decoded values.
 func (t T) Value() []byte {
 	return t.value
 }
@@ -333,32 +242,6 @@ func (t T) Value() []byte {
 // The value is [NotADelimiter] for non-delimiter tokens.
 func (t T) Delimiter() KindDelimiter {
 	return t.valueDelimiter
-}
-
-// Blanks returns the leading blanks appearing before a token.
-func (t VT) Blanks() []byte {
-	return t.blanks
-}
-
-// Line returns the 1-based line number of the start of the token's significant
-// content (0 if not set).
-func (t VT) Line() int {
-	return t.line
-}
-
-// Column returns the 1-based column of the start of the token's significant
-// content (0 if not set). It mirrors [VL.Column] on the verbatim lexer.
-func (t VT) Column() int {
-	return t.col
-}
-
-// WithPosition returns a copy of the token stamped with the given 1-based line
-// and column.
-func (t VT) WithPosition(line, col int) VT {
-	t.line = line
-	t.col = col
-
-	return t
 }
 
 // Kind of token.
@@ -437,16 +320,6 @@ func (t T) Clone() T {
 		valueDelimiter: t.valueDelimiter,
 		kind:           t.kind,
 		valueBool:      t.valueBool,
-	}
-}
-
-// Clone deep-clones a verbatim token.
-func (t VT) Clone() VT {
-	return VT{
-		T:      t.T.Clone(),
-		blanks: slices.Clone(t.blanks),
-		line:   t.line,
-		col:    t.col,
 	}
 }
 

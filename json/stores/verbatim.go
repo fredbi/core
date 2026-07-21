@@ -5,7 +5,7 @@ import (
 	"github.com/fredbi/core/json/stores/values"
 )
 
-// VerbatimStore is like [Store], and supports verbatim tokens [token.VT], [VerbatimHandle] s,
+// VerbatimStore is like [Store], and supports verbatim tokens, [VerbatimHandle] s,
 // and [VerbatimValue] s.
 //
 // It adds the capability to store aside non-significant blank space strings in a memory-efficient way.
@@ -17,10 +17,10 @@ type VerbatimStore interface {
 	// These are actually pairs of [Handle] s and [Value] s.
 	GetVerbatim(VerbatimHandle) values.VerbatimValue
 
-	// PutVerbatimToken returns a pair of [Handle] s, in the order of appearance in the JSON stream.
-	//
-	// It yields the [Handle] to any non-significant blank space appearing before the token value, and the [Handle]
-	// to the value itself.
+	// PutVerbatimToken stores a token from the verbatim lexer [lexer.VL] together with
+	// its leading blanks (from [lexer.VL.LeadingSpace]), returning a pair of [Handle] s
+	// in the order of appearance in the JSON stream: the [Handle] to the non-significant
+	// blank space appearing before the token, and the [Handle] to the value itself.
 	//
 	// A [VerbatimStore] does not store the association between these handles after the verbatim token is split in two parts.
 	// Rather, the association is kept by the [VerbatimHandle], which is actually a pair of [Handle] s.

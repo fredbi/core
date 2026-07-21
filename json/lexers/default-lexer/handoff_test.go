@@ -97,8 +97,10 @@ func TestHandoffTokensThenNextToken_Verbatim(t *testing.T) {
 		blanks    string
 		line, col int
 	}
-	mk := func(x token.VT) tk {
-		return tk{x.Kind(), string(x.Value()), string(x.Blanks()), x.Line(), x.Column()}
+	// blanks/position are lexer state (read via the accessors), valid for the token
+	// just returned — so mk snapshots them from the lexer at each step.
+	mk := func(x token.T, l *VL) tk {
+		return tk{x.Kind(), string(x.Value()), string(l.LeadingSpace()), l.Line(), l.Column()}
 	}
 
 	for name, data := range acceptFixtures(t) {
@@ -109,7 +111,7 @@ func TestHandoffTokensThenNextToken_Verbatim(t *testing.T) {
 			if x.IsEOF() {
 				break
 			}
-			want = append(want, mk(x))
+			want = append(want, mk(x, lp))
 		}
 		require.NoError(t, lp.Err(), name)
 
@@ -118,7 +120,7 @@ func TestHandoffTokensThenNextToken_Verbatim(t *testing.T) {
 			var got []tk
 			n := 0
 			for x := range l.Tokens() {
-				got = append(got, mk(x))
+				got = append(got, mk(x, l))
 				n++
 				if n == cut {
 					break
@@ -129,7 +131,7 @@ func TestHandoffTokensThenNextToken_Verbatim(t *testing.T) {
 				if x.IsEOF() {
 					break
 				}
-				got = append(got, mk(x))
+				got = append(got, mk(x, l))
 			}
 			require.NoErrorf(t, l.Err(), "%s cut=%d", name, cut)
 			require.Equalf(t, want, got, "%s cut=%d: Tokens()->NextToken() mismatch", name, cut)

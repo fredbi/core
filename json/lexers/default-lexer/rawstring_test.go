@@ -22,7 +22,7 @@ func firstVerbatimString(t *testing.T, vl *VL, src string) (raw, dec string) {
 			t.Fatalf("no string token in %q", src)
 		}
 		if isStr(tok.Kind()) {
-			return string(tok.Value()), tok.UnescapedString()
+			return string(tok.Value()), token.UnescapeString(tok.Value())
 		}
 	}
 }

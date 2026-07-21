@@ -31,8 +31,8 @@ func (l *L) tokensGeneric() iter.Seq[token.T] {
 	}
 }
 
-func (l *VL) tokensGeneric() iter.Seq[token.VT] {
-	return func(yield func(token.VT) bool) {
+func (l *VL) tokensGeneric() iter.Seq[token.T] {
+	return func(yield func(token.T) bool) {
 		if l.wholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushVerbatim(yield)
 
@@ -62,12 +62,12 @@ func (l *L) nextTokenGeneric() token.T {
 	return scanTokenStreamG[token.T, semanticPolicy](l, semanticPolicy{})
 }
 
-func (l *VL) nextTokenGeneric() token.VT {
+func (l *VL) nextTokenGeneric() token.T {
 	if l.wholeBuffer {
-		return scanTokenBufferG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
+		return scanTokenBufferG[token.T, verbatimPolicy](l.L, verbatimPolicy{})
 	}
 
-	return scanTokenStreamG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
+	return scanTokenStreamG[token.T, verbatimPolicy](l.L, verbatimPolicy{})
 }
 
 // devirtInputs exercise every dispatch arm and value path, plus malformed inputs
@@ -179,7 +179,7 @@ func TestDevirtEquivalenceVerbatim(t *testing.T) {
 		data := []byte(in)
 
 		// pull
-		var genP []token.VT
+		var genP []token.T
 		vg := NewVerbatimWithBytes(data)
 		for {
 			tok := vg.nextTokenGeneric()
@@ -188,7 +188,7 @@ func TestDevirtEquivalenceVerbatim(t *testing.T) {
 			}
 			genP = append(genP, tok)
 		}
-		var devP []token.VT
+		var devP []token.T
 		vd := NewVerbatimWithBytes(data)
 		for {
 			tok := vd.NextToken() // NextToken = devirt post-adoption
@@ -205,12 +205,12 @@ func TestDevirtEquivalenceVerbatim(t *testing.T) {
 		}
 
 		// push
-		var genPush []token.VT
+		var genPush []token.T
 		vgp := NewVerbatimWithBytes(data)
 		for tok := range vgp.tokensGeneric() {
 			genPush = append(genPush, tok)
 		}
-		var devPush []token.VT
+		var devPush []token.T
 		vdp := NewVerbatimWithBytes(data)
 		for tok := range vdp.Tokens() { // devirt path post-adoption
 			devPush = append(devPush, tok)

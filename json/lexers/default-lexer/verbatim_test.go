@@ -34,7 +34,7 @@ func TestVerbatim(t *testing.T) {
 
 	var (
 		i   int
-		tok token.VT
+		tok token.T
 	)
 
 	t.Run("should preseve blank space in tokens", func(t *testing.T) {
@@ -43,8 +43,8 @@ func TestVerbatim(t *testing.T) {
 			require.NoErrorf(t, lex.Err(), errorDetails(t, lex.Err(), lex))
 			require.True(t, lex.Ok())
 			t.Logf("-> %v", tok)
-			t.Logf("-> %q", tok.Blanks())
-			blanks := string(tok.Blanks())
+			t.Logf("-> %q", lex.LeadingSpace())
+			blanks := string(lex.LeadingSpace())
 			require.Empty(t, strings.TrimSpace(blanks))
 			switch i {
 			case 0: // {
@@ -76,7 +76,7 @@ func TestVerbatim(t *testing.T) {
 			case 13: // EOF
 				t.Run("should keep trailing blanks before EOF", func(t *testing.T) {
 					// EOF
-					blanks := string(tok.Blanks())
+					blanks := string(lex.LeadingSpace())
 					require.Empty(t, strings.TrimSpace(blanks))
 					require.Len(t, blanks, 3)
 				})
@@ -88,7 +88,7 @@ func TestVerbatim(t *testing.T) {
 	})
 
 	t.Logf("last -> %v", tok)
-	t.Logf("last -> %q", tok.Blanks())
+	t.Logf("last -> %q", lex.LeadingSpace())
 }
 
 func errorDetails(
@@ -115,7 +115,7 @@ func testFixtureVerbatim(newLexer func() *VL) func(*testing.T) {
 
 		var (
 			i   int
-			tok token.VT
+			tok token.T
 		)
 
 		for ; !tok.IsEOF(); i++ {

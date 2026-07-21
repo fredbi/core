@@ -12,7 +12,7 @@ import (
 // L deliberately exposes no Line()/Column() (tracking them is costly on
 // whitespace-heavy input and cannot be recovered lazily on a streaming buffer —
 // see the note in lexer.go). These tests pin the verbatim position contract on
-// [VL] and [token.VT]. Byte position for the semantic lexer is [L.Offset].
+// [VL] (position via VL.Line / VL.Column). Byte position for the semantic lexer is [L.Offset].
 
 type pos struct{ line, col int }
 
@@ -37,7 +37,7 @@ func posWant() []pos {
 }
 
 func TestLinePosition(t *testing.T) {
-	t.Run("VL carries start line/column in the token", func(t *testing.T) {
+	t.Run("VL reports start line/column as lexer state", func(t *testing.T) {
 		vl := NewVerbatimWithBytes([]byte(posDoc))
 
 		var got []pos
@@ -46,23 +46,10 @@ func TestLinePosition(t *testing.T) {
 			if !vl.Ok() || tok.IsEOF() {
 				break
 			}
-			got = append(got, pos{tok.Line(), tok.Column()})
+			got = append(got, pos{vl.Line(), vl.Column()})
 		}
 		require.NoError(t, vl.Err())
 		assert.Equal(t, posWant(), got)
-	})
-
-	t.Run("VL methods agree with the token fields", func(t *testing.T) {
-		vl := NewVerbatimWithBytes([]byte(posDoc))
-		for {
-			tok := vl.NextToken()
-			if !vl.Ok() || tok.IsEOF() {
-				break
-			}
-			assert.Equal(t, tok.Line(), vl.Line())
-			assert.Equal(t, tok.Column(), vl.Column())
-		}
-		require.NoError(t, vl.Err())
 	})
 
 	t.Run("VL streaming with a tiny buffer reports the same positions", func(t *testing.T) {
@@ -74,7 +61,7 @@ func TestLinePosition(t *testing.T) {
 			if !vl.Ok() || tok.IsEOF() {
 				break
 			}
-			got = append(got, pos{tok.Line(), tok.Column()})
+			got = append(got, pos{vl.Line(), vl.Column()})
 		}
 		require.NoError(t, vl.Err())
 		assert.Equal(t, posWant(), got)
@@ -97,7 +84,7 @@ func TestLinePositionMultiline(t *testing.T) {
 		if !vl.Ok() || tok.IsEOF() {
 			break
 		}
-		got = append(got, pos{tok.Line(), tok.Column()})
+		got = append(got, pos{vl.Line(), vl.Column()})
 	}
 	require.NoError(t, vl.Err())
 	assert.Equal(t, []pos{

@@ -6,33 +6,34 @@ import (
 	"unicode/utf8"
 )
 
-// Unescaped returns the decoded form of a verbatim token's value.
+// Unescape returns the decoded form of a raw string/Key value produced by the
+// verbatim lexer [lexer.VL].
 //
-// A verbatim token [VT] keeps a string/key value exactly as it appeared in the
-// source (escape sequences intact — see the [String]/[Key] doc), so it can be
-// round-tripped byte-for-byte. Unescaped expands the JSON escapes on demand:
-// the shorthand escapes (\", \\, \/, \b, \f, \n, \r, \t) and \uXXXX sequences
+// VL keeps string/Key values exactly as they appeared in the source (escape
+// sequences intact — see the [String]/[Key] doc), so the token stream can be
+// round-tripped byte-for-byte. Unescape expands the JSON escapes on demand: the
+// shorthand escapes (\", \\, \/, \b, \f, \n, \r, \t) and \uXXXX sequences
 // (surrogate pairs combined) become their UTF-8 bytes.
 //
-// For non-string tokens, and for strings that contain no escape, the raw value
-// is returned unchanged with no allocation. Otherwise a fresh slice is returned.
+// If raw contains no escape it is returned unchanged with no allocation; otherwise
+// a fresh slice is returned. Do NOT call this on a semantic-lexer value — the
+// semantic lexer [lexer.L] already decodes.
 //
-// The escapes were validated when the token was scanned by the verbatim lexer,
-// so decoding here cannot fail; a malformed sequence would have errored at scan
-// time (any residual bad input is passed through rather than panicking).
-func (t VT) Unescaped() []byte {
-	v := t.value
-	if (t.kind != String && t.kind != Key) || bytes.IndexByte(v, '\\') < 0 {
-		return v
+// The escapes were validated when the token was scanned, so decoding cannot fail; a
+// malformed sequence would have errored at scan time (any residual bad input is
+// passed through rather than panicking).
+func Unescape(raw []byte) []byte {
+	if bytes.IndexByte(raw, '\\') < 0 {
+		return raw
 	}
 
-	return unescape(v)
+	return unescape(raw)
 }
 
-// UnescapedString is [VT.Unescaped] as a string. It always allocates (the string
-// header cannot alias the token's buffer, which is reused on the next token).
-func (t VT) UnescapedString() string {
-	return string(t.Unescaped())
+// UnescapeString is [Unescape] as a string. It always allocates (the string header
+// cannot alias the token's buffer, which is reused on the next token).
+func UnescapeString(raw []byte) string {
+	return string(Unescape(raw))
 }
 
 // unescape decodes a raw JSON string body (no surrounding quotes) whose escapes

@@ -28,8 +28,9 @@ func TestVerbatimTokenRoundTrip(t *testing.T) {
 		jw := NewUnbuffered(&tw)
 
 		vl := lexer.NewVerbatimWithBytes([]byte(src))
-		for tok := range vk.Tokens() {
-			jw.VerbatimToken(vl.LeadingSpace(), tok)
+		for {
+			tok := vl.NextToken()
+			jw.VerbatimToken(vl.LeadingSpace(), tok) // blanks read from lexer state (§10.5)
 			if tok.IsEOF() {
 				break
 			}

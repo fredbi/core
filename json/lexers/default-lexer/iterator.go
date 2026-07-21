@@ -69,12 +69,13 @@ func (l *L) Tokens() iter.Seq[token.T] {
 	}
 }
 
-// Tokens returns an iterator over the verbatim JSON tokens. In whole-buffer mode
-// it takes the native push path (the generic core with the verbatim policy),
-// which gives VL all of L's fast paths; streaming/value-capped modes keep the
-// proven NextToken loop. See [L.Tokens] for the semantics.
-func (l *VL) Tokens() iter.Seq[token.VT] {
-	return func(yield func(token.VT) bool) {
+// Tokens returns an iterator over the verbatim JSON tokens (light [token.T] with raw
+// values; the preceding blanks and position are read via [VL.LeadingSpace] /
+// [VL.Line] / [VL.Column], valid inside each iteration). In whole-buffer mode it
+// takes the native push path; streaming takes the native streaming push core
+// (§10.5g); value-capped whole-buffer keeps the NextToken loop. See [L.Tokens].
+func (l *VL) Tokens() iter.Seq[token.T] {
+	return func(yield func(token.T) bool) {
 		l.primeStream() // §10.5f: resolve the whole-buffer short-circuit before choosing the core
 		if l.wholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushVerbatimDevirt(yield)

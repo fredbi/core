@@ -64,22 +64,25 @@ func verbatimOpts(opts []Option) []Option {
 	return append([]Option{WithElideSeparator(false)}, opts...)
 }
 
-// NextToken returns the next verbatim token consumed from the stream or slice of
-// bytes. The last token is of Kind EOF; in an errored state it keeps returning
-// tokens of Kind Unknown.
+// NextToken returns the next token consumed from the stream or slice of bytes, as a
+// light [token.T] with string/number values kept RAW (escapes intact — decode on
+// demand with [token.Unescape]). The last token is of Kind EOF; in an errored state
+// it keeps returning tokens of Kind Unknown.
 //
-// It is driven by the unified generic pull core (verbatim policy) — the same
-// core that backs L.NextToken. Values are decoded by L's scanners (so VL gets
-// L's fast paths and its \u-decoding fix) and the preceding blanks + position
-// are attached by the policy.
+// The verbatim feature — the whitespace run preceding the token and its 1-based
+// source position — is exposed as LEXER STATE, valid until the next call, via
+// [VL.LeadingSpace] / [VL.Line] / [VL.Column]. This "token-vs-state arbitrage"
+// (§10.5) keeps the emitted token the 32B token.T (like the semantic lexer L)
+// instead of a heavy per-token verbatim token: VL runs at ~77–84% of L across all
+// modes, from the ~27% the earlier token.VT design paid.
 //
 // Tokens are expected to have a short lifespan: when NextToken is called again,
-// the memory backing the previous token's value is reused. To keep a token, use
-// its Clone() method.
-func (l *VL) NextToken() token.VT {
-	// devirtualized pull core (adopted 2026-06-27); see [L.NextToken]. Same
-	// wholeBuffer lane dispatch (§10): the buffer lane gives VL zero-copy blanks,
-	// the stream lane keeps the byte-by-byte blanks append across refills.
+// the memory backing the previous token's value (and the accessors' state) is
+// reused. To keep a token, use its Clone() method.
+func (l *VL) NextToken() token.T {
+	// devirtualized pull core; see [L.NextToken]. Same wholeBuffer lane dispatch
+	// (§10): the buffer lane gives zero-copy blanks, the stream lane keeps the
+	// byte-by-byte blanks append across refills.
 	if l.wholeBuffer {
 		return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
 	}
@@ -93,10 +96,17 @@ func (l *VL) NextToken() token.VT {
 	return scanTokenStreamVerbatim(l.L, verbatimPolicy{})
 }
 
+// LeadingSpace returns the run of insignificant whitespace that preceded the
+// most-recently-returned token (empty if none), sliced zero-copy from the input
+// (valid until the next NextToken). For the EOF token it is the trailing whitespace
+// of the document. This is what makes the token stream round-trippable without a
+// per-token verbatim token.
+func (l *VL) LeadingSpace() []byte { return l.blanks }
+
 // Line yields the 1-based line number at which the most recently returned token
 // starts (0 before the first token). The verbatim lexer maintains line/column
 // accounting (the semantic lexer does not — see lexer.go); the cost is already
-// paid, so these accessors are free. Per-token position is also on [token.VT].
+// paid, so these accessors are free.
 func (l *VL) Line() int { return l.tokLine }
 
 // Column yields the 1-based column at which the most recently returned token

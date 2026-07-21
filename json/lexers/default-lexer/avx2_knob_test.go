@@ -23,8 +23,8 @@ func avx2Doc() []byte {
 	))
 }
 
-// tokenLike is satisfied by both token.T (semantic) and token.VT (verbatim, which
-// embeds T), so the collector drains either lexer.
+// tokenLike is satisfied by token.T (both the semantic lexer L and the verbatim
+// lexer VL emit token.T), so the collector drains either lexer.
 type tokenLike interface {
 	Kind() token.Kind
 	Value() []byte

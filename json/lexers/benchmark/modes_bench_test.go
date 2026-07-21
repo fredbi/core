@@ -23,7 +23,7 @@ import (
 	"bytes"
 	"testing"
 
-	lab "github.com/fredbi/core/json/lexers/default-lexer/lab"
+	lexer "github.com/fredbi/core/json/lexers/default-lexer"
 	"github.com/fredbi/core/json/lexers/benchmark/workloads"
 	"github.com/fredbi/core/json/lexers/token"
 )
@@ -44,7 +44,7 @@ func BenchmarkLexerModes(b *testing.B) {
 			// --- semantic lexer L ---
 
 			b.Run("L/buffer/push", func(b *testing.B) {
-				lx := lab.NewWithBytes(data)
+				lx := lexer.NewWithBytes(data)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -57,7 +57,7 @@ func BenchmarkLexerModes(b *testing.B) {
 			})
 
 			b.Run("L/buffer/pull", func(b *testing.B) {
-				lx := lab.NewWithBytes(data)
+				lx := lexer.NewWithBytes(data)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -76,7 +76,7 @@ func BenchmarkLexerModes(b *testing.B) {
 			b.Run("L/reader/push", func(b *testing.B) {
 				var br bytes.Reader
 				br.Reset(data)
-				lx := lab.New(&br)
+				lx := lexer.New(&br)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -92,7 +92,7 @@ func BenchmarkLexerModes(b *testing.B) {
 			b.Run("L/reader/pull", func(b *testing.B) {
 				var br bytes.Reader
 				br.Reset(data)
-				lx := lab.New(&br)
+				lx := lexer.New(&br)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -113,8 +113,8 @@ func BenchmarkLexerModes(b *testing.B) {
 			// feature (raw values + blanks + position via accessors), light token.T.
 			// The old token.VT-based VL is no longer measured (on death row, §10.5b). ---
 
-			b.Run("VS/buffer/push", func(b *testing.B) {
-				lx := lab.NewVerbatimStateWithBytes(data)
+			b.Run("VL/buffer/push", func(b *testing.B) {
+				lx := lexer.NewVerbatimWithBytes(data)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -126,8 +126,8 @@ func BenchmarkLexerModes(b *testing.B) {
 				}
 			})
 
-			b.Run("VS/buffer/pull", func(b *testing.B) {
-				lx := lab.NewVerbatimStateWithBytes(data)
+			b.Run("VL/buffer/pull", func(b *testing.B) {
+				lx := lexer.NewVerbatimWithBytes(data)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -143,10 +143,10 @@ func BenchmarkLexerModes(b *testing.B) {
 				}
 			})
 
-			b.Run("VS/reader/push", func(b *testing.B) {
+			b.Run("VL/reader/push", func(b *testing.B) {
 				var br bytes.Reader
 				br.Reset(data)
-				lx := lab.NewVerbatimState(&br)
+				lx := lexer.NewVerbatim(&br)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -159,10 +159,10 @@ func BenchmarkLexerModes(b *testing.B) {
 				}
 			})
 
-			b.Run("VS/reader/pull", func(b *testing.B) {
+			b.Run("VL/reader/pull", func(b *testing.B) {
 				var br bytes.Reader
 				br.Reset(data)
-				lx := lab.NewVerbatimState(&br)
+				lx := lexer.NewVerbatim(&br)
 				b.SetBytes(int64(len(data)))
 				b.ReportAllocs()
 				b.ResetTimer()

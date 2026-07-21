@@ -51,14 +51,25 @@ type Lexer interface {
 //
 // The special token [token.EOF] indicates that the end of the input stream has been reached.
 type VerbatimLexer interface {
-	// NextToken returns the next verbatim token from the JSON input.
-	NextToken() token.VT
+	// NextToken returns the next token from the JSON input, as a light [token.T]
+	// with string/number values kept RAW (decode on demand with [token.Unescape]).
+	NextToken() token.T
 
-	// Tokens iterates over the verbatim JSON tokens up to (not including) EOF.
+	// Tokens iterates over the JSON tokens up to (not including) EOF.
 	//
 	// The range also ends on error; as with NextToken, errors are kept in the
 	// lexer's state (check Ok/Err after the loop).
-	Tokens() iter.Seq[token.VT]
+	Tokens() iter.Seq[token.T]
+
+	// LeadingSpace returns the whitespace run preceding the most-recently-returned
+	// token (zero-copy, valid until the next NextToken) — the verbatim feature kept
+	// as lexer state rather than baked into each token.
+	LeadingSpace() []byte
+
+	// Line and Column give the 1-based source position of the most-recent token's
+	// start (0 before the first token).
+	Line() int
+	Column() int
 
 	// Offset indicates the current position of the lexer
 	Offset() uint64

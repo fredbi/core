@@ -75,14 +75,18 @@ func TestTokensIterator(t *testing.T) {
 func TestVerbatimTokensIterator(t *testing.T) {
 	const doc = ` { "a" : [ 1 , true ] } `
 
-	var got []token.VT
+	var got []token.T
+	var firstBlanks string
 	vl := NewVerbatimWithBytes([]byte(doc))
 	for tok := range vl.Tokens() {
+		if len(got) == 0 {
+			firstBlanks = string(vl.LeadingSpace()) // blanks are lexer state, read per token
+		}
 		got = append(got, tok.Clone())
 	}
 	require.NoError(t, vl.Err())
 	require.NotEmpty(t, got)
 
-	// verbatim tokens preserve leading blanks
-	assert.NotEmpty(t, got[0].Blanks(), "first verbatim token should carry leading blanks")
+	// the verbatim lexer preserves leading blanks (the doc starts with a space)
+	assert.NotEmpty(t, firstBlanks, "first verbatim token should carry leading blanks")
 }

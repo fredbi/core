@@ -44,18 +44,16 @@ type emitPolicy[T any] interface {
 	// blanks, the semantic policy ignores them.
 	eof(blanks []byte) T
 	// tracksPosition reports whether the core must maintain line/column accounting.
-	// Only the verbatim lexers need it (it bakes line/col into token.VT, or exposes
-	// it as lexer state); the semantic lexer drops it. Returning a constant lets the
-	// devirtualized cores (scan_gen.go) constant-fold and dead-code-eliminate the
-	// accounting entirely in the semantic core, so its hot loop does no per-newline /
-	// per-token position bookkeeping — matching jsontext's offset-only model.
+	// Only the verbatim lexer [VL] needs it (it exposes line/col as lexer state); the
+	// semantic lexer drops it. Returning a constant lets the devirtualized cores
+	// (scan_gen.go) constant-fold and dead-code-eliminate the accounting entirely in
+	// the semantic core, so its hot loop does no per-newline / per-token position
+	// bookkeeping — matching jsontext's offset-only model.
 	tracksPosition() bool
 	// storesBlanks reports whether the core must stash the preceding-blanks slice into
-	// lexer state (l.blanks) at each token boundary. True only for the state-based
-	// verbatim lexer [VS] (§10.5b), which emits a light token.T and exposes the blanks
-	// via an accessor instead of baking them into the token. verbatimPolicy returns
-	// false: it carries the blanks IN the token (token.VT), and adding a redundant
-	// store would perturb VL's frozen core. Constant-folds away where false.
+	// lexer state (l.blanks) at each token boundary. True only for the verbatim lexer
+	// [VL], which emits a light token.T and exposes the blanks via [VL.LeadingSpace]
+	// instead of baking them into the token. Constant-folds away where false (semantic).
 	storesBlanks() bool
 }
 
@@ -70,35 +68,22 @@ func (semanticPolicy) eof(_ []byte) token.T                       { return token
 func (semanticPolicy) tracksPosition() bool                       { return false }
 func (semanticPolicy) storesBlanks() bool                         { return false }
 
-// verbatimPolicy is the policy for the verbatim lexer VL: it wraps the
-// grammar/value token.T into a token.VT, attaching the preceding blanks and the
-// position (zero-cost wrap — VT embeds T).
+// verbatimPolicy is the policy for the verbatim lexer [VL]: the "token-vs-state
+// arbitrage". It emits the LIGHT token.T (identity, like the semantic policy) and
+// keeps the verbatim feature as LEXER STATE — the preceding-blanks slice is stashed
+// in l.blanks (via storesBlanks, read back through [VL.LeadingSpace]) and the
+// position stays in l.tokLine / l.tokCol (the core writes it since tracksPosition is
+// true, read back through [VL.Line] / [VL.Column]). This replaced the original
+// token.VT-based verbatim lexer (§10.5a sizing: the per-token 72B VT
+// construct-and-return-by-value was ~85% of the verbatim throughput tax; the
+// state-based lexer runs at ~77–84% of the semantic L across all modes vs VT's ~27%).
 type verbatimPolicy struct{}
 
-func (verbatimPolicy) emit(t token.T, blanks []byte, line, col int) token.VT {
-	return t.AsVerbatim(blanks).WithPosition(line, col)
-}
-func (verbatimPolicy) none() token.VT             { return token.VNone }
-func (verbatimPolicy) eof(blanks []byte) token.VT { return token.MakeVerbatimEOF(blanks) }
-func (verbatimPolicy) tracksPosition() bool       { return true }
-func (verbatimPolicy) storesBlanks() bool         { return false }
-
-// statePolicy is the policy for the PROTOTYPE state-based verbatim lexer [VS]
-// (§10.5b): the "token-vs-state arbitrage". It emits the LIGHT token.T (identity,
-// like the semantic policy) instead of the 72B token.VT, and keeps the verbatim
-// feature as LEXER STATE — the preceding-blanks slice is stashed in l.blanks (via
-// storesBlanks, read back through [VS.LeadingSpace]) and the position stays in
-// l.tokLine / l.tokCol (the core writes it since tracksPosition is true, read back
-// through [VS.Line] / [VS.Column]). The sizing in §10.5a proved this recovers
-// ~85–93% of the semantic throughput vs VL's ~27% — the per-token 72B VT
-// construct-and-return-by-value was the whole tax.
-type statePolicy struct{}
-
-func (statePolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
-func (statePolicy) none() token.T                              { return token.None }
-func (statePolicy) eof(_ []byte) token.T                       { return token.EOFToken }
-func (statePolicy) tracksPosition() bool                       { return true }
-func (statePolicy) storesBlanks() bool                         { return true }
+func (verbatimPolicy) emit(t token.T, _ []byte, _, _ int) token.T { return t }
+func (verbatimPolicy) none() token.T                              { return token.None }
+func (verbatimPolicy) eof(_ []byte) token.T                       { return token.EOFToken }
+func (verbatimPolicy) tracksPosition() bool                       { return true }
+func (verbatimPolicy) storesBlanks() bool                         { return true }
 
 // scanPushG is the generic, policy-parameterized push core backing Tokens() for
 // both L and VL in whole-buffer mode. The per-byte hot loop keeps the cursor in
@@ -121,13 +106,13 @@ func (l *L) scanPushSemantic(yield func(token.T) bool) {
 }
 
 // scanPushVerbatim is the verbatim counterpart of scanPushSemantic: same
-// non-inlined-shim discipline, but instantiates the core with verbatimPolicy so
-// the emitted tokens are token.VT (blanks + position baked in). This gives VL a
-// native push path with all of L's fast paths.
+// non-inlined-shim discipline, instantiating the core with verbatimPolicy — which
+// emits the light token.T and stashes blanks/position in lexer state. This gives VL
+// a native push path with all of L's fast paths.
 //
 //go:noinline
-func (l *L) scanPushVerbatim(yield func(token.VT) bool) {
-	scanPushG[token.VT, verbatimPolicy](l, verbatimPolicy{}, yield)
+func (l *L) scanPushVerbatim(yield func(token.T) bool) {
+	scanPushG[token.T, verbatimPolicy](l, verbatimPolicy{}, yield)
 }
 
 //nolint:gocognit,gocyclo

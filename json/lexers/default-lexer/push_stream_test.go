@@ -74,8 +74,8 @@ func TestStreamPushEquivalence(t *testing.T) {
 	}
 }
 
-func forceStreamWindowVS(data []byte, bs int) *VS {
-	vs := NewVerbatimState(bytes.NewReader(data), WithBufferSize(bs))
+func forceStreamWindowVS(data []byte, bs int) *VL {
+	vs := NewVerbatim(bytes.NewReader(data), WithBufferSize(bs))
 	if bs < cap(vs.buffer) {
 		vs.buffer = vs.buffer[:bs]
 	}
@@ -89,7 +89,7 @@ type vsDrain struct {
 	ok     bool
 }
 
-func drainVSPull(vs *VS) vsDrain {
+func drainVSPull(vs *VL) vsDrain {
 	var d vsDrain
 	for {
 		t := vs.NextToken()
@@ -108,7 +108,7 @@ func drainVSPull(vs *VS) vsDrain {
 	}
 }
 
-func drainVSPush(vs *VS) vsDrain {
+func drainVSPush(vs *VL) vsDrain {
 	var d vsDrain
 	for t := range vs.Tokens() {
 		d.toks = append(d.toks, [2]string{t.Kind().String(), string(t.Value())})
