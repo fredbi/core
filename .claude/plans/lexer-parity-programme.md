@@ -1255,3 +1255,27 @@ whole-file copy from reader into l.buffer. Below filesize: streaming unchanged (
 streamed input that fits the buffer (most real payloads at the default 4KB, or any input with a
 sized buffer) now runs at buffer speed through the streaming API — no caller change. The large-
 stream push gap (input > buffer) still wants the native streaming push core (§10.5e lever) if pursued.
+
+### 10.5g NATIVE STREAMING PUSH CORE — Tokens() over a reader (2026-07-21, commit a1c876a)
+
+Built the §10.5e lever for genuine large streams (input > buffer, where §10.5f promotion does not
+fire). Tokens()-over-reader previously fell through to a NextToken loop wrapped in a range-over-func
+closure (iterator.go) — per-token NextToken call overhead PLUS the closure, running BELOW even the
+streaming pull core. New scanPushStreamG: the yield→loop counterpart of the streaming pull core
+scanTokenStreamG (cursor/scan state stay put across the whole scan, tokens delivered inline via
+yield, readMore refills between/within tokens). l.blanks is reset per token for the position-tracking
+policies, gated on the compile-time tracksPosition() so it folds away in the semantic core. Wired
+through lexgen as scanPushStream{Semantic,Verbatim,State}Core + //go:noinline devirt shims (yield
+closure stays on the stack → 0 allocs); Tokens() (L, VL, VS) routes the streaming branch here instead
+of the NextToken loop (whole-buffer-with-value-cap still uses the NextToken loop).
+
+CORRECTNESS: TestStreamPushEquivalence — Tokens() push == NextToken() pull (kinds, RAW values, AND
+blanks) for L and VS across window sizes forcing streaming and promotion. Full suite + -race green;
+generate idempotent; 0 allocs (verified in modes). No shape change to the pull/buffer champions.
+
+WIN (reader mode, geomean corpus, MB/s, 0 alloc): L reader/push **656→763 (+16%)**, VS reader/push
+**495→646 (+30%)**. reader/PUSH now BEATS reader/pull (L 763 vs 650; VS 646 vs 519) — the
+push-core-over-pull-core advantage (native push keeps the cursor local across all tokens, no per-call
+overhead) is restored on the streaming lane, exactly as in buffer mode. Point checks: marine
+reader/push 387→505 (+30%, now > reader/pull 415); citm 910→1014; gsoc →2120. VS reader/push is now
+85% of L (was 76%, §10.5d). The streaming push loop — the last endorsed lever — is done.
