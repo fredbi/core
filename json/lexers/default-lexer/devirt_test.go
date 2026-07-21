@@ -50,12 +50,24 @@ func (l *VL) tokensGeneric() iter.Seq[token.VT] {
 	}
 }
 
-// nextTokenGeneric / VL.nextTokenGeneric drive the generic pull core directly.
-// Retained as the A/B baseline now that NextToken() routes through the devirt core.
-func (l *L) nextTokenGeneric() token.T { return scanTokenG[token.T, semanticPolicy](l, semanticPolicy{}) }
+// nextTokenGeneric / VL.nextTokenGeneric drive the generic pull cores directly,
+// dispatching on wholeBuffer exactly as NextToken does (§10) so the generic↔devirt
+// equivalence guard covers both the buffer and the stream lane. Retained as the
+// A/B baseline now that NextToken() routes through the devirt cores.
+func (l *L) nextTokenGeneric() token.T {
+	if l.wholeBuffer {
+		return scanTokenBufferG[token.T, semanticPolicy](l, semanticPolicy{})
+	}
+
+	return scanTokenStreamG[token.T, semanticPolicy](l, semanticPolicy{})
+}
 
 func (l *VL) nextTokenGeneric() token.VT {
-	return scanTokenG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
+	if l.wholeBuffer {
+		return scanTokenBufferG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
+	}
+
+	return scanTokenStreamG[token.VT, verbatimPolicy](l.L, verbatimPolicy{})
 }
 
 // devirtInputs exercise every dispatch arm and value path, plus malformed inputs

@@ -31,6 +31,7 @@ import (
 // NextToken returns the following token, not a repeat.
 func (l *L) Tokens() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
+		l.primeStream() // §10.5f: resolve the whole-buffer short-circuit before choosing the core
 		// whole-buffer fast path: a native push scan loop that keeps the cursor
 		// in a local across the whole scan (no per-byte struct writes). Streaming
 		// and value-capped modes keep the proven NextToken loop.
@@ -40,6 +41,15 @@ func (l *L) Tokens() iter.Seq[token.T] {
 			// see devirt_bench_test + plan §5.1). The generic shim scanPushSemantic is
 			// retained as the A/B baseline. Non-inlined wrapper keeps Tokens inlinable.
 			l.scanPushSemanticDevirt(yield)
+
+			return
+		}
+
+		// streaming (§10.5g): the NATIVE streaming push core, instead of looping over
+		// NextToken (which paid per-token call overhead PLUS this closure). Whole-buffer
+		// with a value cap still falls through to the NextToken loop below.
+		if !l.wholeBuffer {
+			l.scanPushStreamSemanticDevirt(yield)
 
 			return
 		}
@@ -65,9 +75,14 @@ func (l *L) Tokens() iter.Seq[token.T] {
 // proven NextToken loop. See [L.Tokens] for the semantics.
 func (l *VL) Tokens() iter.Seq[token.VT] {
 	return func(yield func(token.VT) bool) {
+		l.primeStream() // §10.5f: resolve the whole-buffer short-circuit before choosing the core
 		if l.wholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushVerbatimDevirt(yield)
 
+			return
+		}
+		if !l.wholeBuffer {
+			l.scanPushStreamVerbatimDevirt(yield) // §10.5g native streaming push
 			return
 		}
 

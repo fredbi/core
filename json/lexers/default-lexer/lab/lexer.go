@@ -284,9 +284,12 @@ func (l *L) consumeNull(_ byte) token.T {
 // (or a Borrow*/New* constructor) to lex a new source. Configured options are
 // preserved, and the streaming-owned buffer keeps its capacity for reuse.
 func (l *L) Reset() {
-	if l.wholeBuffer {
-		// l.buffer aliases the caller's data — drop it. In streaming mode the
-		// buffer is ours, so keep its capacity (it is refilled, not aliased).
+	if l.wholeBuffer && l.r == noopReader {
+		// whole-buffer via NewWithBytes/ResetWithBytes: l.buffer aliases the caller's
+		// data — drop it so the pool does not pin user memory. A STREAMING lexer that
+		// promoted to whole-buffer (§10.5f) still OWNS its buffer (l.r is the caller's
+		// reader, not noopReader), so keep its capacity for reuse — it was refilled,
+		// not aliased.
 		l.buffer = nil
 	}
 	l.r = noopReader

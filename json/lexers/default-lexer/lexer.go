@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"slices"
 
@@ -47,9 +48,10 @@ type L struct {
 
 	expectKey   bool
 	afterKey    bool // the previous token was an object key: a ':' must follow
-	isAtEOF     bool
-	wholeBuffer bool // the buffer holds the entire input (no refills): values may alias it
-	trackBlanks bool // accumulate preceding blanks into l.blanks (verbatim lexer)
+	isAtEOF       bool
+	wholeBuffer   bool // the buffer holds the entire input (no refills): values may alias it
+	needFirstFill bool // streaming: the initial read (and whole-buffer short-circuit) is pending
+	trackBlanks   bool // accumulate preceding blanks into l.blanks (verbatim lexer)
 
 	options
 }
@@ -69,7 +71,8 @@ func New(r io.Reader, opts ...Option) *L {
 	l.r = r
 	l.buffer = make([]byte, l.bufferSize)
 	l.bufferized = 0
-	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
+	l.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 
 	l.reset()
 
@@ -91,6 +94,7 @@ func NewWithBytes(data []byte, opts ...Option) *L {
 	l.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
 	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.needFirstFill = false
 
 	l.reset()
 
@@ -152,9 +156,67 @@ func (l *L) Offset() uint64 {
 // using its [T.Clone] method.
 func (l *L) NextToken() token.T {
 	// devirtualized pull core (adopted 2026-06-27: +4.23% geomean over the generic
-	// core, no regressions; see plan §5.1 + devirt_bench_test). The generic
-	// scanTokenG is retained as lexgen's source-of-truth and the A/B baseline.
-	return scanTokenSemantic(l, semanticPolicy{})
+	// core, no regressions; see plan §5.1 + devirt_bench_test). Dispatch once per
+	// token on wholeBuffer (§10): the whole-buffer lane (local cursor, no readMore,
+	// zero-copy blanks) is the frozen champion; the stream lane is optimized
+	// separately. The generic scanTokenBufferG / scanTokenStreamG are lexgen's
+	// source-of-truth and the A/B baseline.
+	if l.wholeBuffer {
+		return scanTokenBufferSemantic(l, semanticPolicy{})
+	}
+	if l.needFirstFill {
+		l.firstFill()
+		if l.wholeBuffer {
+			return scanTokenBufferSemantic(l, semanticPolicy{})
+		}
+	}
+
+	return scanTokenStreamSemantic(l, semanticPolicy{})
+}
+
+// firstFill performs the initial read for a streaming lexer and SHORT-CIRCUITS to
+// whole-buffer mode when the entire input fits in the buffer (§10.5f). It reads into
+// l.buffer until the buffer is full or the reader is exhausted; if EOF arrives before
+// the buffer fills, the whole input is now buffered, so the lexer flips to wholeBuffer
+// mode — thereafter the fast in-buffer cores run (and, for Tokens(), the native
+// whole-buffer push core instead of the NextToken+closure fallthrough) with no
+// per-token streaming overhead. Inputs larger than the buffer stay in streaming mode
+// with the first window pre-filled. A non-EOF read error is recorded in l.err.
+//
+// It is done LAZILY (first NextToken/Tokens, gated by needFirstFill) rather than at
+// construction, so a caller that reslices l.buffer to force a narrow window (tests)
+// still gets the window it asked for. Runs exactly once per bound input.
+func (l *L) firstFill() {
+	l.needFirstFill = false
+
+	n := 0
+	for n < len(l.buffer) {
+		m, err := l.r.Read(l.buffer[n:])
+		n += m
+		if err != nil {
+			l.bufferized = n
+			if errors.Is(err, io.EOF) {
+				l.wholeBuffer = true // whole input fits: run the fast in-buffer cores
+			} else {
+				l.err = err
+			}
+
+			return
+		}
+		if m == 0 {
+			break // reader returned (0, nil): don't spin — stay streaming
+		}
+	}
+	l.bufferized = n
+}
+
+// primeStream runs the pending first fill (see [L.firstFill]) if needed. Used by the
+// push paths (Tokens), which must resolve the whole-buffer short-circuit before they
+// choose the native push core vs the NextToken loop.
+func (l *L) primeStream() {
+	if l.needFirstFill {
+		l.firstFill()
+	}
 }
 
 // readMore provides more input from the internal buffer or
@@ -222,13 +284,17 @@ func (l *L) consumeNull(_ byte) token.T {
 // (or a Borrow*/New* constructor) to lex a new source. Configured options are
 // preserved, and the streaming-owned buffer keeps its capacity for reuse.
 func (l *L) Reset() {
-	if l.wholeBuffer {
-		// l.buffer aliases the caller's data — drop it. In streaming mode the
-		// buffer is ours, so keep its capacity (it is refilled, not aliased).
+	if l.wholeBuffer && l.r == noopReader {
+		// whole-buffer via NewWithBytes/ResetWithBytes: l.buffer aliases the caller's
+		// data — drop it so the pool does not pin user memory. A STREAMING lexer that
+		// promoted to whole-buffer (§10.5f) still OWNS its buffer (l.r is the caller's
+		// reader, not noopReader), so keep its capacity for reuse — it was refilled,
+		// not aliased.
 		l.buffer = nil
 	}
 	l.r = noopReader
 	l.wholeBuffer = false
+	l.needFirstFill = false // source-less until re-bound via ResetWith*
 	l.bufferized = 0
 	l.previousBuffer = l.previousBuffer[:0]
 	l.reset()
@@ -247,6 +313,7 @@ func (l *L) ResetWithBytes(data []byte) {
 	l.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
 	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.needFirstFill = false
 	l.reset()
 }
 
@@ -257,7 +324,8 @@ func (l *L) ResetWithBytes(data []byte) {
 func (l *L) ResetWithReader(r io.Reader) {
 	l.r = r
 	l.bufferized = 0
-	l.wholeBuffer = false // streaming: the buffer is refilled, values must be copied
+	l.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 	l.reset()
 
 	if cap(l.buffer) < l.bufferSize {
@@ -335,22 +403,28 @@ func (l *L) consumeN(buffer []byte) error {
 			return err
 		}
 
-		if delta := l.bufferized - l.consumed; delta < minReadSize {
+		// need is how many more bytes this token still requires.
+		need := minReadSize - n
+		if delta := l.bufferized - l.consumed; delta < need {
+			// the window holds fewer than we need: take all of it, then refill.
 			copy(buffer[n:], l.buffer[l.consumed:l.bufferized])
 			l.consumed += delta
 			l.offset += uint64(delta)
 			n += delta
 
-			if n < minReadSize {
-				continue
-			}
-
-			return nil
+			continue
 		}
 
-		copy(buffer[n:minReadSize], l.buffer[l.consumed:l.consumed+minReadSize-n])
-		l.consumed += minReadSize - n
-		l.offset += uint64(minReadSize - n)
+		// the window holds at least `need` bytes: take EXACTLY need, advancing
+		// consumed by need — NOT by the whole window. Advancing by the full delta
+		// (the old `delta < minReadSize` form) skipped the surplus, which belongs to
+		// the following token, breaking a literal read through a window smaller than
+		// the literal (e.g. "true"/"null" via a 2-byte buffer dropped the trailing
+		// separator). Unreachable once WithBufferSize floors the window, but correct
+		// at any size.
+		copy(buffer[n:minReadSize], l.buffer[l.consumed:l.consumed+need])
+		l.consumed += need
+		l.offset += uint64(need)
 
 		break
 	}

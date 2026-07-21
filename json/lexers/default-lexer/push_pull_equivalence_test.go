@@ -14,8 +14,8 @@ import (
 // TestScanPushMatchesNextToken asserts that the whole-buffer push back-end of
 // Tokens() (the generic push core scanPushG) yields byte-for-byte the same token
 // stream — and reaches the same final error/Ok state — as the pull NextToken
-// loop (the generic pull core scanTokenG), across the entire JSONTestSuite
-// parsing corpus (valid, invalid and implementation-defined).
+// loop (the generic pull core scanTokenBufferG in whole-buffer mode, §10), across
+// the entire JSONTestSuite parsing corpus (valid, invalid and implementation-defined).
 func TestScanPushMatchesNextToken(t *testing.T) {
 	type tok struct {
 		kind  token.Kind

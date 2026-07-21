@@ -17,6 +17,20 @@ type (
 
 const defaultBufferBytes = 4096
 
+// bufferSizeAlignment is the granularity to which a caller-supplied buffer size is
+// rounded up. It covers one full AVX2 stride (32 bytes) — which also subsumes the
+// 8-byte SWAR word — so the streaming window is never smaller than a single vector
+// or SWAR step. This keeps the in-window fast paths (string/number stop scans) on
+// their vectorized/word footing for any WithBufferSize, and floors out the
+// pathological tiny-window cases (a window narrower than a token separator) that
+// would otherwise stress the byte-by-byte refill seam.
+const bufferSizeAlignment = 32
+
+// alignBufferSize rounds size up to the next multiple of [bufferSizeAlignment].
+func alignBufferSize(size int) int {
+	return (size + bufferSizeAlignment - 1) &^ (bufferSizeAlignment - 1)
+}
+
 var defaultOptions = options{
 	strictNumbers:  true,
 	bufferSize:     defaultBufferBytes,
@@ -90,11 +104,17 @@ func WithoutAVX2(disabled bool) Option {
 // WithBufferSize specifies the size in bytes of the internal buffer used
 // by the lexer.
 //
-// The defaut is 4kB.
+// The default is 4kB.
+//
+// The requested size is rounded up to the next multiple of 32 bytes (one AVX2
+// stride, which also subsumes the 8-byte SWAR word). This guarantees the streaming
+// window is always at least one vector step wide, keeping the in-window string and
+// number fast paths on their vectorized footing and avoiding pathologically small
+// windows. A size <= 0 is ignored and the default is kept.
 func WithBufferSize(size int) Option {
 	return func(o *options) {
 		if size > 0 {
-			o.bufferSize = size
+			o.bufferSize = alignBufferSize(size)
 		}
 	}
 }

@@ -188,6 +188,85 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 	return token.None
 }
 
+// consumeStringRawStreamFast is the raw streaming string fast path (§10.5c): the raw
+// analogue of consumeStringStreamFast. It treats the current window like whole-buffer
+// mode — SWAR/AVX2-scans for the closing quote / escape / control — and, when a clean
+// string completes inside the window, ALIASES l.buffer zero-copy (a clean raw string
+// IS its own value, no copy into currentValue), the common case. It hands off to the
+// byte-by-byte consumeStringRawStreaming only on an escape or a value that spans a
+// refill. This is what closes the verbatim reader-mode string gap (VS/VL used the
+// byte-by-byte path unconditionally; L had this fast path since Phase 1a).
+//
+// Like consumeStringStreamFast, reaching l.bufferized is NOT end-of-input (delegate,
+// don't error) and advances are RELATIVE (l.offset is the absolute stream offset,
+// l.consumed the window index).
+func (l *L) consumeStringRawStreamFast() token.T {
+	data := l.buffer
+	n := l.bufferized
+	start := l.consumed // first content byte (opening quote already consumed)
+
+	i := start
+	guard := start + guessLong
+	if l.noAVX2 {
+		guard = n + 1
+	}
+	for i+8 <= n {
+		if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[i:])); m != 0 {
+			i += swar.FirstByte(m)
+
+			break
+		}
+		i += 8
+		if i >= guard {
+			break
+		}
+	}
+	if i >= guard && i+8 <= n {
+		if c := data[i]; c != doubleQuote && c != escape && c >= 0x20 {
+			i += strscan.ScanStop(data[i:n])
+		}
+	}
+	for ; i < n; i++ {
+		if c := data[i]; c == doubleQuote || c == escape || c < 0x20 {
+			break
+		}
+	}
+
+	if i >= n {
+		// window end reached without a stop byte: the string may span a refill →
+		// hand off to the byte-by-byte raw path (l.consumed still start, re-scans clean).
+		return l.consumeStringRawStreaming()
+	}
+
+	switch c := data[i]; {
+	case c == doubleQuote:
+		if l.maxValueBytes > 0 && i-start > l.maxValueBytes {
+			l.offset += uint64(i - start)
+			l.consumed = i
+			l.err = codes.ErrMaxValueBytes
+
+			return token.None
+		}
+		value := data[start:i:i] // alias the window (raw == value; valid until refill)
+		end := i + 1             // past the closing quote
+		l.offset += uint64(end - start)
+		l.consumed = end
+
+		return l.finishStringValue(value)
+
+	case c < 0x20:
+		l.offset += uint64(i - start)
+		l.consumed = i
+		l.err = codes.ErrControlChar
+
+		return token.None
+	}
+
+	// an escape was found inside the window: delegate to the byte-by-byte raw path,
+	// which keeps escapes verbatim and handles refills (re-scans from l.consumed==start).
+	return l.consumeStringRawStreaming()
+}
+
 // consumeStringRawStreaming is the raw scan over a refilling buffer: it copies the
 // source bytes verbatim (escapes intact) into l.currentValue while validating
 // them, so the value survives buffer turnover.
@@ -235,6 +314,55 @@ func (l *L) consumeStringRawStreaming() token.T {
 
 			default:
 				l.currentValue = append(l.currentValue, b)
+
+				// bulk-scan the rest of this clean run within the current window (§10.5c,
+				// the raw analogue of consumeStringStreaming's Phase-1c copy): a long clean
+				// stretch — between escapes, or a clean string that spilled past the fast
+				// path's window — is copied in ONE shot (adaptive scalar-probe → SWAR →
+				// AVX2) instead of one byte per loop turn. Raw copies verbatim, so there is
+				// no decode; a run that reaches the window end stops at bufferized and the
+				// outer loop refills for the continuation. This is what closes gsoc-style
+				// escaped-long-string reader mode for VS/VL.
+				data := l.buffer
+				n := l.bufferized
+				runStart := l.consumed
+				stop := runStart
+				probe := min(stop+swarProbe, n)
+				for ; stop < probe; stop++ {
+					if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {
+						break
+					}
+				}
+				if stop == probe && stop < n { // run outran the scalar probe → SWAR/AVX2
+					for stop+8 <= n {
+						if m := swar.StringStopMask(binary.LittleEndian.Uint64(data[stop:])); m != 0 {
+							stop += swar.FirstByte(m)
+
+							break
+						}
+						stop += 8
+						if stop-runStart >= guessLong && !l.noAVX2 {
+							stop += strscan.ScanStop(data[stop:n])
+
+							break
+						}
+					}
+					for ; stop < n; stop++ {
+						if c := data[stop]; c == doubleQuote || c == escape || c < 0x20 {
+							break
+						}
+					}
+				}
+				if stop > runStart {
+					if l.maxValueBytes > 0 && len(l.currentValue)+(stop-runStart) > l.maxValueBytes {
+						l.err = codes.ErrMaxValueBytes
+
+						return token.None
+					}
+					l.currentValue = append(l.currentValue, data[runStart:stop]...)
+					l.offset += uint64(stop - runStart)
+					l.consumed = stop
+				}
 			}
 		}
 	}

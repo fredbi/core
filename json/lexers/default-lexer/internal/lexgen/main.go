@@ -46,6 +46,9 @@ type variant struct{ suffix, tok, pol string }
 var variants = []variant{
 	{suffix: "Semantic", tok: "token.T", pol: "semanticPolicy"},
 	{suffix: "Verbatim", tok: "token.VT", pol: "verbatimPolicy"},
+	// State is the prototype state-based verbatim lexer VS (§10.5b): emits the light
+	// token.T (like Semantic) but tracks position and stashes blanks in lexer state.
+	{suffix: "State", tok: "token.T", pol: "statePolicy"},
 }
 
 // core describes a generic function to monomorphize: its name, the exact generic
@@ -61,11 +64,19 @@ type core struct {
 
 var cores = []core{
 	{
-		name:     "scanTokenG",
-		genSig:   "func scanTokenG[T any, P emitPolicy[T]](l *L, p P) T {",
-		concName: func(v variant) string { return "scanToken" + v.suffix },
+		name:     "scanTokenBufferG",
+		genSig:   "func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {",
+		concName: func(v variant) string { return "scanTokenBuffer" + v.suffix },
 		concSig: func(v variant) string {
-			return fmt.Sprintf("func scanToken%s(l *L, p %s) %s {", v.suffix, v.pol, v.tok)
+			return fmt.Sprintf("func scanTokenBuffer%s(l *L, p %s) %s {", v.suffix, v.pol, v.tok)
+		},
+	},
+	{
+		name:     "scanTokenStreamG",
+		genSig:   "func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {",
+		concName: func(v variant) string { return "scanTokenStream" + v.suffix },
+		concSig: func(v variant) string {
+			return fmt.Sprintf("func scanTokenStream%s(l *L, p %s) %s {", v.suffix, v.pol, v.tok)
 		},
 	},
 	{
@@ -74,6 +85,14 @@ var cores = []core{
 		concName: func(v variant) string { return "scanPush" + v.suffix + "Core" },
 		concSig: func(v variant) string {
 			return fmt.Sprintf("func scanPush%sCore(l *L, p %s, yield func(%s) bool) {", v.suffix, v.pol, v.tok)
+		},
+	},
+	{
+		name:     "scanPushStreamG",
+		genSig:   "func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {",
+		concName: func(v variant) string { return "scanPushStream" + v.suffix + "Core" },
+		concSig: func(v variant) string {
+			return fmt.Sprintf("func scanPushStream%sCore(l *L, p %s, yield func(%s) bool) {", v.suffix, v.pol, v.tok)
 		},
 	},
 	{

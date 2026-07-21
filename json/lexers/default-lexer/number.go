@@ -104,6 +104,112 @@ func (l *L) consumeNumberWhole(start byte) token.T {
 	return token.MakeWithValue(token.Number, buf[numStart:n:n])
 }
 
+// consumeNumberStreamFast is the streaming number fast path (§10.3 Phase 1b),
+// mirror of consumeStringStreamFast. It runs the whole-buffer inline number scan
+// over the CURRENT window l.buffer[:l.bufferized]: when the number's terminator is
+// visible inside the window, the value is complete and ALIASES l.buffer zero-copy.
+// It delegates to the byte-by-byte consumeNumberStreaming only when it cannot decide
+// in-window — the scan reaches the window end (the number may continue past a
+// refill), the fast path bails (leading zero / trailing dot / malformed exponent /
+// ambiguous prefix), or a value cap is active (the streaming path enforces it).
+//
+// Like the string fast path, advances are RELATIVE (streaming l.offset is absolute,
+// l.consumed is the window index), and l.consumed/l.offset are left untouched until
+// the alias succeeds, so a delegate re-scans cleanly from the number's start.
+//
+// start is the previously consumed byte that decided to parse a number.
+func (l *L) consumeNumberStreamFast(start byte) token.T {
+	if l.maxValueBytes > 0 {
+		return l.consumeNumberStreaming(start)
+	}
+
+	buf := l.buffer
+	n := l.bufferized
+	numStart := l.consumed - 1 // l.consumed >= 1 here: the start byte was consumed
+	runFrom := l.consumed
+	var firstDigit byte
+	ok := true
+
+	switch {
+	case start >= '0' && start <= '9':
+		firstDigit = start
+	case start == minusSign:
+		if uint(l.consumed) < uint(n) && buf[l.consumed] >= '0' && buf[l.consumed] <= '9' {
+			firstDigit = buf[l.consumed]
+			runFrom = l.consumed + 1
+		} else {
+			ok = false
+		}
+	default: // decimalPoint
+		ok = false
+	}
+
+	if ok {
+		m := runFrom
+		for uint(m) < uint(n) && '0' <= buf[m] && buf[m] <= '9' {
+			m++
+		}
+
+		leadingZero := firstDigit == '0' && m > runFrom
+		end := m
+		termIn := uint(end) < uint(n) // is the terminator byte inside the window?
+		var term byte
+		if termIn {
+			term = buf[end]
+		}
+		// fractional part ('.' 1*DIGIT)
+		if !leadingZero && term == decimalPoint {
+			k := end + 1
+			for uint(k) < uint(n) && '0' <= buf[k] && buf[k] <= '9' {
+				k++
+			}
+			if k > end+1 { // at least one fractional digit
+				end = k
+				termIn = uint(end) < uint(n)
+				term = 0
+				if termIn {
+					term = buf[end]
+				}
+			}
+		}
+		// exponent part ((e|E) [+|-] 1*DIGIT)
+		if !leadingZero && (term == 'e' || term == 'E') {
+			k := end + 1
+			if uint(k) < uint(n) && (buf[k] == '+' || buf[k] == '-') {
+				k++
+			}
+			expStart := k
+			for uint(k) < uint(n) && '0' <= buf[k] && buf[k] <= '9' {
+				k++
+			}
+			if k > expStart { // at least one exponent digit
+				end = k
+				termIn = uint(end) < uint(n)
+				term = 0
+				if termIn {
+					term = buf[end]
+				}
+			}
+		}
+
+		// Alias ONLY when the terminator is visible in the window: otherwise the
+		// number may continue in the next read (end == bufferized is NOT EOF here,
+		// unlike whole-buffer mode), so we cannot know it is complete.
+		if termIn && !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
+			value := buf[numStart:end:end] // alias the window (valid until next refill)
+			l.offset += uint64(end - l.consumed)
+			l.consumed = end
+
+			return token.MakeWithValue(token.Number, value)
+		}
+	}
+
+	// spans the window, or a bail form (leading zero / trailing dot / malformed
+	// exponent / ambiguous): hand off to the byte-by-byte path, which refills and
+	// re-scans from the number's start (l.consumed is unchanged).
+	return l.consumeNumberStreaming(start)
+}
+
 // consumeNumberStreaming consumes a JSON number byte-by-byte. It is the general
 // path used for streaming input (refillable buffer) and when a value-size cap is
 // active; the whole-buffer fast paths handle the common bytes-mode case.
