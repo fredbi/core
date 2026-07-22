@@ -34,7 +34,7 @@ func TestBufferSizeAlignment(t *testing.T) {
 
 	// the aligned size is observable as the allocated window capacity.
 	l := New(bytes.NewReader([]byte(`"x"`)), WithBufferSize(10))
-	if cap(l.buffer) != 32 {
-		t.Errorf("WithBufferSize(10): window cap = %d, want 32", cap(l.buffer))
+	if cap(l.in.buffer) != 32 {
+		t.Errorf("WithBufferSize(10): window cap = %d, want 32", cap(l.in.buffer))
 	}
 }

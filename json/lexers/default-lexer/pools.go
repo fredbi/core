@@ -21,13 +21,13 @@ var lexersPool = poolOfLexers{
 func (p *poolOfLexers) borrowWithBytes(data []byte, opts ...Option) (*L, func()) {
 	l, redeem := p.BorrowWithRedeem()
 	l.applyWithDefaults(opts)
-	l.r = noopReader
-	l.buffer = data
-	l.bufferized = len(data)
-	l.previousBuffer = nil
+	l.in.r = noopReader
+	l.in.buffer = data
+	l.in.bufferized = len(data)
+	l.in.previousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
-	l.wholeBuffer = true     // the whole input is in the buffer: values may alias it
-	l.needFirstFill = false
+	l.in.wholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.in.needFirstFill = false
 	l.reset()
 
 	return l, redeem
@@ -36,19 +36,19 @@ func (p *poolOfLexers) borrowWithBytes(data []byte, opts ...Option) (*L, func())
 func (p *poolOfLexers) borrowWithReader(r io.Reader, opts ...Option) (*L, func()) {
 	l, redeem := p.BorrowWithRedeem()
 	l.applyWithDefaults(opts)
-	l.r = r
-	l.bufferized = 0
-	l.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
-	l.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
+	l.in.r = r
+	l.in.bufferized = 0
+	l.in.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.in.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 	l.reset()
 
-	if cap(l.buffer) < l.bufferSize {
+	if cap(l.in.buffer) < l.bufferSize {
 		// reallocates an internal buffer only if options have changed
-		l.buffer = slices.Grow(l.buffer, l.bufferSize-cap(l.buffer))[:l.bufferSize]
+		l.in.buffer = slices.Grow(l.in.buffer, l.bufferSize-cap(l.in.buffer))[:l.bufferSize]
 	}
 
-	if l.keepPreviousBuffer > 0 && cap(l.previousBuffer) < l.keepPreviousBuffer {
-		l.previousBuffer = slices.Grow(l.previousBuffer, l.keepPreviousBuffer-cap(l.previousBuffer))
+	if l.keepPreviousBuffer > 0 && cap(l.in.previousBuffer) < l.keepPreviousBuffer {
+		l.in.previousBuffer = slices.Grow(l.in.previousBuffer, l.keepPreviousBuffer-cap(l.in.previousBuffer))
 	}
 
 	return l, redeem

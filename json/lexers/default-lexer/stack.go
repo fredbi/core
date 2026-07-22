@@ -76,7 +76,7 @@ func (l *L) pushArray() {
 func (l *L) push(typeBit uint64) {
 	if l.maxContainerStack > 0 && l.depth() >= l.maxContainerStack {
 		// circuit breaker: the maximum nesting depth has been reached
-		l.err = codes.ErrMaxContainerStack
+		l.in.err = codes.ErrMaxContainerStack
 
 		return
 	}

@@ -127,8 +127,36 @@ Our implementation of the JSON lexers pass the full JSON conformance suite. No c
 
 See ...
 
+## Performance and PGO
+
+The scanning cores are dominated by a few very small, very hot loops (number and
+whitespace scanning above all). On amd64 the Go compiler does **not** align inner
+loops unless it is building with a profile — hot-block alignment (`PCALIGN`) is
+gated behind PGO (`go tool compile -d=alignhot`, which "currently requires -pgo").
+
+The practical consequences:
+
+* **Build with PGO for production.** A representative CPU profile lets the compiler
+  align the hot number/whitespace loops, which is worth a substantial, stable margin
+  on number-dense inputs (~10% on our `numbers`/`mesh` corpora) and amplifies the
+  string-heavy wins. Drop a `default.pgo` in the consuming `main` package, or pass
+  `go build -pgo=<profile>`. See the [Go PGO guide](https://go.dev/doc/pgo).
+
+* **Number-dense microbenchmarks are alignment-fragile without PGO.** Because those
+  loops fall wherever linear code size places them, an *unrelated* source change that
+  shifts code size by a few bytes can move a hot loop across a 32-byte boundary and
+  swing `numbers`/`mesh` throughput by ~±10% in either direction — with no change to
+  the instructions executed. When comparing non-PGO builds, treat ≤10% moves on those
+  two workloads as alignment noise, not signal; read the broader corpus geomean and
+  the string-heavy workloads instead. Under PGO this fragility disappears.
+
+We deliberately do **not** contort the source to chase alignment (e.g. forcing loop
+bodies into `//go:noinline` functions): inlining does not carry alignment with it,
+and a non-inlined call reintroduces exactly the overhead the inline fast paths exist
+to avoid. PGO is the supported lever.
+
 ## Roadmap
 
-* AV2 support is currently provided as assembly kernels for amd64 only
+* AVX2 support is currently provided as assembly kernels for amd64 only
 * AVX512 is likely overkill for our usage and I don't have the hardware to test it thoroughly
 * this will be eventually replaced by go native support for AV2 & AVX512 (currently experimental)

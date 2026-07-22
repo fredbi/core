@@ -14,7 +14,7 @@ import (
 // exponent), not on every byte. The hot loops use uint() index comparisons so
 // the bounds check is elided, and the value aliases the input buffer.
 //
-// In whole-buffer mode there are no refills, so l.offset == l.consumed
+// In whole-buffer mode there are no refills, so l.in.offset == l.in.consumed
 // throughout; both are written back once from the local cursor n.
 //
 // This is the authoritative whole-buffer number scanner, but it is no longer on
@@ -27,23 +27,23 @@ import (
 // folded-look-ahead design, a malformed number may be surfaced as a shorter valid
 // value with the error deferred to the next token (e.g. "1.2.3" -> "1.2" then a
 // rejected ".3"); the document is still rejected.
-func (l *L) consumeNumberWhole(start byte) token.T {
-	buf := l.buffer[:l.bufferized]
+func (in *Input) consumeNumberWhole(start byte) token.T {
+	buf := in.buffer[:in.bufferized]
 	// Index and length are unsigned locals. The unsigned compare `n < lbuf` is the
 	// bounds-check-elimination idiom: it folds the n>=0 check into one comparison,
 	// so the compiler drops the bounds check on every buf[n] below. Keeping n
-	// unsigned avoids re-casting it at each comparison (l.consumed et al. stay int —
+	// unsigned avoids re-casting it at each comparison (in.consumed et ain. stay int —
 	// they are sliced and arithmetic'd as int across the whole lexer; converting
 	// them all would ripple far past this hot loop for no gain). buf is never
 	// re-sliced, so lbuf is hoisted once.
 	lbuf := uint(len(buf))
-	numStart := uint(l.consumed) - 1 // l.consumed >= 1 here: the start byte was consumed
-	n := uint(l.consumed)            // index just past start
+	numStart := uint(in.consumed) - 1 // in.consumed >= 1 here: the start byte was consumed
+	n := uint(in.consumed)            // index just past start
 
 	fail := func(code error) token.T {
-		l.consumed = int(n)
-		l.offset = uint64(n)
-		l.err = code
+		in.consumed = int(n)
+		in.offset = uint64(n)
+		in.err = code
 
 		return token.None
 	}
@@ -98,35 +98,35 @@ func (l *L) consumeNumberWhole(start byte) token.T {
 
 	// n stops at the terminator (or end of input); it is left unconsumed, so the
 	// next scan validates it via the standard start-of-token checks.
-	l.consumed = int(n)
-	l.offset = uint64(n)
+	in.consumed = int(n)
+	in.offset = uint64(n)
 
 	return token.MakeWithValue(token.Number, buf[numStart:n:n])
 }
 
 // consumeNumberStreamFast is the streaming number fast path (§10.3 Phase 1b),
 // mirror of consumeStringStreamFast. It runs the whole-buffer inline number scan
-// over the CURRENT window l.buffer[:l.bufferized]: when the number's terminator is
-// visible inside the window, the value is complete and ALIASES l.buffer zero-copy.
+// over the CURRENT window l.in.buffer[:l.in.bufferized]: when the number's terminator is
+// visible inside the window, the value is complete and ALIASES l.in.buffer zero-copy.
 // It delegates to the byte-by-byte consumeNumberStreaming only when it cannot decide
 // in-window — the scan reaches the window end (the number may continue past a
 // refill), the fast path bails (leading zero / trailing dot / malformed exponent /
 // ambiguous prefix), or a value cap is active (the streaming path enforces it).
 //
-// Like the string fast path, advances are RELATIVE (streaming l.offset is absolute,
-// l.consumed is the window index), and l.consumed/l.offset are left untouched until
+// Like the string fast path, advances are RELATIVE (streaming l.in.offset is absolute,
+// l.in.consumed is the window index), and l.in.consumed/l.in.offset are left untouched until
 // the alias succeeds, so a delegate re-scans cleanly from the number's start.
 //
 // start is the previously consumed byte that decided to parse a number.
-func (l *L) consumeNumberStreamFast(start byte) token.T {
-	if l.maxValueBytes > 0 {
-		return l.consumeNumberStreaming(start)
+func (in *Input) consumeNumberStreamFast(start byte) token.T {
+	if in.maxValueBytes > 0 {
+		return in.consumeNumberStreaming(start)
 	}
 
-	buf := l.buffer
-	n := l.bufferized
-	numStart := l.consumed - 1 // l.consumed >= 1 here: the start byte was consumed
-	runFrom := l.consumed
+	buf := in.buffer
+	n := in.bufferized
+	numStart := in.consumed - 1 // in.consumed >= 1 here: the start byte was consumed
+	runFrom := in.consumed
 	var firstDigit byte
 	ok := true
 
@@ -134,9 +134,9 @@ func (l *L) consumeNumberStreamFast(start byte) token.T {
 	case start >= '0' && start <= '9':
 		firstDigit = start
 	case start == minusSign:
-		if uint(l.consumed) < uint(n) && buf[l.consumed] >= '0' && buf[l.consumed] <= '9' {
-			firstDigit = buf[l.consumed]
-			runFrom = l.consumed + 1
+		if uint(in.consumed) < uint(n) && buf[in.consumed] >= '0' && buf[in.consumed] <= '9' {
+			firstDigit = buf[in.consumed]
+			runFrom = in.consumed + 1
 		} else {
 			ok = false
 		}
@@ -197,8 +197,8 @@ func (l *L) consumeNumberStreamFast(start byte) token.T {
 		// unlike whole-buffer mode), so we cannot know it is complete.
 		if termIn && !leadingZero && term != decimalPoint && term != 'e' && term != 'E' {
 			value := buf[numStart:end:end] // alias the window (valid until next refill)
-			l.offset += uint64(end - l.consumed)
-			l.consumed = end
+			in.offset += uint64(end - in.consumed)
+			in.consumed = end
 
 			return token.MakeWithValue(token.Number, value)
 		}
@@ -206,8 +206,8 @@ func (l *L) consumeNumberStreamFast(start byte) token.T {
 
 	// spans the window, or a bail form (leading zero / trailing dot / malformed
 	// exponent / ambiguous): hand off to the byte-by-byte path, which refills and
-	// re-scans from the number's start (l.consumed is unchanged).
-	return l.consumeNumberStreaming(start)
+	// re-scans from the number's start (in.consumed is unchanged).
+	return in.consumeNumberStreaming(start)
 }
 
 // consumeNumberStreaming consumes a JSON number byte-by-byte. It is the general
@@ -215,7 +215,7 @@ func (l *L) consumeNumberStreamFast(start byte) token.T {
 // active; the whole-buffer fast paths handle the common bytes-mode case.
 //
 // start is the previously consumed byte that decided to parse a number.
-func (l *L) consumeNumberStreaming(start byte) token.T {
+func (in *Input) consumeNumberStreaming(start byte) token.T {
 	var (
 		isExponent     bool
 		exponentSign   bool
@@ -228,12 +228,12 @@ func (l *L) consumeNumberStreaming(start byte) token.T {
 	)
 
 	// The number is scanned without copying byte-by-byte: numStart marks the
-	// start of the pending segment in l.buffer. In whole-buffer mode the value
+	// start of the pending segment in in.buffer. In whole-buffer mode the value
 	// aliases the input; otherwise the pending segment is bulk-copied into
 	// currentValue (once at the end, or flushed when a streaming buffer is
 	// refilled mid-number). This keeps the hot loop free of per-byte branches.
-	numStart := l.consumed - 1
-	l.currentValue = l.currentValue[:0]
+	numStart := in.consumed - 1
+	in.currentValue = in.currentValue[:0]
 
 	switch {
 	case start == decimalPoint:
@@ -249,23 +249,23 @@ func (l *L) consumeNumberStreaming(start byte) token.T {
 
 NUMBER:
 	for {
-		for l.consumed < l.bufferized {
+		for in.consumed < in.bufferized {
 
-			if l.maxValueBytes > 0 && len(l.currentValue)+l.consumed-numStart > l.maxValueBytes {
-				l.err = codes.ErrMaxValueBytes
+			if in.maxValueBytes > 0 && len(in.currentValue)+in.consumed-numStart > in.maxValueBytes {
+				in.err = codes.ErrMaxValueBytes
 
 				return token.None
 			}
 
-			b := l.buffer[l.consumed]
-			l.consumed++
-			l.offset++
+			b := in.buffer[in.consumed]
+			in.consumed++
+			in.offset++
 
 			switch {
 			case b == decimalPoint:
 				if hasFractional || isExponent {
 					// only 1 decimal separator allowed, exponent is integer
-					l.err = codes.ErrRepeatedDecimalSeparator
+					in.err = codes.ErrRepeatedDecimalSeparator
 
 					return token.None
 				}
@@ -277,7 +277,7 @@ NUMBER:
 				if !isExponent || exponentPart > 0 || exponentSign {
 					// a sign is only valid right after the exponent marker,
 					// before any exponent digit and only once
-					l.err = codes.ErrInvalidSign
+					in.err = codes.ErrInvalidSign
 
 					return token.None
 				}
@@ -285,7 +285,7 @@ NUMBER:
 
 			case b == 'e' || b == 'E':
 				if isExponent {
-					l.err = codes.ErrRepeatedExponent
+					in.err = codes.ErrRepeatedExponent
 
 					return token.None
 				}
@@ -296,7 +296,7 @@ NUMBER:
 			case b == '0':
 				if hasLeadingZero && !isFractional && !isExponent {
 					// no leading zeroes on integer part, unless this is just 0
-					l.err = codes.ErrLeadingZero
+					in.err = codes.ErrLeadingZero
 
 					return token.None
 				}
@@ -315,7 +315,7 @@ NUMBER:
 
 			case b >= '1' && b <= '9':
 				if hasLeadingZero && !isFractional && !isExponent {
-					l.err = codes.ErrLeadingZero
+					in.err = codes.ErrLeadingZero
 
 					return token.None
 				}
@@ -331,7 +331,7 @@ NUMBER:
 
 			default:
 				if b == 0 {
-					l.err = codes.ErrInvalidToken
+					in.err = codes.ErrInvalidToken
 
 					return token.None
 				}
@@ -344,17 +344,17 @@ NUMBER:
 
 		// buffer exhausted mid-number: in streaming mode preserve the pending
 		// segment before readMore overwrites it
-		if !l.wholeBuffer {
-			l.currentValue = append(l.currentValue, l.buffer[numStart:l.consumed]...)
-			numStart = l.consumed
+		if !in.wholeBuffer {
+			in.currentValue = append(in.currentValue, in.buffer[numStart:in.consumed]...)
+			numStart = in.consumed
 		}
 
-		if err := l.readMore(); err != nil {
+		if err := in.readMore(); err != nil {
 			if errors.Is(err, io.EOF) {
 				break NUMBER
 			}
 
-			l.err = err
+			in.err = err
 
 			return token.None
 		}
@@ -364,46 +364,46 @@ NUMBER:
 
 	if hasFractional && fractionalPart == 0 {
 		// a decimal point must be followed by at least one fractional digit
-		l.err = codes.ErrInvalidFractional
+		in.err = codes.ErrInvalidFractional
 		return token.None
 	}
 
 	if isExponent && exponentPart == 0 {
-		l.err = codes.ErrInvalidExponent
+		in.err = codes.ErrInvalidExponent
 
 		return token.None
 	}
 
 	if hasLeadingZero && integerPart > 1 {
-		l.err = codes.ErrLeadingZero
+		in.err = codes.ErrLeadingZero
 
 		return token.None
 	}
 
 	if integerPart == 0 {
-		l.err = codes.ErrMissingInteger
+		in.err = codes.ErrMissingInteger
 
 		return token.None
 	}
 
 	// a terminator byte (start != 0) was consumed past the number; EOF (start == 0) was not
-	numEnd := l.consumed
+	numEnd := in.consumed
 	if start != 0 {
 		// un-consume the terminator: with the look-ahead folded out, the next
 		// scan validates it via the standard start-of-token checks
 		numEnd--
-		l.consumed = numEnd
-		l.offset--
+		in.consumed = numEnd
+		in.offset--
 	}
 
 	var value []byte
-	if l.wholeBuffer {
+	if in.wholeBuffer {
 		// alias the contiguous number bytes in the input buffer (cap == len)
-		value = l.buffer[numStart:numEnd:numEnd]
+		value = in.buffer[numStart:numEnd:numEnd]
 	} else {
 		// bulk-copy the final pending segment after any earlier flushed segments
-		l.currentValue = append(l.currentValue, l.buffer[numStart:numEnd]...)
-		value = l.currentValue
+		in.currentValue = append(in.currentValue, in.buffer[numStart:numEnd]...)
+		value = in.currentValue
 	}
 
 	return token.MakeWithValue(token.Number, value)

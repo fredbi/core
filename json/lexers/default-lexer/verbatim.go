@@ -83,12 +83,12 @@ func (l *VL) NextToken() token.T {
 	// devirtualized pull core; see [L.NextToken]. Same wholeBuffer lane dispatch
 	// (§10): the buffer lane gives zero-copy blanks, the stream lane keeps the
 	// byte-by-byte blanks append across refills.
-	if l.wholeBuffer {
+	if l.in.wholeBuffer {
 		return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
 	}
-	if l.needFirstFill {
-		l.firstFill() // §10.5f: promote to whole-buffer if the input fits
-		if l.wholeBuffer {
+	if l.in.needFirstFill {
+		l.in.firstFill() // §10.5f: promote to whole-buffer if the input fits
+		if l.in.wholeBuffer {
 			return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
 		}
 	}

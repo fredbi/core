@@ -14,8 +14,8 @@ import (
 // whole-buffer short-circuit (§10.5f).
 func forceStreamWindow(data []byte, bs int) *L {
 	l := New(bytes.NewReader(data), WithBufferSize(bs))
-	if bs < cap(l.buffer) {
-		l.buffer = l.buffer[:bs]
+	if bs < cap(l.in.buffer) {
+		l.in.buffer = l.in.buffer[:bs]
 	}
 
 	return l
@@ -76,8 +76,8 @@ func TestStreamPushEquivalence(t *testing.T) {
 
 func forceStreamWindowVS(data []byte, bs int) *VL {
 	vs := NewVerbatim(bytes.NewReader(data), WithBufferSize(bs))
-	if bs < cap(vs.buffer) {
-		vs.buffer = vs.buffer[:bs]
+	if bs < cap(vs.in.buffer) {
+		vs.in.buffer = vs.in.buffer[:bs]
 	}
 
 	return vs
