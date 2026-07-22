@@ -1,11 +1,10 @@
 package lexer
 
 import (
-	"bytes"
-	"errors"
 	"io"
 	"slices"
 
+	"github.com/fredbi/core/json/lexers/default-lexer/internal/input"
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 	"github.com/fredbi/core/json/lexers/token"
 )
@@ -25,7 +24,7 @@ import (
 // with the [BorrowLexerWithBytes] / [BorrowLexerWithReader] functions and the
 // returned redeem closure.
 type L struct {
-	in Input // buffered-input + scan-cursor state (see [Input])
+	in input.Input // buffered-input + scan-cursor state (see [Input])
 
 	errContext   *codes.ErrContext
 	nestingLevel []uint64 // the stack of nested containers. Every bit represent an extra nesting. Capped if maxContainerStack > 0
@@ -39,7 +38,7 @@ type L struct {
 	tokCol    int    // column of the most recent token's start, 1-based
 
 	isAtEOF     bool
-	trackBlanks bool // verbatim mode: the cores read this (hot whitespace-skip path); mirrored to in.trackBlanks for consumeString's dispatch. Set by VL setup.
+	trackBlanks bool // verbatim mode: the cores read this (hot whitespace-skip path); mirrored to in.TrackBlanks for consumeString's dispatch. Set by VL setup.
 
 	options
 }
@@ -56,11 +55,11 @@ type L struct {
 func New(r io.Reader, opts ...Option) *L {
 	l := new(L)
 	l.applyWithDefaults(opts)
-	l.in.r = r
-	l.in.buffer = make([]byte, l.bufferSize)
-	l.in.bufferized = 0
-	l.in.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
-	l.in.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
+	l.in.R = r
+	l.in.Buffer = make([]byte, l.bufferSize)
+	l.in.Bufferized = 0
+	l.in.WholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.in.NeedFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 
 	l.reset()
 
@@ -76,13 +75,13 @@ func New(r io.Reader, opts ...Option) *L {
 func NewWithBytes(data []byte, opts ...Option) *L {
 	l := new(L)
 	l.applyWithDefaults(opts)
-	l.in.r = noopReader
-	l.in.buffer = data
-	l.in.bufferized = len(data)
-	l.in.previousBuffer = nil
+	l.in.R = noopReader
+	l.in.Buffer = data
+	l.in.Bufferized = len(data)
+	l.in.PreviousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
-	l.in.wholeBuffer = true     // the whole input is in the buffer: values may alias it
-	l.in.needFirstFill = false
+	l.in.WholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.in.NeedFirstFill = false
 
 	l.reset()
 
@@ -93,17 +92,17 @@ func NewWithBytes(data []byte, opts ...Option) *L {
 //
 // True means that no error has occurred so far.
 func (l *L) Ok() bool {
-	return l.in.err == nil
+	return l.in.Err == nil
 }
 
 // Err returns an error that happened during lexing.
 func (l *L) Err() error {
-	return l.in.err
+	return l.in.Err
 }
 
 // ErrInContext returns any error that happened during lexing, with the error context.
 func (l *L) ErrInContext() *codes.ErrContext {
-	if l.in.err == nil {
+	if l.in.Err == nil {
 		return nil
 	}
 
@@ -116,7 +115,7 @@ func (l *L) ErrInContext() *codes.ErrContext {
 
 // Offset yields the number of bytes consumed by the lexer so far.
 func (l *L) Offset() uint64 {
-	return l.in.offset
+	return l.in.Offset
 }
 
 // The semantic lexer deliberately does NOT expose line/column. Tracking them is
@@ -149,12 +148,12 @@ func (l *L) NextToken() token.T {
 	// zero-copy blanks) is the frozen champion; the stream lane is optimized
 	// separately. The generic scanTokenBufferG / scanTokenStreamG are lexgen's
 	// source-of-truth and the A/B baseline.
-	if l.in.wholeBuffer {
+	if l.in.WholeBuffer {
 		return scanTokenBufferSemantic(l, semanticPolicy{})
 	}
-	if l.in.needFirstFill {
-		l.in.firstFill()
-		if l.in.wholeBuffer {
+	if l.in.NeedFirstFill {
+		l.in.FirstFill()
+		if l.in.WholeBuffer {
 			return scanTokenBufferSemantic(l, semanticPolicy{})
 		}
 	}
@@ -162,109 +161,20 @@ func (l *L) NextToken() token.T {
 	return scanTokenStreamSemantic(l, semanticPolicy{})
 }
 
-// firstFill performs the initial read for a streaming lexer and SHORT-CIRCUITS to
-// whole-buffer mode when the entire input fits in the buffer (§10.5f). It reads into
-// l.in.buffer until the buffer is full or the reader is exhausted; if EOF arrives before
-// the buffer fills, the whole input is now buffered, so the lexer flips to wholeBuffer
-// mode — thereafter the fast in-buffer cores run (and, for Tokens(), the native
-// whole-buffer push core instead of the NextToken+closure fallthrough) with no
-// per-token streaming overhead. Inputs larger than the buffer stay in streaming mode
-// with the first window pre-filled. A non-EOF read error is recorded in l.in.err.
-//
-// It is done LAZILY (first NextToken/Tokens, gated by needFirstFill) rather than at
-// construction, so a caller that reslices l.in.buffer to force a narrow window (tests)
-// still gets the window it asked for. Runs exactly once per bound input.
-func (in *Input) firstFill() {
-	in.needFirstFill = false
-
-	n := 0
-	for n < len(in.buffer) {
-		m, err := in.r.Read(in.buffer[n:])
-		n += m
-		if err != nil {
-			in.bufferized = n
-			if errors.Is(err, io.EOF) {
-				in.wholeBuffer = true // whole input fits: run the fast in-buffer cores
-			} else {
-				in.err = err
-			}
-
-			return
-		}
-		if m == 0 {
-			break // reader returned (0, nil): don't spin — stay streaming
-		}
-	}
-	in.bufferized = n
-}
-
-// primeStream runs the pending first fill (see [L.firstFill]) if needed. Used by the
+// primeStream runs the pending first fill (see [input.Input.FirstFill]) if needed. Used by the
 // push paths (Tokens), which must resolve the whole-buffer short-circuit before they
 // choose the native push core vs the NextToken loop.
 func (l *L) primeStream() {
-	if l.in.needFirstFill {
-		l.in.firstFill()
+	if l.in.NeedFirstFill {
+		l.in.FirstFill()
 	}
-}
-
-// readMore provides more input from the internal buffer or
-// consumes from the input stream.
-//
-// This is a private implementation for a simplified buffered reader,
-// allowing us to scan bytes without nested function calls
-// at every single byte.
-func (in *Input) readMore() error {
-	if in.consumed < in.bufferized {
-		return nil
-	}
-
-	if in.keepPreviousBuffer > 0 {
-		// copy the start of the buffer before reuse, for error context
-		if in.previousBuffer == nil {
-			in.previousBuffer = make([]byte, 0, in.keepPreviousBuffer)
-		}
-
-		copied := min(in.keepPreviousBuffer, in.bufferized)
-		in.previousBuffer = in.previousBuffer[0:copied]
-		copy(in.previousBuffer, in.buffer[:copied])
-	}
-
-	var err error
-	in.bufferized, err = in.r.Read(in.buffer)
-	if err != nil {
-		in.bufferized = 0
-
-		return err
-	}
-
-	in.consumed = 0
-
-	return nil
-}
-
-func (in *Input) consumeNull(_ byte) token.T {
-	var buf [3]byte
-	if err := in.consumeN(buf[:]); err != nil {
-		in.err = codes.ErrInvalidToken
-
-		return token.None
-	}
-
-	// n[ull]
-	if !bytes.Equal(buf[:], []byte("ull")) {
-		in.err = codes.ErrInvalidToken
-
-		return token.None
-	}
-
-	return token.NullToken
 }
 
 // Reset returns the lexer to a clean, source-less state so it can be recycled.
 //
 // It is the method the pool invokes on both Borrow and Redeem, so it must be
 // idempotent and must drop every reference to caller-supplied memory: in
-// whole-buffer mode l.in.buffer aliases the caller's data, and l.in.r may hold the
+// whole-buffer mode l.in.Buffer aliases the caller's data, and l.in.R may hold the
 // caller's reader. Leaving them in place would pin (and expose) user memory for
 // as long as the recycled lexer sits in the pool.
 //
@@ -272,19 +182,19 @@ func (in *Input) consumeNull(_ byte) token.T {
 // (or a Borrow*/New* constructor) to lex a new source. Configured options are
 // preserved, and the streaming-owned buffer keeps its capacity for reuse.
 func (l *L) Reset() {
-	if l.in.wholeBuffer && l.in.r == noopReader {
-		// whole-buffer via NewWithBytes/ResetWithBytes: l.in.buffer aliases the caller's
+	if l.in.WholeBuffer && l.in.R == noopReader {
+		// whole-buffer via NewWithBytes/ResetWithBytes: l.in.Buffer aliases the caller's
 		// data — drop it so the pool does not pin user memory. A STREAMING lexer that
-		// promoted to whole-buffer (§10.5f) still OWNS its buffer (l.in.r is the caller's
+		// promoted to whole-buffer (§10.5f) still OWNS its buffer (l.in.R is the caller's
 		// reader, not noopReader), so keep its capacity for reuse — it was refilled,
 		// not aliased.
-		l.in.buffer = nil
+		l.in.Buffer = nil
 	}
-	l.in.r = noopReader
-	l.in.wholeBuffer = false
-	l.in.needFirstFill = false // source-less until re-bound via ResetWith*
-	l.in.bufferized = 0
-	l.in.previousBuffer = l.in.previousBuffer[:0]
+	l.in.R = noopReader
+	l.in.WholeBuffer = false
+	l.in.NeedFirstFill = false // source-less until re-bound via ResetWith*
+	l.in.Bufferized = 0
+	l.in.PreviousBuffer = l.in.PreviousBuffer[:0]
 	l.reset()
 }
 
@@ -295,13 +205,13 @@ func (l *L) Reset() {
 // The lexer operates in whole-buffer mode over data: emitted token values may
 // alias data, which must therefore stay stable until the lexer is done with it.
 func (l *L) ResetWithBytes(data []byte) {
-	l.in.r = noopReader
-	l.in.buffer = data
-	l.in.bufferized = len(data)
-	l.in.previousBuffer = nil
+	l.in.R = noopReader
+	l.in.Buffer = data
+	l.in.Bufferized = len(data)
+	l.in.PreviousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
-	l.in.wholeBuffer = true     // the whole input is in the buffer: values may alias it
-	l.in.needFirstFill = false
+	l.in.WholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.in.NeedFirstFill = false
 	l.reset()
 }
 
@@ -310,38 +220,38 @@ func (l *L) ResetWithBytes(data []byte) {
 // of [BorrowLexerWithReader]). Configured options are kept and the internal
 // buffer is reused.
 func (l *L) ResetWithReader(r io.Reader) {
-	l.in.r = r
-	l.in.bufferized = 0
-	l.in.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
-	l.in.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
+	l.in.R = r
+	l.in.Bufferized = 0
+	l.in.WholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.in.NeedFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 	l.reset()
 
-	if cap(l.in.buffer) < l.bufferSize {
-		l.in.buffer = slices.Grow(l.in.buffer, l.bufferSize-cap(l.in.buffer))[:l.bufferSize]
+	if cap(l.in.Buffer) < l.bufferSize {
+		l.in.Buffer = slices.Grow(l.in.Buffer, l.bufferSize-cap(l.in.Buffer))[:l.bufferSize]
 	}
 
-	if l.keepPreviousBuffer > 0 && cap(l.in.previousBuffer) < l.keepPreviousBuffer {
-		l.in.previousBuffer = slices.Grow(l.in.previousBuffer, l.keepPreviousBuffer-cap(l.in.previousBuffer))
+	if l.keepPreviousBuffer > 0 && cap(l.in.PreviousBuffer) < l.keepPreviousBuffer {
+		l.in.PreviousBuffer = slices.Grow(l.in.PreviousBuffer, l.keepPreviousBuffer-cap(l.in.PreviousBuffer))
 	}
 }
 
 func (l *L) reset() {
-	l.in.err = nil
-	l.in.maxValueBytes = l.maxValueBytes
-	l.in.keepPreviousBuffer = l.keepPreviousBuffer
-	l.in.noAVX2 = l.noAVX2
+	l.in.Err = nil
+	l.in.MaxValueBytes = l.maxValueBytes
+	l.in.KeepPreviousBuffer = l.keepPreviousBuffer
+	l.in.NoAVX2 = l.noAVX2
 	l.current = token.None
-	l.in.offset = 0
-	l.in.consumed = 0
+	l.in.Offset = 0
+	l.in.Consumed = 0
 	l.errContext = nil
-	l.in.expectKey = false
-	l.in.afterKey = false
+	l.in.ExpectKey = false
+	l.in.AfterKey = false
 	l.isAtEOF = false
 	l.line = 1
 	l.lineStart = 0
 	l.tokLine = 0
 	l.tokCol = 0
-	l.in.currentValue = l.in.currentValue[:0] // TODO: possibly preallocate value buffer to some configurable size
+	l.in.CurrentValue = l.in.CurrentValue[:0] // TODO: possibly preallocate value buffer to some configurable size
 
 	if l.nestingLevel != nil {
 		l.nestingLevel = l.nestingLevel[:1]
@@ -352,12 +262,12 @@ func (l *L) reset() {
 }
 
 func (l *L) SetErr(err error) {
-	l.in.err = err
+	l.in.Err = err
 }
 
 // setErrContext populates the error context if an error has been detected.
 func (l *L) setErrContext() {
-	if l.in.err == nil {
+	if l.in.Err == nil {
 		return
 	}
 
@@ -366,59 +276,20 @@ func (l *L) setErrContext() {
 		pos    int
 	)
 
-	if l.keepPreviousBuffer > 0 && l.in.previousBuffer != nil && l.in.consumed < l.keepPreviousBuffer {
+	if l.keepPreviousBuffer > 0 && l.in.PreviousBuffer != nil && l.in.Consumed < l.keepPreviousBuffer {
 		// add the copied previousBuffer if the error came early in the main buffer
-		window = string(l.in.previousBuffer[0:len(l.in.previousBuffer)]) + string(l.in.buffer[:l.in.bufferized])
-		pos = l.in.consumed + len(l.in.previousBuffer)
+		window = string(l.in.PreviousBuffer[0:len(l.in.PreviousBuffer)]) + string(l.in.Buffer[:l.in.Bufferized])
+		pos = l.in.Consumed + len(l.in.PreviousBuffer)
 	} else {
-		window = string(l.in.buffer[:l.in.bufferized])
-		pos = l.in.consumed
+		window = string(l.in.Buffer[:l.in.Bufferized])
+		pos = l.in.Consumed
 	}
 
 	l.errContext = &codes.ErrContext{
-		Err:      l.in.err,
-		Offset:   l.in.offset,
+		Err:      l.in.Err,
+		Offset:   l.in.Offset,
 		Buffer:   window,
 		Position: pos,
 	}
 }
 
-// consumeN consumes a small buffer of n bytes to decide tokens
-// such as "true", "false" or "null".
-func (in *Input) consumeN(buffer []byte) error {
-	minReadSize := len(buffer)
-	n := 0
-
-	for {
-		if err := in.readMore(); err != nil {
-			return err
-		}
-
-		// need is how many more bytes this token still requires.
-		need := minReadSize - n
-		if delta := in.bufferized - in.consumed; delta < need {
-			// the window holds fewer than we need: take all of it, then refilin.
-			copy(buffer[n:], in.buffer[in.consumed:in.bufferized])
-			in.consumed += delta
-			in.offset += uint64(delta)
-			n += delta
-
-			continue
-		}
-
-		// the window holds at least `need` bytes: take EXACTLY need, advancing
-		// consumed by need — NOT by the whole window. Advancing by the full delta
-		// (the old `delta < minReadSize` form) skipped the surplus, which belongs to
-		// the following token, breaking a literal read through a window smaller than
-		// the literal (e.g. "true"/"null" via a 2-byte buffer dropped the trailing
-		// separator). Unreachable once WithBufferSize floors the window, but correct
-		// at any size.
-		copy(buffer[n:minReadSize], in.buffer[in.consumed:in.consumed+need])
-		in.consumed += need
-		in.offset += uint64(need)
-
-		break
-	}
-
-	return nil
-}

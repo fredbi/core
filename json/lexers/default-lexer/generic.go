@@ -118,12 +118,12 @@ func (l *L) scanPushVerbatim(yield func(token.T) bool) {
 
 //nolint:gocognit,gocyclo
 func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
-	if l.in.err != nil {
+	if l.in.Err != nil {
 		return
 	}
 
-	data := l.in.buffer[:l.in.bufferized]
-	i := l.in.consumed
+	data := l.in.Buffer[:l.in.Bufferized]
+	i := l.in.Consumed
 	// blankStart is the index right after the previous token: the whitespace run
 	// [blankStart:tokenStart] is the preceding blanks the verbatim policy bakes
 	// into the token (zero-copy slice of the input). The semantic policy ignores
@@ -131,8 +131,8 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 	blankStart := i
 
 	writeback := func(pos int) {
-		l.in.consumed = pos
-		l.in.offset = uint64(pos)
+		l.in.Consumed = pos
+		l.in.Offset = uint64(pos)
 	}
 
 	for i < len(data) {
@@ -178,10 +178,10 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			l.blanks = blanks // state-based VL: stash the leading blanks in lexer state
 		}
 
-		if l.in.afterKey {
-			l.in.afterKey = false
+		if l.in.AfterKey {
+			l.in.AfterKey = false
 			if b != colon {
-				l.in.err = codes.ErrKeyColon
+				l.in.Err = codes.ErrKeyColon
 				writeback(i + 1)
 
 				return
@@ -205,9 +205,9 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 		switch b {
 		case colon:
 			if l.current.Kind() == token.String {
-				l.in.err = codes.ErrMissingObject
+				l.in.Err = codes.ErrMissingObject
 			} else {
-				l.in.err = codes.ErrMissingKey
+				l.in.Err = codes.ErrMissingKey
 			}
 			writeback(i + 1)
 
@@ -215,20 +215,20 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 		case closingBracket:
 			if l.current.IsComma() {
-				l.in.err = codes.ErrTrailingComma
+				l.in.Err = codes.ErrTrailingComma
 				writeback(i + 1)
 
 				return
 			}
 			if !l.isInObject() {
-				l.in.err = codes.ErrNotInObject
+				l.in.Err = codes.ErrNotInObject
 				writeback(i + 1)
 
 				return
 			}
 
 			i++
-			l.in.expectKey = false
+			l.in.ExpectKey = false
 			l.popContainer()
 			l.current = token.MakeDelimiter(token.ClosingBracket)
 			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
@@ -239,13 +239,13 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 		case closingSquareBracket:
 			if l.current.IsComma() {
-				l.in.err = codes.ErrTrailingComma
+				l.in.Err = codes.ErrTrailingComma
 				writeback(i + 1)
 
 				return
 			}
 			if !l.isInArray() {
-				l.in.err = codes.ErrNotInArray
+				l.in.Err = codes.ErrNotInArray
 				writeback(i + 1)
 
 				return
@@ -262,32 +262,32 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 		case comma:
 			if l.current.IsComma() {
-				l.in.err = codes.ErrRepeatedComma
+				l.in.Err = codes.ErrRepeatedComma
 				writeback(i + 1)
 
 				return
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return
 			}
 			if !l.isInContainer() {
-				l.in.err = codes.ErrCommaInContainer
+				l.in.Err = codes.ErrCommaInContainer
 				writeback(i + 1)
 
 				return
 			}
 			if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
-				l.in.err = codes.ErrMissingValue
+				l.in.Err = codes.ErrMissingValue
 				writeback(i + 1)
 
 				return
 			}
 
 			if l.isInObject() {
-				l.in.expectKey = true
+				l.in.ExpectKey = true
 			}
 
 			i++
@@ -304,13 +304,13 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 		case openingBracket:
 			if l.current.IsKnown() {
 				if l.current.Kind() != token.Delimiter {
-					l.in.err = codes.ErrInvalidToken
+					l.in.Err = codes.ErrInvalidToken
 					writeback(i + 1)
 
 					return
 				}
 				if l.current.Delimiter().IsClosing() {
-					l.in.err = codes.ErrMissingComma
+					l.in.Err = codes.ErrMissingComma
 					writeback(i + 1)
 
 					return
@@ -318,29 +318,29 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				if l.isInArray() {
 					if l.current.Delimiter() != token.OpeningSquareBracket &&
 						l.current.Delimiter() != token.Comma {
-						l.in.err = codes.ErrMissingComma
+						l.in.Err = codes.ErrMissingComma
 						writeback(i + 1)
 
 						return
 					}
 				} else if !l.current.IsColon() {
-					l.in.err = codes.ErrMissingKey
+					l.in.Err = codes.ErrMissingKey
 					writeback(i + 1)
 
 					return
 				}
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return
 			}
 
 			i++
-			l.in.expectKey = true
+			l.in.ExpectKey = true
 			l.pushObject()
-			if l.in.err != nil {
+			if l.in.Err != nil {
 				writeback(i)
 
 				return
@@ -355,20 +355,20 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 		case openingSquareBracket:
 			if l.current.IsKnown() {
 				if l.current.Kind() != token.Delimiter {
-					l.in.err = codes.ErrInvalidToken
+					l.in.Err = codes.ErrInvalidToken
 					writeback(i + 1)
 
 					return
 				}
 				if l.current.Delimiter().IsClosing() {
-					l.in.err = codes.ErrMissingComma
+					l.in.Err = codes.ErrMissingComma
 					writeback(i + 1)
 
 					return
 				}
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return
@@ -376,7 +376,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			i++
 			l.pushArray()
-			if l.in.err != nil {
+			if l.in.Err != nil {
 				writeback(i)
 
 				return
@@ -390,7 +390,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 		case doubleQuote:
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
@@ -398,50 +398,50 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeString()
-			if l.in.err != nil {
+			l.current = l.in.ConsumeString()
+			if l.in.Err != nil {
 				return
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
 		case startOfTrue, startOfFalse:
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
 				return
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeBoolean(b)
-			if l.in.err != nil {
+			l.current = l.in.ConsumeBoolean(b)
+			if l.in.Err != nil {
 				return
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
 		case minusSign, decimalPoint, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
 				return
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return
@@ -530,42 +530,42 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeNumberWhole(b)
-			if l.in.err != nil {
+			l.current = l.in.ConsumeNumberWhole(b)
+			if l.in.Err != nil {
 				return
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
 		case startOfNull:
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
 				return
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeNull(b)
-			if l.in.err != nil {
+			l.current = l.in.ConsumeNull(b)
+			if l.in.Err != nil {
 				return
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 			if !yield(p.emit(l.current, blanks, l.tokLine, l.tokCol)) {
 				return
 			}
 
 		default:
-			l.in.err = codes.ErrInvalidToken
+			l.in.Err = codes.ErrInvalidToken
 			writeback(i + 1)
 
 			return
@@ -577,7 +577,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 	}
 
 	writeback(i)
-	// classify the terminal EOF for its side effects on l.in.err/l.isAtEOF; the
+	// classify the terminal EOF for its side effects on l.in.Err/l.isAtEOF; the
 	// push core yields no token here, so the returned EOF token is discarded.
 	_ = errCheckG(l, p, io.EOF)
 }
@@ -593,14 +593,14 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 		switch {
 		case l.isInContainer():
 			if l.isInObject() {
-				l.in.err = codes.ErrNotInObject
+				l.in.Err = codes.ErrNotInObject
 			} else {
-				l.in.err = codes.ErrNotInArray
+				l.in.Err = codes.ErrNotInArray
 			}
 		case l.isAtEOF:
-			l.in.err = io.EOF
+			l.in.Err = io.EOF
 		case !hadToken:
-			l.in.err = codes.ErrNoData
+			l.in.Err = codes.ErrNoData
 		}
 
 		l.isAtEOF = true
@@ -608,7 +608,7 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 		return p.eof(l.blanks)
 	}
 
-	l.in.err = err
+	l.in.Err = err
 
 	return p.none()
 }
@@ -619,7 +619,7 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 // skipBlanksRestStream batch-skips the CONTINUATION of a whitespace run in the current
 // window for the position-tracking stream cores (§10.5d) — the verbatim/state analogue
 // of the semantic core's consumeWhitespace batch-skip. The caller has already consumed
-// and captured the run's first byte and confirmed (a cheap inline peek) that l.in.consumed
+// and captured the run's first byte and confirmed (a cheap inline peek) that l.in.Consumed
 // points at another whitespace byte, so this scans the rest of the run in ONE step,
 // updates line/lineStart from a single scan, and — when trackBlanks — BULK-appends the
 // rest into l.blanks. Splitting it this way keeps SHORT runs (e.g. mesh's 73k
@@ -628,26 +628,26 @@ func errCheckG[T any, P emitPolicy[T]](l *L, p P, err error) T {
 // stops at bufferized; the outer loop refills and re-enters, so a run spanning refills
 // accumulates across calls. The caller does the maxValueBytes check once afterwards.
 func (l *L) skipBlanksRestStream() {
-	base := l.in.offset - uint64(l.in.consumed) // absolute offset of buffer index 0 this window
-	start := l.in.consumed
-	n, lines, afterNL := scan.ConsumeWhitespaceTracked(l.in.buffer[start:l.in.bufferized])
+	base := l.in.Offset - uint64(l.in.Consumed) // absolute offset of buffer index 0 this window
+	start := l.in.Consumed
+	n, lines, afterNL := scan.ConsumeWhitespaceTracked(l.in.Buffer[start:l.in.Bufferized])
 
 	if lines > 0 {
 		l.line += lines
 		l.lineStart = base + uint64(start+afterNL) // just past the last newline in the run
 	}
 
-	l.in.consumed = start + n
-	l.in.offset = base + uint64(start+n)
+	l.in.Consumed = start + n
+	l.in.Offset = base + uint64(start+n)
 
 	if l.trackBlanks {
-		l.blanks = append(l.blanks, l.in.buffer[start:l.in.consumed]...)
+		l.blanks = append(l.blanks, l.in.Buffer[start:l.in.Consumed]...)
 	}
 }
 
 // scanTokenStreamG is the generic, policy-parameterized pull core for STREAMING
 // input (io.Reader): it scans and returns exactly one token, dispatched from
-// L.NextToken / VL.NextToken when l.in.wholeBuffer is false. The cursor lives in the
+// L.NextToken / VL.NextToken when l.in.WholeBuffer is false. The cursor lives in the
 // struct (per-byte advance, readMore for refills, deferred-error semantics) and
 // each token is emitted via the policy. When l.trackBlanks is set (verbatim) it
 // accumulates the preceding whitespace run into l.blanks (byte-by-byte, so it
@@ -656,14 +656,14 @@ func (l *L) skipBlanksRestStream() {
 // The whole-buffer lane is scanTokenBufferG (no readMore, local cursor, zero-copy
 // blanks). Splitting the two (roadmap §10) lets us optimize the stream refill
 // path without perturbing the register-delicate whole-buffer core (§9.1). Here
-// l.in.wholeBuffer is always false; values take the streaming fast paths
+// l.in.WholeBuffer is always false; values take the streaming fast paths
 // (consumeStringStreamFast / consumeNumberStreamFast, §10.3) — optimistic in-window
 // scan + zero-copy alias, delegating to the byte-by-byte consumers only on an
 // escape or a token that spans a refill.
 //
 //nolint:gocognit,gocyclo
 func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
-	if l.in.err != nil {
+	if l.in.Err != nil {
 		return p.none()
 	}
 
@@ -672,14 +672,14 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 	}
 
 	for {
-		if err := l.in.readMore(); err != nil {
+		if err := l.in.ReadMore(); err != nil {
 			return errCheckG(l, p, err)
 		}
 
-		for l.in.consumed < l.in.bufferized {
-			b := l.in.buffer[l.in.consumed]
-			l.in.offset++
-			l.in.consumed++
+		for l.in.Consumed < l.in.Bufferized {
+			b := l.in.Buffer[l.in.Consumed]
+			l.in.Offset++
+			l.in.Consumed++
 
 			switch b {
 			case lineFeed:
@@ -688,9 +688,9 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 					// cursor (no line/col, no blanks) — folds to the only path in the
 					// devirtualized semantic core. This kills the per-byte struct-cursor
 					// cost over whitespace (the citm bottleneck).
-					ws := scan.ConsumeWhitespace(l.in.buffer[l.in.consumed:l.in.bufferized])
-					l.in.consumed += ws
-					l.in.offset += uint64(ws)
+					ws := scan.ConsumeWhitespace(l.in.Buffer[l.in.Consumed:l.in.Bufferized])
+					l.in.Consumed += ws
+					l.in.Offset += uint64(ws)
 
 					continue
 				}
@@ -698,15 +698,15 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 				// then batch-skip the REST only if the run actually continues — so a
 				// single-byte run stays as cheap as the old per-byte path (no call).
 				l.line++
-				l.lineStart = l.in.offset // just past the newline b
+				l.lineStart = l.in.Offset // just past the newline b
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.in.consumed < l.in.bufferized && scan.IsBlank(l.in.buffer[l.in.consumed]) {
+				if l.in.Consumed < l.in.Bufferized && scan.IsBlank(l.in.Buffer[l.in.Consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-					l.in.err = codes.ErrMaxValueBytes
+					l.in.Err = codes.ErrMaxValueBytes
 
 					return p.none()
 				}
@@ -715,9 +715,9 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := scan.ConsumeWhitespace(l.in.buffer[l.in.consumed:l.in.bufferized])
-					l.in.consumed += ws
-					l.in.offset += uint64(ws)
+					ws := scan.ConsumeWhitespace(l.in.Buffer[l.in.Consumed:l.in.Bufferized])
+					l.in.Consumed += ws
+					l.in.Offset += uint64(ws)
 
 					continue
 				}
@@ -726,11 +726,11 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.in.consumed < l.in.bufferized && scan.IsBlank(l.in.buffer[l.in.consumed]) {
+				if l.in.Consumed < l.in.Bufferized && scan.IsBlank(l.in.Buffer[l.in.Consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-					l.in.err = codes.ErrMaxValueBytes
+					l.in.Err = codes.ErrMaxValueBytes
 
 					return p.none()
 				}
@@ -741,13 +741,13 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 			// a significant byte starts a token: snapshot its position (verbatim only)
 			if p.tracksPosition() {
 				l.tokLine = l.line
-				l.tokCol = int(l.in.offset - l.lineStart)
+				l.tokCol = int(l.in.Offset - l.lineStart)
 			}
 
-			if l.in.afterKey {
-				l.in.afterKey = false
+			if l.in.AfterKey {
+				l.in.AfterKey = false
 				if b != colon {
-					l.in.err = codes.ErrKeyColon
+					l.in.Err = codes.ErrKeyColon
 
 					return p.none()
 				}
@@ -763,26 +763,26 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 			switch b {
 			case colon:
 				if l.current.Kind() == token.String {
-					l.in.err = codes.ErrMissingObject
+					l.in.Err = codes.ErrMissingObject
 				} else {
-					l.in.err = codes.ErrMissingKey
+					l.in.Err = codes.ErrMissingKey
 				}
 
 				return p.none()
 
 			case closingBracket:
 				if l.current.IsComma() {
-					l.in.err = codes.ErrTrailingComma
+					l.in.Err = codes.ErrTrailingComma
 
 					return p.none()
 				}
 				if !l.isInObject() {
-					l.in.err = codes.ErrNotInObject
+					l.in.Err = codes.ErrNotInObject
 
 					return p.none()
 				}
 
-				l.in.expectKey = false
+				l.in.ExpectKey = false
 				l.popContainer()
 				l.current = token.MakeDelimiter(token.ClosingBracket)
 
@@ -790,12 +790,12 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case closingSquareBracket:
 				if l.current.IsComma() {
-					l.in.err = codes.ErrTrailingComma
+					l.in.Err = codes.ErrTrailingComma
 
 					return p.none()
 				}
 				if !l.isInArray() {
-					l.in.err = codes.ErrNotInArray
+					l.in.Err = codes.ErrNotInArray
 
 					return p.none()
 				}
@@ -807,28 +807,28 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case comma:
 				if l.current.IsComma() {
-					l.in.err = codes.ErrRepeatedComma
+					l.in.Err = codes.ErrRepeatedComma
 
 					return p.none()
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return p.none()
 				}
 				if !l.isInContainer() {
-					l.in.err = codes.ErrCommaInContainer
+					l.in.Err = codes.ErrCommaInContainer
 
 					return p.none()
 				}
 				if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
-					l.in.err = codes.ErrMissingValue
+					l.in.Err = codes.ErrMissingValue
 
 					return p.none()
 				}
 
 				if l.isInObject() {
-					l.in.expectKey = true
+					l.in.ExpectKey = true
 				}
 
 				l.current = token.MakeDelimiter(token.Comma)
@@ -841,37 +841,37 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 			case openingBracket:
 				if l.current.IsKnown() {
 					if l.current.Kind() != token.Delimiter {
-						l.in.err = codes.ErrInvalidToken
+						l.in.Err = codes.ErrInvalidToken
 
 						return p.none()
 					}
 					if l.current.Delimiter().IsClosing() {
-						l.in.err = codes.ErrMissingComma
+						l.in.Err = codes.ErrMissingComma
 
 						return p.none()
 					}
 					if l.isInArray() {
 						if l.current.Delimiter() != token.OpeningSquareBracket &&
 							l.current.Delimiter() != token.Comma {
-							l.in.err = codes.ErrMissingComma
+							l.in.Err = codes.ErrMissingComma
 
 							return p.none()
 						}
 					} else if !l.current.IsColon() {
-						l.in.err = codes.ErrMissingKey
+						l.in.Err = codes.ErrMissingKey
 
 						return p.none()
 					}
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return p.none()
 				}
 
-				l.in.expectKey = true
+				l.in.ExpectKey = true
 				l.pushObject()
-				if l.in.err != nil {
+				if l.in.Err != nil {
 					return p.none()
 				}
 				l.current = token.MakeDelimiter(token.OpeningBracket)
@@ -881,24 +881,24 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 			case openingSquareBracket:
 				if l.current.IsKnown() {
 					if l.current.Kind() != token.Delimiter {
-						l.in.err = codes.ErrInvalidToken
+						l.in.Err = codes.ErrInvalidToken
 
 						return p.none()
 					}
 					if l.current.Delimiter().IsClosing() {
-						l.in.err = codes.ErrMissingComma
+						l.in.Err = codes.ErrMissingComma
 
 						return p.none()
 					}
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return p.none()
 				}
 
 				l.pushArray()
-				if l.in.err != nil {
+				if l.in.Err != nil {
 					return p.none()
 				}
 				l.current = token.MakeDelimiter(token.OpeningSquareBracket)
@@ -907,14 +907,14 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case doubleQuote:
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return p.none()
 				}
 
-				l.current = l.in.consumeString()
-				if l.in.err != nil {
+				l.current = l.in.ConsumeString()
+				if l.in.Err != nil {
 					return p.none()
 				}
 
@@ -922,19 +922,19 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case startOfTrue, startOfFalse:
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return p.none()
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return p.none()
 				}
 
-				l.current = l.in.consumeBoolean(b)
-				if l.in.err != nil {
+				l.current = l.in.ConsumeBoolean(b)
+				if l.in.Err != nil {
 					return p.none()
 				}
 
@@ -942,19 +942,19 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case minusSign, decimalPoint, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return p.none()
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return p.none()
 				}
 
-				l.current = l.in.consumeNumberStreamFast(b)
-				if l.in.err != nil {
+				l.current = l.in.ConsumeNumberStreamFast(b)
+				if l.in.Err != nil {
 					return p.none()
 				}
 
@@ -962,26 +962,26 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			case startOfNull:
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return p.none()
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return p.none()
 				}
 
-				l.current = l.in.consumeNull(b)
-				if l.in.err != nil {
+				l.current = l.in.ConsumeNull(b)
+				if l.in.Err != nil {
 					return p.none()
 				}
 
 				return p.emit(l.current, l.blanks, l.tokLine, l.tokCol)
 
 			default:
-				l.in.err = codes.ErrInvalidToken
+				l.in.Err = codes.ErrInvalidToken
 
 				return p.none()
 			}
@@ -1002,13 +1002,13 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 // `if !yield(p.emit(...)) { return }` and, for the position-tracking policies, an
 // l.blanks reset so the next token's preceding-blanks run starts fresh (gated on the
 // compile-time tracksPosition() so it folds away in the semantic core). A grammar error
-// stops the range (bare return, l.in.err already set); readMore's EOF is classified by
+// stops the range (bare return, l.in.Err already set); readMore's EOF is classified by
 // errCheckG (no EOF token is yielded, matching scanPushG). Must be reached only through
 // the //go:noinline devirt shim so the yield closure stays on the stack.
 //
 //nolint:gocognit,gocyclo
 func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
-	if l.in.err != nil {
+	if l.in.Err != nil {
 		return
 	}
 
@@ -1017,37 +1017,37 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 	}
 
 	for {
-		if err := l.in.readMore(); err != nil {
+		if err := l.in.ReadMore(); err != nil {
 			_ = errCheckG(l, p, err) // classify EOF/error; push yields no EOF token
 
 			return
 		}
 
-		for l.in.consumed < l.in.bufferized {
-			b := l.in.buffer[l.in.consumed]
-			l.in.offset++
-			l.in.consumed++
+		for l.in.Consumed < l.in.Bufferized {
+			b := l.in.Buffer[l.in.Consumed]
+			l.in.Offset++
+			l.in.Consumed++
 
 			switch b {
 			case lineFeed:
 				if !p.tracksPosition() {
-					ws := scan.ConsumeWhitespace(l.in.buffer[l.in.consumed:l.in.bufferized])
-					l.in.consumed += ws
-					l.in.offset += uint64(ws)
+					ws := scan.ConsumeWhitespace(l.in.Buffer[l.in.Consumed:l.in.Bufferized])
+					l.in.Consumed += ws
+					l.in.Offset += uint64(ws)
 
 					continue
 				}
 				// verbatim/state (§10.5d): first byte inline (newline), batch-skip the rest.
 				l.line++
-				l.lineStart = l.in.offset
+				l.lineStart = l.in.Offset
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.in.consumed < l.in.bufferized && scan.IsBlank(l.in.buffer[l.in.consumed]) {
+				if l.in.Consumed < l.in.Bufferized && scan.IsBlank(l.in.Buffer[l.in.Consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-					l.in.err = codes.ErrMaxValueBytes
+					l.in.Err = codes.ErrMaxValueBytes
 
 					return
 				}
@@ -1056,20 +1056,20 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case blank, tab, carriageReturn:
 				if !p.tracksPosition() {
-					ws := scan.ConsumeWhitespace(l.in.buffer[l.in.consumed:l.in.bufferized])
-					l.in.consumed += ws
-					l.in.offset += uint64(ws)
+					ws := scan.ConsumeWhitespace(l.in.Buffer[l.in.Consumed:l.in.Bufferized])
+					l.in.Consumed += ws
+					l.in.Offset += uint64(ws)
 
 					continue
 				}
 				if l.trackBlanks {
 					l.blanks = append(l.blanks, b)
 				}
-				if l.in.consumed < l.in.bufferized && scan.IsBlank(l.in.buffer[l.in.consumed]) {
+				if l.in.Consumed < l.in.Bufferized && scan.IsBlank(l.in.Buffer[l.in.Consumed]) {
 					l.skipBlanksRestStream()
 				}
 				if l.trackBlanks && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-					l.in.err = codes.ErrMaxValueBytes
+					l.in.Err = codes.ErrMaxValueBytes
 
 					return
 				}
@@ -1079,13 +1079,13 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			if p.tracksPosition() {
 				l.tokLine = l.line
-				l.tokCol = int(l.in.offset - l.lineStart)
+				l.tokCol = int(l.in.Offset - l.lineStart)
 			}
 
-			if l.in.afterKey {
-				l.in.afterKey = false
+			if l.in.AfterKey {
+				l.in.AfterKey = false
 				if b != colon {
-					l.in.err = codes.ErrKeyColon
+					l.in.Err = codes.ErrKeyColon
 
 					return
 				}
@@ -1107,26 +1107,26 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			switch b {
 			case colon:
 				if l.current.Kind() == token.String {
-					l.in.err = codes.ErrMissingObject
+					l.in.Err = codes.ErrMissingObject
 				} else {
-					l.in.err = codes.ErrMissingKey
+					l.in.Err = codes.ErrMissingKey
 				}
 
 				return
 
 			case closingBracket:
 				if l.current.IsComma() {
-					l.in.err = codes.ErrTrailingComma
+					l.in.Err = codes.ErrTrailingComma
 
 					return
 				}
 				if !l.isInObject() {
-					l.in.err = codes.ErrNotInObject
+					l.in.Err = codes.ErrNotInObject
 
 					return
 				}
 
-				l.in.expectKey = false
+				l.in.ExpectKey = false
 				l.popContainer()
 				l.current = token.MakeDelimiter(token.ClosingBracket)
 				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
@@ -1138,12 +1138,12 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case closingSquareBracket:
 				if l.current.IsComma() {
-					l.in.err = codes.ErrTrailingComma
+					l.in.Err = codes.ErrTrailingComma
 
 					return
 				}
 				if !l.isInArray() {
-					l.in.err = codes.ErrNotInArray
+					l.in.Err = codes.ErrNotInArray
 
 					return
 				}
@@ -1159,28 +1159,28 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case comma:
 				if l.current.IsComma() {
-					l.in.err = codes.ErrRepeatedComma
+					l.in.Err = codes.ErrRepeatedComma
 
 					return
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return
 				}
 				if !l.isInContainer() {
-					l.in.err = codes.ErrCommaInContainer
+					l.in.Err = codes.ErrCommaInContainer
 
 					return
 				}
 				if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
-					l.in.err = codes.ErrMissingValue
+					l.in.Err = codes.ErrMissingValue
 
 					return
 				}
 
 				if l.isInObject() {
-					l.in.expectKey = true
+					l.in.ExpectKey = true
 				}
 
 				l.current = token.MakeDelimiter(token.Comma)
@@ -1197,37 +1197,37 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			case openingBracket:
 				if l.current.IsKnown() {
 					if l.current.Kind() != token.Delimiter {
-						l.in.err = codes.ErrInvalidToken
+						l.in.Err = codes.ErrInvalidToken
 
 						return
 					}
 					if l.current.Delimiter().IsClosing() {
-						l.in.err = codes.ErrMissingComma
+						l.in.Err = codes.ErrMissingComma
 
 						return
 					}
 					if l.isInArray() {
 						if l.current.Delimiter() != token.OpeningSquareBracket &&
 							l.current.Delimiter() != token.Comma {
-							l.in.err = codes.ErrMissingComma
+							l.in.Err = codes.ErrMissingComma
 
 							return
 						}
 					} else if !l.current.IsColon() {
-						l.in.err = codes.ErrMissingKey
+						l.in.Err = codes.ErrMissingKey
 
 						return
 					}
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return
 				}
 
-				l.in.expectKey = true
+				l.in.ExpectKey = true
 				l.pushObject()
-				if l.in.err != nil {
+				if l.in.Err != nil {
 					return
 				}
 				l.current = token.MakeDelimiter(token.OpeningBracket)
@@ -1241,24 +1241,24 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			case openingSquareBracket:
 				if l.current.IsKnown() {
 					if l.current.Kind() != token.Delimiter {
-						l.in.err = codes.ErrInvalidToken
+						l.in.Err = codes.ErrInvalidToken
 
 						return
 					}
 					if l.current.Delimiter().IsClosing() {
-						l.in.err = codes.ErrMissingComma
+						l.in.Err = codes.ErrMissingComma
 
 						return
 					}
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return
 				}
 
 				l.pushArray()
-				if l.in.err != nil {
+				if l.in.Err != nil {
 					return
 				}
 				l.current = token.MakeDelimiter(token.OpeningSquareBracket)
@@ -1271,14 +1271,14 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case doubleQuote:
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return
 				}
 
-				l.current = l.in.consumeString()
-				if l.in.err != nil {
+				l.current = l.in.ConsumeString()
+				if l.in.Err != nil {
 					return
 				}
 				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
@@ -1290,19 +1290,19 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case startOfTrue, startOfFalse:
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return
 				}
 
-				l.current = l.in.consumeBoolean(b)
-				if l.in.err != nil {
+				l.current = l.in.ConsumeBoolean(b)
+				if l.in.Err != nil {
 					return
 				}
 				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
@@ -1314,19 +1314,19 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case minusSign, decimalPoint, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return
 				}
 
-				l.current = l.in.consumeNumberStreamFast(b)
-				if l.in.err != nil {
+				l.current = l.in.ConsumeNumberStreamFast(b)
+				if l.in.Err != nil {
 					return
 				}
 				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
@@ -1338,19 +1338,19 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 			case startOfNull:
 				if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-					l.in.err = codes.ErrDelimitedValue
+					l.in.Err = codes.ErrDelimitedValue
 					l.current = token.None
 
 					return
 				}
-				if l.in.expectKey {
-					l.in.err = codes.ErrMissingKey
+				if l.in.ExpectKey {
+					l.in.Err = codes.ErrMissingKey
 
 					return
 				}
 
-				l.current = l.in.consumeNull(b)
-				if l.in.err != nil {
+				l.current = l.in.ConsumeNull(b)
+				if l.in.Err != nil {
 					return
 				}
 				if !yield(p.emit(l.current, l.blanks, l.tokLine, l.tokCol)) {
@@ -1361,7 +1361,7 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 				}
 
 			default:
-				l.in.err = codes.ErrInvalidToken
+				l.in.Err = codes.ErrInvalidToken
 
 				return
 			}
@@ -1371,12 +1371,12 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 
 // scanTokenBufferG is the generic, policy-parameterized pull core for WHOLE-BUFFER
 // input: it scans and returns exactly one token, dispatched from L.NextToken /
-// VL.NextToken when l.in.wholeBuffer is true. It is the yield→return counterpart of
+// VL.NextToken when l.in.WholeBuffer is true. It is the yield→return counterpart of
 // scanPushG (roadmap §10) — the same proven whole-buffer shape: the cursor is a
 // pure local i (no readMore, no per-byte struct write), and the preceding blanks
 // are a zero-copy slice of the input (data[blankStart:i:i], as push does) rather
 // than the byte-by-byte l.blanks append the streaming core needs. It resumes from
-// l.in.consumed on the next call and only continues its loop past elided separators
+// l.in.Consumed on the next call and only continues its loop past elided separators
 // and whitespace; every value/delimiter token returns immediately.
 //
 // Keeping this separate from scanTokenStreamG is the whole point of the split: the
@@ -1385,21 +1385,21 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 //
 //nolint:gocognit,gocyclo
 func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
-	if l.in.err != nil {
+	if l.in.Err != nil {
 		return p.none()
 	}
 
-	data := l.in.buffer[:l.in.bufferized]
-	i := l.in.consumed
+	data := l.in.Buffer[:l.in.Bufferized]
+	i := l.in.Consumed
 	// blankStart is the index right after the previous token: [blankStart:i] is the
 	// whitespace run the verbatim policy bakes into the token (zero-copy). It is
 	// only advanced past elided separators; every emit resets it via the next call's
-	// re-init from l.in.consumed.
+	// re-init from l.in.Consumed.
 	blankStart := i
 
 	writeback := func(pos int) {
-		l.in.consumed = pos
-		l.in.offset = uint64(pos)
+		l.in.Consumed = pos
+		l.in.Offset = uint64(pos)
 	}
 
 	for i < len(data) {
@@ -1443,16 +1443,16 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 		// so one length check at the token boundary is equivalent (folded away in the
 		// semantic core, where tracksPosition() is a false constant).
 		if p.tracksPosition() && l.maxValueBytes > 0 && len(blanks) > l.maxValueBytes {
-			l.in.err = codes.ErrMaxValueBytes
+			l.in.Err = codes.ErrMaxValueBytes
 			writeback(i)
 
 			return p.none()
 		}
 
-		if l.in.afterKey {
-			l.in.afterKey = false
+		if l.in.AfterKey {
+			l.in.AfterKey = false
 			if b != colon {
-				l.in.err = codes.ErrKeyColon
+				l.in.Err = codes.ErrKeyColon
 				writeback(i + 1)
 
 				return p.none()
@@ -1472,9 +1472,9 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 		switch b {
 		case colon:
 			if l.current.Kind() == token.String {
-				l.in.err = codes.ErrMissingObject
+				l.in.Err = codes.ErrMissingObject
 			} else {
-				l.in.err = codes.ErrMissingKey
+				l.in.Err = codes.ErrMissingKey
 			}
 			writeback(i + 1)
 
@@ -1482,20 +1482,20 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 
 		case closingBracket:
 			if l.current.IsComma() {
-				l.in.err = codes.ErrTrailingComma
+				l.in.Err = codes.ErrTrailingComma
 				writeback(i + 1)
 
 				return p.none()
 			}
 			if !l.isInObject() {
-				l.in.err = codes.ErrNotInObject
+				l.in.Err = codes.ErrNotInObject
 				writeback(i + 1)
 
 				return p.none()
 			}
 
 			i++
-			l.in.expectKey = false
+			l.in.ExpectKey = false
 			l.popContainer()
 			l.current = token.MakeDelimiter(token.ClosingBracket)
 			writeback(i)
@@ -1504,13 +1504,13 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 
 		case closingSquareBracket:
 			if l.current.IsComma() {
-				l.in.err = codes.ErrTrailingComma
+				l.in.Err = codes.ErrTrailingComma
 				writeback(i + 1)
 
 				return p.none()
 			}
 			if !l.isInArray() {
-				l.in.err = codes.ErrNotInArray
+				l.in.Err = codes.ErrNotInArray
 				writeback(i + 1)
 
 				return p.none()
@@ -1525,32 +1525,32 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 
 		case comma:
 			if l.current.IsComma() {
-				l.in.err = codes.ErrRepeatedComma
+				l.in.Err = codes.ErrRepeatedComma
 				writeback(i + 1)
 
 				return p.none()
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return p.none()
 			}
 			if !l.isInContainer() {
-				l.in.err = codes.ErrCommaInContainer
+				l.in.Err = codes.ErrCommaInContainer
 				writeback(i + 1)
 
 				return p.none()
 			}
 			if l.current.IsStartObject() || l.current.IsStartArray() || l.current.IsColon() {
-				l.in.err = codes.ErrMissingValue
+				l.in.Err = codes.ErrMissingValue
 				writeback(i + 1)
 
 				return p.none()
 			}
 
 			if l.isInObject() {
-				l.in.expectKey = true
+				l.in.ExpectKey = true
 			}
 
 			i++
@@ -1566,13 +1566,13 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 		case openingBracket:
 			if l.current.IsKnown() {
 				if l.current.Kind() != token.Delimiter {
-					l.in.err = codes.ErrInvalidToken
+					l.in.Err = codes.ErrInvalidToken
 					writeback(i + 1)
 
 					return p.none()
 				}
 				if l.current.Delimiter().IsClosing() {
-					l.in.err = codes.ErrMissingComma
+					l.in.Err = codes.ErrMissingComma
 					writeback(i + 1)
 
 					return p.none()
@@ -1580,29 +1580,29 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 				if l.isInArray() {
 					if l.current.Delimiter() != token.OpeningSquareBracket &&
 						l.current.Delimiter() != token.Comma {
-						l.in.err = codes.ErrMissingComma
+						l.in.Err = codes.ErrMissingComma
 						writeback(i + 1)
 
 						return p.none()
 					}
 				} else if !l.current.IsColon() {
-					l.in.err = codes.ErrMissingKey
+					l.in.Err = codes.ErrMissingKey
 					writeback(i + 1)
 
 					return p.none()
 				}
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return p.none()
 			}
 
 			i++
-			l.in.expectKey = true
+			l.in.ExpectKey = true
 			l.pushObject()
-			if l.in.err != nil {
+			if l.in.Err != nil {
 				writeback(i)
 
 				return p.none()
@@ -1615,20 +1615,20 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 		case openingSquareBracket:
 			if l.current.IsKnown() {
 				if l.current.Kind() != token.Delimiter {
-					l.in.err = codes.ErrInvalidToken
+					l.in.Err = codes.ErrInvalidToken
 					writeback(i + 1)
 
 					return p.none()
 				}
 				if l.current.Delimiter().IsClosing() {
-					l.in.err = codes.ErrMissingComma
+					l.in.Err = codes.ErrMissingComma
 					writeback(i + 1)
 
 					return p.none()
 				}
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return p.none()
@@ -1636,7 +1636,7 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 
 			i++
 			l.pushArray()
-			if l.in.err != nil {
+			if l.in.Err != nil {
 				writeback(i)
 
 				return p.none()
@@ -1648,7 +1648,7 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 
 		case doubleQuote:
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
@@ -1656,48 +1656,48 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeString()
-			if l.in.err != nil {
+			l.current = l.in.ConsumeString()
+			if l.in.Err != nil {
 				return p.none()
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 
 			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
 
 		case startOfTrue, startOfFalse:
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
 				return p.none()
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return p.none()
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeBoolean(b)
-			if l.in.err != nil {
+			l.current = l.in.ConsumeBoolean(b)
+			if l.in.Err != nil {
 				return p.none()
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 
 			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
 
 		case minusSign, decimalPoint, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
 				return p.none()
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return p.none()
@@ -1710,11 +1710,11 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 			// the champion shape; the old combined core gated it the same way).
 			if l.maxValueBytes > 0 {
 				writeback(i + 1)
-				l.current = l.in.consumeNumberStreaming(b)
-				if l.in.err != nil {
+				l.current = l.in.ConsumeNumberStreaming(b)
+				if l.in.Err != nil {
 					return p.none()
 				}
-				i = l.in.consumed
+				i = l.in.Consumed
 
 				return p.emit(l.current, blanks, l.tokLine, l.tokCol)
 			}
@@ -1796,40 +1796,40 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeNumberWhole(b)
-			if l.in.err != nil {
+			l.current = l.in.ConsumeNumberWhole(b)
+			if l.in.Err != nil {
 				return p.none()
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 
 			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
 
 		case startOfNull:
 			if l.current.IsKnown() && !l.current.Delimiter().AcceptValue() {
-				l.in.err = codes.ErrDelimitedValue
+				l.in.Err = codes.ErrDelimitedValue
 				l.current = token.None
 				writeback(i + 1)
 
 				return p.none()
 			}
-			if l.in.expectKey {
-				l.in.err = codes.ErrMissingKey
+			if l.in.ExpectKey {
+				l.in.Err = codes.ErrMissingKey
 				writeback(i + 1)
 
 				return p.none()
 			}
 
 			writeback(i + 1)
-			l.current = l.in.consumeNull(b)
-			if l.in.err != nil {
+			l.current = l.in.ConsumeNull(b)
+			if l.in.Err != nil {
 				return p.none()
 			}
-			i = l.in.consumed
+			i = l.in.Consumed
 
 			return p.emit(l.current, blanks, l.tokLine, l.tokCol)
 
 		default:
-			l.in.err = codes.ErrInvalidToken
+			l.in.Err = codes.ErrInvalidToken
 			writeback(i + 1)
 
 			return p.none()
@@ -1844,7 +1844,7 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 	// verbatim circuit breaker on a trailing whitespace flood with no closing token
 	// (parity with the stream core's per-byte check); folded away in the semantic core.
 	if p.tracksPosition() && l.maxValueBytes > 0 && len(l.blanks) > l.maxValueBytes {
-		l.in.err = codes.ErrMaxValueBytes
+		l.in.Err = codes.ErrMaxValueBytes
 
 		return p.none()
 	}

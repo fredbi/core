@@ -88,8 +88,8 @@ func streamFastInputs() []string {
 // widths below the floor too.
 func newStreamLexerWindow(data []byte, bs int) *L {
 	l := New(bytes.NewReader(data), WithBufferSize(bs))
-	if bs < cap(l.in.buffer) {
-		l.in.buffer = l.in.buffer[:bs]
+	if bs < cap(l.in.Buffer) {
+		l.in.Buffer = l.in.Buffer[:bs]
 	}
 
 	return l
@@ -136,7 +136,7 @@ func TestStreamFastEquivalence(t *testing.T) {
 // TestStreamFastAliasesWindow asserts the fast path actually aliases the buffer
 // (zero-copy) for a clean string that fits the window, rather than always copying
 // through currentValue — the whole point of Phase 1. A returned String token whose
-// value header points inside l.in.buffer proves the alias.
+// value header points inside l.in.Buffer proves the alias.
 func TestStreamFastAliasesWindow(t *testing.T) {
 	data := []byte(`"a clean string that fits comfortably in the window"`)
 	l := New(bytes.NewReader(data), WithBufferSize(256))
@@ -146,10 +146,10 @@ func TestStreamFastAliasesWindow(t *testing.T) {
 		t.Fatalf("expected String, got %v", tok.Kind())
 	}
 	val := tok.Value()
-	buf := l.in.buffer[:cap(l.in.buffer)]
+	buf := l.in.Buffer[:cap(l.in.Buffer)]
 	// the value must be a sub-slice of the lexer's window (alias), not a copy.
 	aliased := len(val) > 0 &&
-		&val[0] == &buf[l.in.consumed-1-len(val)] // value ends just before the closing quote at consumed-1
+		&val[0] == &buf[l.in.Consumed-1-len(val)] // value ends just before the closing quote at consumed-1
 	if !aliased {
 		t.Errorf("streaming clean string was not aliased to the window (copied instead)")
 	}

@@ -14,14 +14,14 @@ import (
 // devirtualized core; used by the push equivalence test and BenchmarkDevirt.
 func (l *L) tokensGeneric() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
-		if l.in.wholeBuffer && l.maxValueBytes == 0 {
+		if l.in.WholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushSemantic(yield)
 
 			return
 		}
 		for {
 			tok := l.nextTokenGeneric()
-			if l.in.err != nil || tok.Kind() == token.EOF {
+			if l.in.Err != nil || tok.Kind() == token.EOF {
 				return
 			}
 			if !yield(tok) {
@@ -33,14 +33,14 @@ func (l *L) tokensGeneric() iter.Seq[token.T] {
 
 func (l *VL) tokensGeneric() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
-		if l.in.wholeBuffer && l.maxValueBytes == 0 {
+		if l.in.WholeBuffer && l.maxValueBytes == 0 {
 			l.scanPushVerbatim(yield)
 
 			return
 		}
 		for {
 			tok := l.nextTokenGeneric()
-			if l.in.err != nil || tok.Kind() == token.EOF {
+			if l.in.Err != nil || tok.Kind() == token.EOF {
 				return
 			}
 			if !yield(tok) {
@@ -55,7 +55,7 @@ func (l *VL) tokensGeneric() iter.Seq[token.T] {
 // equivalence guard covers both the buffer and the stream lane. Retained as the
 // A/B baseline now that NextToken() routes through the devirt cores.
 func (l *L) nextTokenGeneric() token.T {
-	if l.in.wholeBuffer {
+	if l.in.WholeBuffer {
 		return scanTokenBufferG[token.T, semanticPolicy](l, semanticPolicy{})
 	}
 
@@ -63,7 +63,7 @@ func (l *L) nextTokenGeneric() token.T {
 }
 
 func (l *VL) nextTokenGeneric() token.T {
-	if l.in.wholeBuffer {
+	if l.in.WholeBuffer {
 		return scanTokenBufferG[token.T, verbatimPolicy](l.L, verbatimPolicy{})
 	}
 

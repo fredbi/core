@@ -83,12 +83,12 @@ func (l *VL) NextToken() token.T {
 	// devirtualized pull core; see [L.NextToken]. Same wholeBuffer lane dispatch
 	// (§10): the buffer lane gives zero-copy blanks, the stream lane keeps the
 	// byte-by-byte blanks append across refills.
-	if l.in.wholeBuffer {
+	if l.in.WholeBuffer {
 		return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
 	}
-	if l.in.needFirstFill {
-		l.in.firstFill() // §10.5f: promote to whole-buffer if the input fits
-		if l.in.wholeBuffer {
+	if l.in.NeedFirstFill {
+		l.in.FirstFill() // §10.5f: promote to whole-buffer if the input fits
+		if l.in.WholeBuffer {
 			return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
 		}
 	}
@@ -144,5 +144,5 @@ func (l *VL) reset() {
 	// WithElideSeparator(true) would be lost on reuse. The unified core
 	// accumulates the preceding blanks, read off the embedded L.
 	l.trackBlanks = true    // the cores read this off the embedded L (hot whitespace-skip path)
-	l.in.trackBlanks = true // consumeString (a *Input method) reads this to route to the raw scanners
+	l.in.TrackBlanks = true // consumeString (a *Input method) reads this to route to the raw scanners
 }

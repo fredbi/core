@@ -21,13 +21,13 @@ var lexersPool = poolOfLexers{
 func (p *poolOfLexers) borrowWithBytes(data []byte, opts ...Option) (*L, func()) {
 	l, redeem := p.BorrowWithRedeem()
 	l.applyWithDefaults(opts)
-	l.in.r = noopReader
-	l.in.buffer = data
-	l.in.bufferized = len(data)
-	l.in.previousBuffer = nil
+	l.in.R = noopReader
+	l.in.Buffer = data
+	l.in.Bufferized = len(data)
+	l.in.PreviousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
-	l.in.wholeBuffer = true     // the whole input is in the buffer: values may alias it
-	l.in.needFirstFill = false
+	l.in.WholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.in.NeedFirstFill = false
 	l.reset()
 
 	return l, redeem
@@ -36,19 +36,19 @@ func (p *poolOfLexers) borrowWithBytes(data []byte, opts ...Option) (*L, func())
 func (p *poolOfLexers) borrowWithReader(r io.Reader, opts ...Option) (*L, func()) {
 	l, redeem := p.BorrowWithRedeem()
 	l.applyWithDefaults(opts)
-	l.in.r = r
-	l.in.bufferized = 0
-	l.in.wholeBuffer = false  // streaming: the buffer is refilled, values must be copied
-	l.in.needFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
+	l.in.R = r
+	l.in.Bufferized = 0
+	l.in.WholeBuffer = false  // streaming: the buffer is refilled, values must be copied
+	l.in.NeedFirstFill = true // §10.5f: the initial read + whole-buffer short-circuit is pending
 	l.reset()
 
-	if cap(l.in.buffer) < l.bufferSize {
+	if cap(l.in.Buffer) < l.bufferSize {
 		// reallocates an internal buffer only if options have changed
-		l.in.buffer = slices.Grow(l.in.buffer, l.bufferSize-cap(l.in.buffer))[:l.bufferSize]
+		l.in.Buffer = slices.Grow(l.in.Buffer, l.bufferSize-cap(l.in.Buffer))[:l.bufferSize]
 	}
 
-	if l.keepPreviousBuffer > 0 && cap(l.in.previousBuffer) < l.keepPreviousBuffer {
-		l.in.previousBuffer = slices.Grow(l.in.previousBuffer, l.keepPreviousBuffer-cap(l.in.previousBuffer))
+	if l.keepPreviousBuffer > 0 && cap(l.in.PreviousBuffer) < l.keepPreviousBuffer {
+		l.in.PreviousBuffer = slices.Grow(l.in.PreviousBuffer, l.keepPreviousBuffer-cap(l.in.PreviousBuffer))
 	}
 
 	return l, redeem

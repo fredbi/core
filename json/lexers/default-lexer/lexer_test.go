@@ -739,12 +739,12 @@ func TestPoolReuse(t *testing.T) {
 		l := NewWithBytes(docA)
 		_, err := drainAll(l)
 		require.NoError(t, err)
-		require.NotNil(t, l.in.buffer) // still aliasing docA while in use
+		require.NotNil(t, l.in.Buffer) // still aliasing docA while in use
 
 		l.Reset()
-		require.Nil(t, l.in.buffer, "Reset must drop the aliased caller buffer so the pool does not pin user memory")
-		require.False(t, l.in.wholeBuffer)
-		require.Equal(t, noopReader, l.in.r, "Reset must drop the caller's reader")
+		require.Nil(t, l.in.Buffer, "Reset must drop the aliased caller buffer so the pool does not pin user memory")
+		require.False(t, l.in.WholeBuffer)
+		require.Equal(t, noopReader, l.in.R, "Reset must drop the caller's reader")
 	})
 
 	t.Run("Reset keeps the streaming-owned buffer", func(t *testing.T) {
@@ -753,8 +753,8 @@ func TestPoolReuse(t *testing.T) {
 		require.NoError(t, err)
 
 		l.Reset()
-		require.NotNil(t, l.in.buffer, "streaming buffer is lexer-owned and must be kept for reuse")
-		require.GreaterOrEqual(t, cap(l.in.buffer), l.bufferSize)
+		require.NotNil(t, l.in.Buffer, "streaming buffer is lexer-owned and must be kept for reuse")
+		require.GreaterOrEqual(t, cap(l.in.Buffer), l.bufferSize)
 	})
 
 	// NOTE: the "borrow/redeem cycle is allocation-free" assertion lives in

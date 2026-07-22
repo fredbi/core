@@ -1,4 +1,4 @@
-package lexer
+package input
 
 import (
 	"bytes"
@@ -7,10 +7,10 @@ import (
 	"github.com/fredbi/core/json/lexers/token"
 )
 
-func (in *Input) consumeBoolean(start byte) token.T {
+func (in *Input) ConsumeBoolean(start byte) token.T {
 	var buf [3]byte
 	if err := in.consumeN(buf[:]); err != nil {
-		in.err = codes.ErrInvalidToken
+		in.Err = codes.ErrInvalidToken
 
 		return token.None
 	}
@@ -22,29 +22,30 @@ func (in *Input) consumeBoolean(start byte) token.T {
 	case start == startOfTrue && bytes.Equal(buf[:], []byte("rue")):
 		value = true
 	case start == startOfFalse && bytes.Equal(buf[:], []byte("als")):
-		if in.consumed >= in.bufferized {
-			if err := in.readMore(); err != nil {
-				in.err = codes.ErrInvalidToken
+		if in.Consumed >= in.Bufferized {
+			if err := in.ReadMore(); err != nil {
+				in.Err = codes.ErrInvalidToken
 
 				return token.None
 			}
 		}
-		next := in.buffer[in.consumed]
-		in.consumed++
-		in.offset++
+		next := in.Buffer[in.Consumed]
+		in.Consumed++
+		in.Offset++
 
 		if next != 'e' {
-			in.err = codes.ErrInvalidToken
+			in.Err = codes.ErrInvalidToken
 
 			return token.None
 		}
 
 		value = false
 	default:
-		in.err = codes.ErrInvalidToken
+		in.Err = codes.ErrInvalidToken
 
 		return token.None
 	}
 
 	return token.MakeBoolean(value)
 }
+
