@@ -5,15 +5,19 @@ A low-level JSON building block that **lexes without evaluating**. Concretely:
 1. **No value evaluation.** Numbers and strings stay as `[]byte`; no numeric
    conversion, so no loss of resolution. Comparable in spirit to the experimental
    `encoding/json/v2` + `encoding/json/jsontext`.
+
 2. **Zero unamortized allocation, bounded peak memory.** Everything lives in short-lived,
    recycled buffers. The only hard-coded literals are `null`/`true`/`false`.
-   Peak memory ≈ longest single string/number value.
+   Peak memory ≈ max(read-buffer window, longest single value).
+
 3. **Pluggable behind a common interface** (`json/lexers.Lexer`), so alternative
-   implementations may be injected (incl. one on top of `encoding/json/v2`.
+   implementations may be injected (incl. one on top of `encoding/json/v2`).
+
 4. **Two flavors:**
-   - **Semantic** (`L` → `token.T`): drops insignificant whitespace, normalizes.
+   - **Semantic** (`L` → `token.T`): drops insignificant whitespace, normalizes UTF8 pairs.
    - **Verbatim** (`VL` → `token.T`): preserves whitespace/escapes; for
      linters / LSPs / formatters sensitive to exact positions.
+
 5. **Streaming or buffered:** `io.Reader` (internally buffered) or `[]byte`.
 
 ## Getting started
@@ -22,21 +26,26 @@ TODO
 
 ## Design goals
 
-We wanted a fast JSON lexer to feed our [json.Document] with the following requirements:
+We want a fast JSON lexer to feed our [json.Document] with the following requirements:
 
+* support oldstable go - no GOEXPERIMENT, GODEBUG etc toggles
 * zero allocation
 * high throughput optimized for large strings (e.g. in GB/s, not MB/s)
 * bounded memory (up to the largest ingested token)
 * support for streams
 * accurate error reporting and location (offset, error with surrounding text)
 * short lived token, recycle any memory
-* token knows its value, the caller doesn't have to know JSON string escaping rules
+* token knows its kind and value - other information (location, pointer, leading blanks...) are stored
+  in the lexer's state
+* JSON string escaping and UTF8 normalization:
+  * `L`: the caller doesn't have to know these rules - strings are directly usable
+  * `VL`: the caller wants unaltered strings, including escapes
 * no loss of numeric precision: no conversion to native types
 * push & pull iterators
 
 Since we want it to be flexible, there are a few available options:
 
-* optional knobs: 
+* optional knobs: some are available a toggles, some result from the choice of lexer `L` vs `VL`
   * security guards against overflows (max. depth, max. token length)
   * in streaming mode, ability to set the memory window being used
   * ability to elide semantically redundant separators (",", ":") from iterated tokens
@@ -52,6 +61,7 @@ Additional objectives:
 
 Non-goals / out-of-scope:
 
+* non-UTF8 encoding
 * JSON canonicalization (RFC 8785)
 * full SIMD implementation (à la simd-json)
 
@@ -64,27 +74,27 @@ Non-goals / out-of-scope:
   * generics
   * devirtualization
   * SWAR scanners
-  * SIMD acceleration (AV2): usage limited to fast-parse large strings
+  * SIMD acceleration (AVX2): usage limited to fast-parse large strings (amd64 arch)
 
 Differences with `encoding/json/v2`
 
-* ❌ : no
+* ❌ : no, never
 * ⏸️ : yes, always
 * ✅ : opt-in, enabled by default
 * ⬜ : opt-in, disabled by default
-
+ 
 |                | L   | VL  | jsontext |
 |----------------|-----|-----|----------|
 | token size     | 32b      ||  16b?    |
-| only UTF-8     | ⏸️  |  ⏸️ |  ⏸️      |
+| only UTF8      | ⏸️  |  ⏸️ |  ⏸️      |
 | number as bytes| ⏸️  |  ⏸️ |  ⏸️      |
 | token has value| ⏸️  |  ⏸️ |  ⏸️      |
 | sep. elide     | ✅  |  ⬜ |  ⏸️      |
-| string escape  | ✅  |  ⬜ |  ❌      |
+| string escape  | ⏸️  |  ❌ |  ❌      |
 | track ns space | ❌  |  ⏸️ |  ❌      |
-| track line/col | ❌  |  ✅ |  ❌      |
-| track pointer  | ✅       ||  ⏸️      |
-| AV2 acceler.   | ✅       ||  ❌      |
+| track line/col | ❌  |  ⏸️ |  ❌      |
+| track pointer  | ❌       ||  ⏸️      |
+| AVX2 acceler.  | ✅       ||  ❌      |
 | push iterator  | ✅       ||  ❌      |    
 | pull iterator  | ✅       ||  ⏸️      |
 | limit stack    | ✅       ||  ✅      |
@@ -92,13 +102,14 @@ Differences with `encoding/json/v2`
 
 Trade-offs when comparing to `github.com/go-json-experiment/json/jsontext` (stdlib `json/v2`).
 
-* our token is larger (more memory traffic)
+* our token is larger (more memory traffic) but cheaper to consume (no extra indirection or escpaping)
 * our decision to escape strings involves more work
+* actual token usage is lighter (no indirection, no escaping: all done in the `L` lexer most efficiently)
 * our fast-path is zero-alloc, zero-copy
-* our heuristics a less efficient for:
+* our heuristics are less efficient for:
   * small values (single digits, booleans only...)
   * densely escaped strings 
-* other workloads show higher performances, sometimes much higher
+* other workloads generally show higher performances, sometimes much higher
 
 Our lexer's fastest path is to use the push iterator (`Tokens()`) from a buffer of bytes.
 
@@ -118,6 +129,6 @@ See ...
 
 ## Roadmap
 
-* AV2 support is currently provided as assembly kernels for amd64
+* AV2 support is currently provided as assembly kernels for amd64 only
 * AVX512 is likely overkill for our usage and I don't have the hardware to test it thoroughly
 * this will be eventually replaced by go native support for AV2 & AVX512 (currently experimental)
