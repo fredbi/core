@@ -120,11 +120,9 @@ Pull iterator (`NextToken`) mode degrades speed by 10-15%.
 
 Our implementation of the JSON lexers pass the full JSON conformance suite. No compromise on strictness.
 
-## Examples
-
 ## Benchmarks
 
-See ...
+See [a comparison](../benchmark/benchviz/README.md)
 
 ## Performance and PGO
 
