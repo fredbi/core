@@ -398,7 +398,7 @@ func scanPushG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 			}
 
 			writeback(i + 1)
-			l.current = l.consumeString()
+			l.current = l.in.consumeString()
 			if l.in.err != nil {
 				return
 			}
@@ -913,7 +913,7 @@ func scanTokenStreamG[T any, P emitPolicy[T]](l *L, p P) T {
 					return p.none()
 				}
 
-				l.current = l.consumeString()
+				l.current = l.in.consumeString()
 				if l.in.err != nil {
 					return p.none()
 				}
@@ -1277,7 +1277,7 @@ func scanPushStreamG[T any, P emitPolicy[T]](l *L, p P, yield func(T) bool) {
 					return
 				}
 
-				l.current = l.consumeString()
+				l.current = l.in.consumeString()
 				if l.in.err != nil {
 					return
 				}
@@ -1656,7 +1656,7 @@ func scanTokenBufferG[T any, P emitPolicy[T]](l *L, p P) T {
 			}
 
 			writeback(i + 1)
-			l.current = l.consumeString()
+			l.current = l.in.consumeString()
 			if l.in.err != nil {
 				return p.none()
 			}

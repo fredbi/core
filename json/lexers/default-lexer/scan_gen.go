@@ -293,7 +293,7 @@ func scanTokenBufferSemantic(l *L, p semanticPolicy) token.T {
 			}
 
 			writeback(i + 1)
-			l.current = l.consumeString()
+			l.current = l.in.consumeString()
 			if l.in.err != nil {
 				return p.none()
 			}
@@ -744,7 +744,7 @@ func scanTokenStreamSemantic(l *L, p semanticPolicy) token.T {
 					return p.none()
 				}
 
-				l.current = l.consumeString()
+				l.current = l.in.consumeString()
 				if l.in.err != nil {
 					return p.none()
 				}
@@ -1105,7 +1105,7 @@ func scanPushSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool) {
 			}
 
 			writeback(i + 1)
-			l.current = l.consumeString()
+			l.current = l.in.consumeString()
 			if l.in.err != nil {
 				return
 			}
@@ -1563,7 +1563,7 @@ func scanPushStreamSemanticCore(l *L, p semanticPolicy, yield func(token.T) bool
 					return
 				}
 
-				l.current = l.consumeString()
+				l.current = l.in.consumeString()
 				if l.in.err != nil {
 					return
 				}
@@ -1963,7 +1963,7 @@ func scanTokenBufferVerbatim(l *L, p verbatimPolicy) token.T {
 			}
 
 			writeback(i + 1)
-			l.current = l.consumeString()
+			l.current = l.in.consumeString()
 			if l.in.err != nil {
 				return p.none()
 			}
@@ -2414,7 +2414,7 @@ func scanTokenStreamVerbatim(l *L, p verbatimPolicy) token.T {
 					return p.none()
 				}
 
-				l.current = l.consumeString()
+				l.current = l.in.consumeString()
 				if l.in.err != nil {
 					return p.none()
 				}
@@ -2775,7 +2775,7 @@ func scanPushVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool) {
 			}
 
 			writeback(i + 1)
-			l.current = l.consumeString()
+			l.current = l.in.consumeString()
 			if l.in.err != nil {
 				return
 			}
@@ -3233,7 +3233,7 @@ func scanPushStreamVerbatimCore(l *L, p verbatimPolicy, yield func(token.T) bool
 					return
 				}
 
-				l.current = l.consumeString()
+				l.current = l.in.consumeString()
 				if l.in.err != nil {
 					return
 				}

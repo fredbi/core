@@ -25,10 +25,19 @@ type Input struct {
 	expectKey     bool
 	afterKey      bool // the previous token was an object key: a ':' must follow
 
+	// trackBlanks mirrors L.trackBlanks for consumeString's dispatch to the raw
+	// (validate-not-decode) string scanners. It is deliberately duplicated rather than
+	// moved: the cores read L.trackBlanks on the hot whitespace-skip path, and
+	// rewriting those refs to l.in.trackBlanks perturbed the core codegen (measured
+	// mesh +7%). Set by VL setup alongside L.trackBlanks; L.reset() does not clear it.
+	trackBlanks bool
+
+	// noAVX2 disables the AVX2 string-stop scanner (mirrors options.noAVX2), and
 	// maxValueBytes / keepPreviousBuffer mirror the like-named options so the value
-	// scanners and readMore (methods on *Input) can enforce the caps without reaching
-	// back into L. Set in L.reset(). Placed last so the hot cursor fields keep their
-	// offsets.
+	// scanners and readMore (methods on *Input) can enforce the caps/gates without
+	// reaching back into L. The mirrored options are set in L.reset(). Placed last so
+	// the hot cursor fields keep their offsets.
+	noAVX2             bool
 	maxValueBytes      int
 	keepPreviousBuffer int
 }

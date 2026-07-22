@@ -39,7 +39,7 @@ type L struct {
 	tokCol    int    // column of the most recent token's start, 1-based
 
 	isAtEOF     bool
-	trackBlanks bool // accumulate preceding blanks into l.blanks (verbatim lexer)
+	trackBlanks bool // verbatim mode: the cores read this (hot whitespace-skip path); mirrored to in.trackBlanks for consumeString's dispatch. Set by VL setup.
 
 	options
 }
@@ -329,6 +329,7 @@ func (l *L) reset() {
 	l.in.err = nil
 	l.in.maxValueBytes = l.maxValueBytes
 	l.in.keepPreviousBuffer = l.keepPreviousBuffer
+	l.in.noAVX2 = l.noAVX2
 	l.current = token.None
 	l.in.offset = 0
 	l.in.consumed = 0

@@ -143,5 +143,6 @@ func (l *VL) reset() {
 	// and preserved across L.Reset*; do NOT clobber it here or a caller's
 	// WithElideSeparator(true) would be lost on reuse. The unified core
 	// accumulates the preceding blanks, read off the embedded L.
-	l.trackBlanks = true
+	l.trackBlanks = true    // the cores read this off the embedded L (hot whitespace-skip path)
+	l.in.trackBlanks = true // consumeString (a *Input method) reads this to route to the raw scanners
 }

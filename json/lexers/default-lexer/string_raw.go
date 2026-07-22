@@ -19,20 +19,20 @@ import (
 // later decode via token.VT.Unescaped cannot fail) but keep the RAW source bytes.
 // This is both the faithful round-trip contract for [VT] and strictly less work
 // than decoding (no output materialization; whole-buffer aliases with zero copy).
-// consumeString dispatches here when l.trackBlanks is set (see string.go).
+// consumeString dispatches here when l.in.trackBlanks is set (see string.go).
 
 // consumeStringRawWhole is the whole-buffer raw scan. The clean-prefix fast path
 // is identical to consumeStringWhole (SWAR to the first stop); the difference is
 // only in how an escape is handled — validated in place, never decoded — so the
 // returned value always aliases the raw input.
-func (l *L) consumeStringRawWhole() token.T {
-	data := l.in.buffer
-	n := l.in.bufferized
-	start := l.in.consumed
+func (in *Input) consumeStringRawWhole() token.T {
+	data := in.buffer
+	n := in.bufferized
+	start := in.consumed
 
 	i := start
 	guard := start + guessLong
-	if l.noAVX2 {
+	if in.noAVX2 {
 		guard = n + 1 // WithoutAVX2: never delegate, pure inline SWAR (see consumeStringWhole)
 	}
 	for i+8 <= n {
@@ -59,8 +59,8 @@ func (l *L) consumeStringRawWhole() token.T {
 		}
 	}
 	if i >= n {
-		l.in.consumed, l.in.offset = i, uint64(i)
-		l.in.err = codes.ErrUnterminatedString
+		in.consumed, in.offset = i, uint64(i)
+		in.err = codes.ErrUnterminatedString
 
 		return token.None
 	}
@@ -68,27 +68,27 @@ func (l *L) consumeStringRawWhole() token.T {
 	switch c := data[i]; {
 	case c == doubleQuote:
 		// no escapes: raw == decoded, same aliasing exit as consumeStringWhole
-		if l.maxValueBytes > 0 && i-start > l.maxValueBytes {
-			l.in.consumed, l.in.offset = i, uint64(i)
-			l.in.err = codes.ErrMaxValueBytes
+		if in.maxValueBytes > 0 && i-start > in.maxValueBytes {
+			in.consumed, in.offset = i, uint64(i)
+			in.err = codes.ErrMaxValueBytes
 
 			return token.None
 		}
 		value := data[start:i:i]
 		i++
-		l.in.consumed, l.in.offset = i, uint64(i)
+		in.consumed, in.offset = i, uint64(i)
 
-		return l.finishStringValue(value)
+		return in.finishStringValue(value)
 
 	case c < 0x20:
-		l.in.consumed, l.in.offset = i, uint64(i)
-		l.in.err = codes.ErrControlChar
+		in.consumed, in.offset = i, uint64(i)
+		in.err = codes.ErrControlChar
 
 		return token.None
 	}
 
 	// an escape was found at i: validate the rest but keep the raw bytes.
-	return l.consumeStringRawEscaped(start, i)
+	return in.consumeStringRawEscaped(start, i)
 }
 
 // consumeStringRawEscaped validates a string that contains at least one escape
@@ -96,30 +96,30 @@ func (l *L) consumeStringRawWhole() token.T {
 // from the input. Clean runs between escapes are skipped with the same adaptive
 // scalar-probe-then-SWAR scan the decoder uses (consumeStringEscaped), but with
 // no copying — so a sparse-escape string with a long clean tail stays fast.
-func (l *L) consumeStringRawEscaped(start, i int) token.T {
-	data := l.in.buffer
-	n := l.in.bufferized
+func (in *Input) consumeStringRawEscaped(start, i int) token.T {
+	data := in.buffer
+	n := in.bufferized
 
 	for i < n {
 		switch c := data[i]; {
 		case c == doubleQuote:
-			if l.maxValueBytes > 0 && i-start > l.maxValueBytes {
-				l.in.consumed, l.in.offset = i, uint64(i)
-				l.in.err = codes.ErrMaxValueBytes
+			if in.maxValueBytes > 0 && i-start > in.maxValueBytes {
+				in.consumed, in.offset = i, uint64(i)
+				in.err = codes.ErrMaxValueBytes
 
 				return token.None
 			}
 			value := data[start:i:i]
 			i++
-			l.in.consumed, l.in.offset = i, uint64(i)
+			in.consumed, in.offset = i, uint64(i)
 
-			return l.finishStringValue(value)
+			return in.finishStringValue(value)
 
 		case c == escape:
 			i++
 			if i >= n {
-				l.in.consumed, l.in.offset = i, uint64(i)
-				l.in.err = codes.ErrUnterminatedString
+				in.consumed, in.offset = i, uint64(i)
+				in.err = codes.ErrUnterminatedString
 
 				return token.None
 			}
@@ -129,22 +129,22 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 			case 'u':
 				next, err := validateUnicodeWhole(data, i+1, n)
 				if err != nil {
-					l.in.consumed, l.in.offset = i, uint64(i)
-					l.in.err = err
+					in.consumed, in.offset = i, uint64(i)
+					in.err = err
 
 					return token.None
 				}
 				i = next
 			default:
-				l.in.consumed, l.in.offset = i, uint64(i)
-				l.in.err = codes.ErrUnknownEscape
+				in.consumed, in.offset = i, uint64(i)
+				in.err = codes.ErrUnknownEscape
 
 				return token.None
 			}
 
 		case c < 0x20:
-			l.in.consumed, l.in.offset = i, uint64(i)
-			l.in.err = codes.ErrControlChar
+			in.consumed, in.offset = i, uint64(i)
+			in.err = codes.ErrControlChar
 
 			return token.None
 
@@ -167,7 +167,7 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 						break
 					}
 					stop += 8
-					if stop-run >= guessLong && !l.noAVX2 {
+					if stop-run >= guessLong && !in.noAVX2 {
 						stop += strscan.ScanStop(data[stop:n])
 
 						break
@@ -183,8 +183,8 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 		}
 	}
 
-	l.in.consumed, l.in.offset = i, uint64(i)
-	l.in.err = codes.ErrUnterminatedString
+	in.consumed, in.offset = i, uint64(i)
+	in.err = codes.ErrUnterminatedString
 
 	return token.None
 }
@@ -201,14 +201,14 @@ func (l *L) consumeStringRawEscaped(start, i int) token.T {
 // Like consumeStringStreamFast, reaching l.in.bufferized is NOT end-of-input (delegate,
 // don't error) and advances are RELATIVE (l.in.offset is the absolute stream offset,
 // l.in.consumed the window index).
-func (l *L) consumeStringRawStreamFast() token.T {
-	data := l.in.buffer
-	n := l.in.bufferized
-	start := l.in.consumed // first content byte (opening quote already consumed)
+func (in *Input) consumeStringRawStreamFast() token.T {
+	data := in.buffer
+	n := in.bufferized
+	start := in.consumed // first content byte (opening quote already consumed)
 
 	i := start
 	guard := start + guessLong
-	if l.noAVX2 {
+	if in.noAVX2 {
 		guard = n + 1
 	}
 	for i+8 <= n {
@@ -235,86 +235,86 @@ func (l *L) consumeStringRawStreamFast() token.T {
 
 	if i >= n {
 		// window end reached without a stop byte: the string may span a refill →
-		// hand off to the byte-by-byte raw path (l.in.consumed still start, re-scans clean).
-		return l.consumeStringRawStreaming()
+		// hand off to the byte-by-byte raw path (in.consumed still start, re-scans clean).
+		return in.consumeStringRawStreaming()
 	}
 
 	switch c := data[i]; {
 	case c == doubleQuote:
-		if l.maxValueBytes > 0 && i-start > l.maxValueBytes {
-			l.in.offset += uint64(i - start)
-			l.in.consumed = i
-			l.in.err = codes.ErrMaxValueBytes
+		if in.maxValueBytes > 0 && i-start > in.maxValueBytes {
+			in.offset += uint64(i - start)
+			in.consumed = i
+			in.err = codes.ErrMaxValueBytes
 
 			return token.None
 		}
 		value := data[start:i:i] // alias the window (raw == value; valid until refill)
 		end := i + 1             // past the closing quote
-		l.in.offset += uint64(end - start)
-		l.in.consumed = end
+		in.offset += uint64(end - start)
+		in.consumed = end
 
-		return l.finishStringValue(value)
+		return in.finishStringValue(value)
 
 	case c < 0x20:
-		l.in.offset += uint64(i - start)
-		l.in.consumed = i
-		l.in.err = codes.ErrControlChar
+		in.offset += uint64(i - start)
+		in.consumed = i
+		in.err = codes.ErrControlChar
 
 		return token.None
 	}
 
 	// an escape was found inside the window: delegate to the byte-by-byte raw path,
-	// which keeps escapes verbatim and handles refills (re-scans from l.in.consumed==start).
-	return l.consumeStringRawStreaming()
+	// which keeps escapes verbatim and handles refills (re-scans from in.consumed==start).
+	return in.consumeStringRawStreaming()
 }
 
 // consumeStringRawStreaming is the raw scan over a refilling buffer: it copies the
 // source bytes verbatim (escapes intact) into l.in.currentValue while validating
 // them, so the value survives buffer turnover.
-func (l *L) consumeStringRawStreaming() token.T {
-	l.in.currentValue = l.in.currentValue[:0]
+func (in *Input) consumeStringRawStreaming() token.T {
+	in.currentValue = in.currentValue[:0]
 
 	for {
-		if err := l.in.readMore(); err != nil {
+		if err := in.readMore(); err != nil {
 			if errors.Is(err, io.EOF) {
-				l.in.err = codes.ErrUnterminatedString
+				in.err = codes.ErrUnterminatedString
 			} else {
-				l.in.err = err
+				in.err = err
 			}
 
 			return token.None
 		}
 
-		for l.in.consumed < l.in.bufferized {
-			if l.maxValueBytes > 0 && len(l.in.currentValue) > l.maxValueBytes {
-				l.in.err = codes.ErrMaxValueBytes
+		for in.consumed < in.bufferized {
+			if in.maxValueBytes > 0 && len(in.currentValue) > in.maxValueBytes {
+				in.err = codes.ErrMaxValueBytes
 
 				return token.None
 			}
 
-			b := l.in.buffer[l.in.consumed]
-			l.in.consumed++
-			l.in.offset++
+			b := in.buffer[in.consumed]
+			in.consumed++
+			in.offset++
 
 			switch {
 			case b == doubleQuote:
-				return l.finishStringValue(l.in.currentValue)
+				return in.finishStringValue(in.currentValue)
 
 			case b == escape:
-				l.in.currentValue = append(l.in.currentValue, escape)
-				if err := l.rawEscapeStreaming(); err != nil {
-					l.in.err = err
+				in.currentValue = append(in.currentValue, escape)
+				if err := in.rawEscapeStreaming(); err != nil {
+					in.err = err
 
 					return token.None
 				}
 
 			case b < 0x20:
-				l.in.err = codes.ErrControlChar
+				in.err = codes.ErrControlChar
 
 				return token.None
 
 			default:
-				l.in.currentValue = append(l.in.currentValue, b)
+				in.currentValue = append(in.currentValue, b)
 
 				// bulk-scan the rest of this clean run within the current window (§10.5c,
 				// the raw analogue of consumeStringStreaming's Phase-1c copy): a long clean
@@ -324,9 +324,9 @@ func (l *L) consumeStringRawStreaming() token.T {
 				// no decode; a run that reaches the window end stops at bufferized and the
 				// outer loop refills for the continuation. This is what closes gsoc-style
 				// escaped-long-string reader mode for VS/VL.
-				data := l.in.buffer
-				n := l.in.bufferized
-				runStart := l.in.consumed
+				data := in.buffer
+				n := in.bufferized
+				runStart := in.consumed
 				stop := runStart
 				probe := min(stop+swarProbe, n)
 				for ; stop < probe; stop++ {
@@ -342,7 +342,7 @@ func (l *L) consumeStringRawStreaming() token.T {
 							break
 						}
 						stop += 8
-						if stop-runStart >= guessLong && !l.noAVX2 {
+						if stop-runStart >= guessLong && !in.noAVX2 {
 							stop += strscan.ScanStop(data[stop:n])
 
 							break
@@ -355,14 +355,14 @@ func (l *L) consumeStringRawStreaming() token.T {
 					}
 				}
 				if stop > runStart {
-					if l.maxValueBytes > 0 && len(l.in.currentValue)+(stop-runStart) > l.maxValueBytes {
-						l.in.err = codes.ErrMaxValueBytes
+					if in.maxValueBytes > 0 && len(in.currentValue)+(stop-runStart) > in.maxValueBytes {
+						in.err = codes.ErrMaxValueBytes
 
 						return token.None
 					}
-					l.in.currentValue = append(l.in.currentValue, data[runStart:stop]...)
-					l.in.offset += uint64(stop - runStart)
-					l.in.consumed = stop
+					in.currentValue = append(in.currentValue, data[runStart:stop]...)
+					in.offset += uint64(stop - runStart)
+					in.consumed = stop
 				}
 			}
 		}
@@ -371,19 +371,19 @@ func (l *L) consumeStringRawStreaming() token.T {
 
 // rawEscapeStreaming validates the escape sequence following a backslash (already
 // appended) in the streaming raw scan, appending its raw bytes to l.in.currentValue.
-func (l *L) rawEscapeStreaming() error {
+func (in *Input) rawEscapeStreaming() error {
 	var one [1]byte
-	if err := l.in.consumeN(one[:]); err != nil {
+	if err := in.consumeN(one[:]); err != nil {
 		return codes.ErrUnterminatedString
 	}
 	e := one[0]
-	l.in.currentValue = append(l.in.currentValue, e)
+	in.currentValue = append(in.currentValue, e)
 
 	switch e {
 	case doubleQuote, escape, slash, 'b', 'f', 'n', 'r', 't':
 		return nil
 	case 'u':
-		return l.rawUnicodeStreaming()
+		return in.rawUnicodeStreaming()
 	default:
 		return codes.ErrUnknownEscape
 	}
@@ -392,21 +392,21 @@ func (l *L) rawEscapeStreaming() error {
 // rawUnicodeStreaming validates a \uXXXX sequence (and a following \uYYYY low
 // surrogate for a high surrogate) in the streaming raw scan, appending the raw
 // hex bytes verbatim. The leading "\u" has already been appended.
-func (l *L) rawUnicodeStreaming() error {
+func (in *Input) rawUnicodeStreaming() error {
 	var buf [4]byte
-	if err := l.in.consumeN(buf[:]); err != nil {
+	if err := in.consumeN(buf[:]); err != nil {
 		return codes.ErrUnicodeEscape
 	}
 	code, ok := scan.Hex4(buf[0], buf[1], buf[2], buf[3])
 	if !ok {
 		return codes.ErrUnicodeEscape
 	}
-	l.in.currentValue = append(l.in.currentValue, buf[:]...)
+	in.currentValue = append(in.currentValue, buf[:]...)
 
 	r := rune(code)
 	if utf16.IsSurrogate(r) {
 		var nb [6]byte // "\uYYYY"
-		if err := l.in.consumeN(nb[:]); err != nil {
+		if err := in.consumeN(nb[:]); err != nil {
 			return codes.ErrSurrogateEscape
 		}
 		if nb[0] != escape || nb[1] != 'u' {
@@ -419,7 +419,7 @@ func (l *L) rawUnicodeStreaming() error {
 		if utf16.DecodeRune(r, rune(code2)) == utf8.RuneError {
 			return codes.ErrSurrogateEscape
 		}
-		l.in.currentValue = append(l.in.currentValue, nb[:]...)
+		in.currentValue = append(in.currentValue, nb[:]...)
 	} else if !utf8.ValidRune(r) {
 		return codes.ErrInvalidRune
 	}
