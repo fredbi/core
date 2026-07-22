@@ -32,10 +32,10 @@ func collectPullValues(l *L) ([][2]string, error) {
 func streamFastInputs() []string {
 	in := []string{
 		`""`, `"a"`, `"ab"`, `"abcdefg"`, `"abcdefgh"`, `"abcdefghi"`,
-		`"0123456789abcdef"`,                    // 16
-		`"0123456789abcdef0123456789abcdef"`,    // 32
-		`"0123456789abcdef0123456789abcdefX"`,   // 33
-		`"` + strings.Repeat("x", 200) + `"`,    // long clean (AVX2 territory)
+		`"0123456789abcdef"`,                  // 16
+		`"0123456789abcdef0123456789abcdef"`,  // 32
+		`"0123456789abcdef0123456789abcdefX"`, // 33
+		`"` + strings.Repeat("x", 200) + `"`,  // long clean (AVX2 territory)
 		`"esc\ttab"`, `"q\"q"`, `"back\\slash"`, `"sl\/ash"`,
 		`"\n\r\t\b\f"`, `"a\nb\tc"`,
 		`"uniécode"`, `"surrogate😀end"`,
@@ -60,8 +60,8 @@ func streamFastInputs() []string {
 		`[0]`, `[42,7]`, `[3.14,-2.5e8]`, `{"n":123}`, `{"n":-0.5e-3,"m":9}`,
 		// bail / malformed — deferred-error semantics must match buffer mode
 		`01`, `1.`, `1e`, `1e+`, `-`, `1.2.3`, `[1 2]`, `00`, `1.2e`, `-.5`,
-		`123456789012345678901234567890`,          // long int
-		`3.14159265358979323846264338327950288`,   // long decimal
+		`123456789012345678901234567890`,                        // long int
+		`3.14159265358979323846264338327950288`,                 // long decimal
 		`1`+strings.Repeat("0", 80)+`e`+strings.Repeat("9", 40), // long int+exp
 	)
 
@@ -153,4 +153,170 @@ func TestStreamFastAliasesWindow(t *testing.T) {
 	if !aliased {
 		t.Errorf("streaming clean string was not aliased to the window (copied instead)")
 	}
+}
+
+// ---- merged from push_stream_test.go ----
+// forceStreamWindow builds a streaming lexer whose read window is EXACTLY bs bytes
+// (reslicing past the WithBufferSize floor), so an input larger than bs stays in
+// streaming mode — exercising the streaming push/pull cores rather than the
+// whole-buffer short-circuit (§10.5f).
+func forceStreamWindow(data []byte, bs int) *L {
+	l := New(bytes.NewReader(data), WithBufferSize(bs))
+	if bs < cap(l.in.Buffer) {
+		l.in.Buffer = l.in.Buffer[:bs]
+	}
+
+	return l
+}
+
+func collectPushT(seq func(func(token.T) bool)) [][2]string {
+	var out [][2]string
+	for t := range seq {
+		out = append(out, [2]string{t.Kind().String(), string(t.Value())})
+	}
+
+	return out
+}
+
+// TestStreamPushEquivalence pins that the native streaming push core (§10.5g, backing
+// Tokens() over a reader) yields exactly the same token stream as the streaming pull
+// core (NextToken), for both the semantic lexer L and the state-based verbatim lexer
+// VS, across window sizes that force streaming (small) and promotion (large).
+func TestStreamPushEquivalence(t *testing.T) {
+	inputs := append(streamFastInputs(), vsInputs()...)
+	sizes := []int{1, 4, 16, 64, 1024}
+
+	for _, in := range inputs {
+		data := []byte(in)
+
+		// reference: streaming pull via NextToken (forced small window).
+		wantPull, pullErr := collectPullValues(forceStreamWindow(data, 8))
+
+		for _, bs := range sizes {
+			// L: Tokens() push over a reader.
+			gotPush := collectPushT(func(yield func(token.T) bool) {
+				lx := forceStreamWindow(data, bs)
+				for tk := range lx.Tokens() {
+					if !yield(tk) {
+						return
+					}
+				}
+			})
+			if pullErr == nil && fmt.Sprint(wantPull) != fmt.Sprint(gotPush) {
+				t.Errorf("L push vs pull mismatch, input %q bufsize %d\n pull=%v\n push=%v", in, bs, wantPull, gotPush)
+			}
+		}
+
+		// VS: Tokens() push must equal VS NextToken pull (kinds + RAW values).
+		vsPull := drainVSPull(forceStreamWindowVS(data, 8))
+		for _, bs := range sizes {
+			vsPush := drainVSPush(forceStreamWindowVS(data, bs))
+			if vsPull.ok && fmt.Sprint(vsPull.toks) != fmt.Sprint(vsPush.toks) {
+				t.Errorf("VS push vs pull mismatch, input %q bufsize %d\n pull=%v\n push=%v", in, bs, vsPull.toks, vsPush.toks)
+			}
+			// blanks accompanying each token must match too (accessor vs accessor).
+			if vsPull.ok && fmt.Sprint(vsPull.blanks) != fmt.Sprint(vsPush.blanks) {
+				t.Errorf("VS push vs pull BLANKS mismatch, input %q bufsize %d\n pull=%v\n push=%v", in, bs, vsPull.blanks, vsPush.blanks)
+			}
+		}
+	}
+}
+
+func forceStreamWindowVS(data []byte, bs int) *VL {
+	vs := NewVerbatim(bytes.NewReader(data), WithBufferSize(bs))
+	if bs < cap(vs.in.Buffer) {
+		vs.in.Buffer = vs.in.Buffer[:bs]
+	}
+
+	return vs
+}
+
+type vsDrain struct {
+	toks   [][2]string
+	blanks []string
+	ok     bool
+}
+
+func drainVSPull(vs *VL) vsDrain {
+	var d vsDrain
+	for {
+		t := vs.NextToken()
+		if !vs.Ok() {
+			d.ok = false
+
+			return d
+		}
+		if t.Kind() == token.EOF {
+			d.ok = true
+
+			return d
+		}
+		d.toks = append(d.toks, [2]string{t.Kind().String(), string(t.Value())})
+		d.blanks = append(d.blanks, string(vs.LeadingSpace()))
+	}
+}
+
+func drainVSPush(vs *VL) vsDrain {
+	var d vsDrain
+	for t := range vs.Tokens() {
+		d.toks = append(d.toks, [2]string{t.Kind().String(), string(t.Value())})
+		d.blanks = append(d.blanks, string(vs.LeadingSpace()))
+	}
+	d.ok = vs.Ok()
+
+	return d
+}
+
+// ---- merged from stream_promote_test.go ----
+// TestFirstFillPromotion pins the whole-buffer short-circuit (§10.5f): a streaming
+// lexer whose entire input fits in the buffer flips to wholeBuffer mode on the first
+// token (running the fast in-buffer cores), while an input larger than the buffer
+// stays in streaming mode. The token stream must be correct either way.
+func TestFirstFillPromotion(t *testing.T) {
+	doc := `{"a":[1,2,3],"b":"hello","c":true}`
+
+	// fits in the (default, 4KB) buffer → promoted to whole-buffer on first token.
+	t.Run("fits/promotes", func(t *testing.T) {
+		l := New(bytes.NewReader([]byte(doc)))
+		if l.in.WholeBuffer {
+			t.Fatal("wholeBuffer set before first token")
+		}
+		_ = l.NextToken()
+		if !l.in.WholeBuffer {
+			t.Fatal("expected promotion to whole-buffer after first token (input fits)")
+		}
+		// drain and compare to the pure whole-buffer lexer.
+		want, _ := collectPullValues(NewWithBytes([]byte(doc)))
+		l2 := New(bytes.NewReader([]byte(doc)))
+		got, _ := collectPullValues(l2)
+		if !l2.in.WholeBuffer {
+			t.Fatal("second lexer did not promote")
+		}
+		if len(want) != len(got) {
+			t.Fatalf("token count: whole=%d promoted=%d", len(want), len(got))
+		}
+	})
+
+	// larger than the window → stays streaming (window forced small via reslice).
+	t.Run("overflows/streams", func(t *testing.T) {
+		big := `["` + strings.Repeat("x", 200) + `","` + strings.Repeat("y", 200) + `"]`
+		l := New(bytes.NewReader([]byte(big)), WithBufferSize(64))
+		l.in.Buffer = l.in.Buffer[:64] // force a 64-byte window < input
+		_ = l.NextToken()
+		if l.in.WholeBuffer {
+			t.Fatal("did not expect promotion: input exceeds the window")
+		}
+	})
+
+	// empty input: promotes (whole input — nothing — fits) and reports ErrNoData.
+	t.Run("empty/promotes", func(t *testing.T) {
+		l := New(bytes.NewReader(nil))
+		tok := l.NextToken()
+		if !l.in.WholeBuffer {
+			t.Fatal("empty input should promote to whole-buffer")
+		}
+		if l.Ok() || tok.Kind() != token.EOF {
+			// ErrNoData surfaces on the EOF token
+		}
+	})
 }

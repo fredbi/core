@@ -51,7 +51,6 @@ Since we want it to be flexible, there are a few available options:
   * ability to elide semantically redundant separators (",", ":") from iterated tokens
   * ability to switch to "verbatim" mode, preserving non-significant blank, not escaping strings (that's our `VL` lexer)
   * verbatim mode tracks a token's line and column in the input text
-  * option to tolerate numbers such as `+1` and `01`
   * option to track the json pointer of the current token **TODO: NOT IMPLEMENTED YET**
   * tunable context window for reporting errors
 

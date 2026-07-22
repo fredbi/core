@@ -6,8 +6,8 @@ import (
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 )
 
-// The nesting stack is a slice of uint64 words. Each word packs up to
-// stackScale (63) container levels as bits, plus a sentinel marking the depth:
+// The nesting stack is a slice of uint64 words.
+// Each word packs up to stackScale (63) container levels as bits, plus a sentinel marking the depth:
 //
 //   - bit 0 (the lowest bit) holds the type of the innermost container:
 //     0 for an object, 1 for an array;
@@ -16,10 +16,10 @@ import (
 //   - the highest set bit is a sentinel: bits.Len64(word)-1 is the number of
 //     levels held in the word.
 //
-// The base word starts at 1 (sentinel only, i.e. top level). When a word fills
-// up (sentinel reaches bit 63), an additional word is appended; when a word is
-// emptied by a pop, it is dropped again. This keeps the invariant that the last
-// word always describes the innermost container (or, for the base word alone,
+// The base word starts at 1 (sentinel only, i.e. top level). When a word fills up (sentinel reaches bit 63),
+// an additional word is appended; when a word is emptied by a pop, it is dropped again.
+//
+// This keeps the invariant that the last word always describes the innermost container (or, for the base word alone,
 // the top level), so isInObject/isInArray only ever need to look at the last word.
 const (
 	maxStack   = 1 << 63 // a word is full when its sentinel reaches bit 63

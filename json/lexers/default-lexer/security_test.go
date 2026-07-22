@@ -12,32 +12,6 @@ import (
 	codes "github.com/fredbi/core/json/lexers/error-codes"
 )
 
-// drainErr runs a semantic lexer to completion and returns its final error.
-func drainErr(lex *L) error {
-	for {
-		tok := lex.NextToken()
-		if !lex.Ok() {
-			return lex.Err()
-		}
-		if tok.IsEOF() {
-			return nil
-		}
-	}
-}
-
-// drainVErr runs a verbatim lexer to completion and returns its final error.
-func drainVErr(vl *VL) error {
-	for {
-		tok := vl.NextToken()
-		if !vl.Ok() {
-			return vl.Err()
-		}
-		if tok.IsEOF() {
-			return nil
-		}
-	}
-}
-
 func TestMaxValueBytes(t *testing.T) {
 	const limit = 100
 
@@ -138,4 +112,30 @@ func TestMaxContainerStackStreaming(t *testing.T) {
 
 	lex := New(strings.NewReader(deep), WithBufferSize(8), WithMaxContainerStack(maxDepth))
 	require.ErrorIs(t, drainErr(lex), codes.ErrMaxContainerStack)
+}
+
+// drainErr runs a semantic lexer to completion and returns its final error.
+func drainErr(lex *L) error {
+	for {
+		tok := lex.NextToken()
+		if !lex.Ok() {
+			return lex.Err()
+		}
+		if tok.IsEOF() {
+			return nil
+		}
+	}
+}
+
+// drainVErr runs a verbatim lexer to completion and returns its final error.
+func drainVErr(vl *VL) error {
+	for {
+		tok := vl.NextToken()
+		if !vl.Ok() {
+			return vl.Err()
+		}
+		if tok.IsEOF() {
+			return nil
+		}
+	}
 }

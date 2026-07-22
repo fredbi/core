@@ -2,8 +2,6 @@ package lexer
 
 import (
 	"io"
-
-	"github.com/fredbi/core/json/lexers/token"
 )
 
 // VL is a verbatim lexer for JSON.
@@ -62,38 +60,6 @@ func NewVerbatimWithBytes(data []byte, opts ...Option) *VL {
 // while the default flips from the semantic lexer's elide-on to elide-off.
 func verbatimOpts(opts []Option) []Option {
 	return append([]Option{WithElideSeparator(false)}, opts...)
-}
-
-// NextToken returns the next token consumed from the stream or slice of bytes, as a
-// light [token.T] with string/number values kept RAW (escapes intact — decode on
-// demand with [token.Unescape]). The last token is of Kind EOF; in an errored state
-// it keeps returning tokens of Kind Unknown.
-//
-// The verbatim feature — the whitespace run preceding the token and its 1-based
-// source position — is exposed as LEXER STATE, valid until the next call, via
-// [VL.LeadingSpace] / [VL.Line] / [VL.Column]. This "token-vs-state arbitrage"
-// (§10.5) keeps the emitted token the 32B token.T (like the semantic lexer L)
-// instead of a heavy per-token verbatim token: VL runs at ~77–84% of L across all
-// modes, from the ~27% the earlier token.VT design paid.
-//
-// Tokens are expected to have a short lifespan: when NextToken is called again,
-// the memory backing the previous token's value (and the accessors' state) is
-// reused. To keep a token, use its Clone() method.
-func (l *VL) NextToken() token.T {
-	// devirtualized pull core; see [L.NextToken]. Same wholeBuffer lane dispatch
-	// (§10): the buffer lane gives zero-copy blanks, the stream lane keeps the
-	// byte-by-byte blanks append across refills.
-	if l.in.WholeBuffer {
-		return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
-	}
-	if l.in.NeedFirstFill {
-		l.in.FirstFill() // §10.5f: promote to whole-buffer if the input fits
-		if l.in.WholeBuffer {
-			return scanTokenBufferVerbatim(l.L, verbatimPolicy{})
-		}
-	}
-
-	return scanTokenStreamVerbatim(l.L, verbatimPolicy{})
 }
 
 // LeadingSpace returns the run of insignificant whitespace that preceded the

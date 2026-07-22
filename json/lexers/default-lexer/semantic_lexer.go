@@ -21,8 +21,7 @@ import (
 // expected sequence of delimiter/values etc.
 //
 // If you plan to allocate many lexers with a short life span, consider using the global pool
-// with the [BorrowLexerWithBytes] / [BorrowLexerWithReader] functions and the
-// returned redeem closure.
+// with the [BorrowLexerWithBytes] / [BorrowLexerWithReader] functions and the returned redeem closure.
 type L struct {
 	in input.Input // buffered-input + scan-cursor state (see [Input])
 
@@ -50,8 +49,7 @@ type L struct {
 // Use option [WithBufferSize] to alter the size of this buffer (the default is 4KB).
 //
 // If you plan to allocate many lexers with a short life span, consider using the global pool
-// with the [BorrowLexerWithBytes] / [BorrowLexerWithReader] functions and the
-// returned redeem closure.
+// with the [BorrowLexerWithBytes] / [BorrowLexerWithReader] functions and the returned redeem closure.
 func New(r io.Reader, opts ...Option) *L {
 	l := new(L)
 	l.applyWithDefaults(opts)
@@ -80,7 +78,7 @@ func NewWithBytes(data []byte, opts ...Option) *L {
 	l.in.Bufferized = len(data)
 	l.in.PreviousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
-	l.in.WholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.in.WholeBuffer = true  // the whole input is in the buffer: values may alias it
 	l.in.NeedFirstFill = false
 
 	l.reset()
@@ -118,48 +116,12 @@ func (l *L) Offset() uint64 {
 	return l.in.Offset
 }
 
-// The semantic lexer deliberately does NOT expose line/column. Tracking them is
-// costly on whitespace-heavy input (it forces newline counting in the whitespace
-// skip — measured ~-28% on citm; see ramblings/2026-06-linecol-cost-decomposition),
-// and it cannot be computed lazily either, because a streaming buffer discards past
-// bytes. Position is a verbatim-lexer concern: use [VL] / [token.VT] (VL.Line /
-// VL.Column, or VT.Line / VT.Col), which carry it. The byte position is always
-// available via [L.Offset].
-
-// NextToken returns the next JSON token consumed from the stream or slice of bytes.
+// The semantic lexer deliberately does NOT expose line/column. Tracking them is costly on whitespace-heavy input
+// (it forces newline counting in the whitespace skip) and it cannot be computed lazily either,
+// because a streaming buffer discards past bytes.
 //
-// The last token is of Kind EOF.
-//
-// If the lexer is in an errored status, it will keep responding tokens with Kind Unknown.
-//
-// By default the structural separators "," and ":" are validated but not emitted
-// (see [WithElideSeparator]); pass WithElideSeparator(false) to receive them.
-//
-// Tokens are expected to have a short lifespan: when NextToken is
-// called again, the memory allocated to support the value of the
-// previously returned token is reused for the next token.
-//
-// If you want to keep tokens for later reuse, you may clone a token
-// using its [T.Clone] method.
-func (l *L) NextToken() token.T {
-	// devirtualized pull core (adopted 2026-06-27: +4.23% geomean over the generic
-	// core, no regressions; see plan §5.1 + devirt_bench_test). Dispatch once per
-	// token on wholeBuffer (§10): the whole-buffer lane (local cursor, no readMore,
-	// zero-copy blanks) is the frozen champion; the stream lane is optimized
-	// separately. The generic scanTokenBufferG / scanTokenStreamG are lexgen's
-	// source-of-truth and the A/B baseline.
-	if l.in.WholeBuffer {
-		return scanTokenBufferSemantic(l, semanticPolicy{})
-	}
-	if l.in.NeedFirstFill {
-		l.in.FirstFill()
-		if l.in.WholeBuffer {
-			return scanTokenBufferSemantic(l, semanticPolicy{})
-		}
-	}
-
-	return scanTokenStreamSemantic(l, semanticPolicy{})
-}
+// Position is a verbatim-lexer concern: use [VL.Line] / [VL.Column], which carry it.
+// The byte position is always available via [L.Offset].
 
 // primeStream runs the pending first fill (see [input.Input.FirstFill]) if needed. Used by the
 // push paths (Tokens), which must resolve the whole-buffer short-circuit before they
@@ -179,8 +141,9 @@ func (l *L) primeStream() {
 // as long as the recycled lexer sits in the pool.
 //
 // Reset does NOT rebind an input: call [L.ResetWithBytes] / [L.ResetWithReader]
-// (or a Borrow*/New* constructor) to lex a new source. Configured options are
-// preserved, and the streaming-owned buffer keeps its capacity for reuse.
+// (or a Borrow*/New* constructor) to lex a new source.
+//
+// Configured options are preserved, and the streaming-owned buffer keeps its capacity for reuse.
 func (l *L) Reset() {
 	if l.in.WholeBuffer && l.in.R == noopReader {
 		// whole-buffer via NewWithBytes/ResetWithBytes: l.in.Buffer aliases the caller's
@@ -210,7 +173,7 @@ func (l *L) ResetWithBytes(data []byte) {
 	l.in.Bufferized = len(data)
 	l.in.PreviousBuffer = nil
 	l.keepPreviousBuffer = 0 // disabled option
-	l.in.WholeBuffer = true     // the whole input is in the buffer: values may alias it
+	l.in.WholeBuffer = true  // the whole input is in the buffer: values may alias it
 	l.in.NeedFirstFill = false
 	l.reset()
 }
@@ -292,4 +255,3 @@ func (l *L) setErrContext() {
 		Position: pos,
 	}
 }
-

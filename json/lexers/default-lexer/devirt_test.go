@@ -9,13 +9,31 @@ import (
 	"github.com/fredbi/core/json/lexers/token"
 )
 
+// scanPushSemanticGeneric / scanPushVerbatimGeneric are the A/B BASELINE push
+// entries: non-inlined shims around the GENERIC core scanPushG (un-monomorphized,
+// so the policy calls route through the generics dictionary). They exist only to
+// measure the devirtualization gap against the production scanPush{Semantic,Verbatim}
+// (which wrap the generated concrete cores). Test-only — that is why they live here
+// and not in the package sources. Same //go:noinline yield-seam discipline as the
+// production wrappers (see push.go).
+//
+//go:noinline
+func (l *L) scanPushSemanticGeneric(yield func(token.T) bool) {
+	scanPushG[token.T, semanticPolicy](l, semanticPolicy{}, yield)
+}
+
+//go:noinline
+func (l *L) scanPushVerbatimGeneric(yield func(token.T) bool) {
+	scanPushG[token.T, verbatimPolicy](l, verbatimPolicy{}, yield)
+}
+
 // tokensGeneric / VL.tokensGeneric mirror the pre-adoption Tokens() (the generic
 // push shim). Retained as the A/B baseline now that Tokens() routes through the
 // devirtualized core; used by the push equivalence test and BenchmarkDevirt.
 func (l *L) tokensGeneric() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
 		if l.in.WholeBuffer && l.maxValueBytes == 0 {
-			l.scanPushSemantic(yield)
+			l.scanPushSemanticGeneric(yield)
 
 			return
 		}
@@ -34,7 +52,7 @@ func (l *L) tokensGeneric() iter.Seq[token.T] {
 func (l *VL) tokensGeneric() iter.Seq[token.T] {
 	return func(yield func(token.T) bool) {
 		if l.in.WholeBuffer && l.maxValueBytes == 0 {
-			l.scanPushVerbatim(yield)
+			l.scanPushVerbatimGeneric(yield)
 
 			return
 		}

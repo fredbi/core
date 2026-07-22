@@ -589,7 +589,7 @@ func shouldBeIncorrect(s string, err error) func(*testing.T) {
 }
 
 func TestExample(t *testing.T) {
-	fixture, err := os.ReadFile(filepath.Join(currentDir(), "fixtures", "example.json"))
+	fixture, err := os.ReadFile(filepath.Join(currentDir(), "testdata", "example.json"))
 	require.NoError(t, err)
 
 	t.Run("with reader", testFixture(func() *L {
